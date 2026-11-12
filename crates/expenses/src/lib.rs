@@ -12,3 +12,6 @@
     expect(dead_code, reason = "the domain is only exercised by its unit tests until M2")
 )]
 mod domain;
+mod receipt_checks;
+
+pub use receipt_checks::{ReceiptChecks, ReceiptSummary};

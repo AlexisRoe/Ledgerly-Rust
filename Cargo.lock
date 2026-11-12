@@ -246,6 +246,7 @@ dependencies = [
 name = "ledgerly-expenses"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "ledgerly-shared",
  "thiserror",
 ]

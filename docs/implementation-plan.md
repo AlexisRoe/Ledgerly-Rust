@@ -77,7 +77,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Accept: unit tests for every cap and every blank case, using the values from the Java tests.
   - Java: `J/expenses/internal/domain/`, `J/shared/` (Role location per port spec §1).
 
-- [ ] **M0.7 Expense state machine**
+- [x] **M0.7 Expense state machine**
   - Do:
     - `Expense::draft(…, &dyn Clock)`; an `incurred_on` in the future is rejected.
     - The six transitions, taking an `Actor` and returning `Result<_, ExpenseError>` with `InvalidTransition`, `SelfDealing` and `Forbidden`.
