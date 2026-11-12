@@ -4,3 +4,5 @@
 //! (`src/main/java/com/ledgerly/shared/` in Ledgerly-Java at the commit in `vendor/ledgerly-java/SOURCE`).
 
 #![forbid(unsafe_code)]
+
+pub mod id;

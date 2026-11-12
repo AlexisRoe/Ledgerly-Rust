@@ -48,7 +48,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Files: `justfile`, `scripts/vendor-check.sh`.
   - Accept: editing any vendored byte (including in `api/openapi.yaml` or a Bruno request), or adding a file under `vendor/ledgerly-java/`, `api/` or `bruno/`, makes `just verify` fail with the file's name.
 
-- [ ] **M0.3 Typed ids**
+- [x] **M0.3 Typed ids**
   - Do: newtypes `UserId`, `TeamId`, `ExpenseId`, `RejectionId`, `ReceiptId`, `InvitationId`, `ImportId`, `EventId` over `uuid::Uuid`, with `new_v7()` where Java uses v7 and `new_v4()` where Java uses random v4. Java uses v4 for the refresh-token family, the import id, the storage-key suffix and the JWT `jti` (port spec §3.1). Each newtype has `Display`/`FromStr` and serde as a plain UUID string.
   - Files: `crates/shared/src/id.rs`.
   - Accept: v7 ids created in sequence sort in creation order. A `TeamId` can't be passed where an `ExpenseId` is expected (doc-test with `compile_fail`).

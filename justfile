@@ -25,5 +25,5 @@ clippy:
 
 # Unit and integration tests with nextest, then doc-tests (nextest does not run those).
 test:
-    cargo nextest run --workspace --locked --no-tests=warn
+    cargo nextest run --workspace --locked
     cargo test --workspace --locked --doc
