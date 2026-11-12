@@ -243,12 +243,72 @@ dependencies = [
 ]
 
 [[package]]
+name = "ledgerly-api"
+version = "0.1.0"
+
+[[package]]
+name = "ledgerly-app"
+version = "0.1.0"
+dependencies = [
+ "ledgerly-api",
+ "ledgerly-audit",
+ "ledgerly-expenses",
+ "ledgerly-identity",
+ "ledgerly-imports",
+ "ledgerly-receipts",
+ "ledgerly-shared",
+ "ledgerly-teams",
+ "serde_json",
+]
+
+[[package]]
+name = "ledgerly-audit"
+version = "0.1.0"
+dependencies = [
+ "ledgerly-expenses",
+ "ledgerly-identity",
+ "ledgerly-imports",
+ "ledgerly-receipts",
+ "ledgerly-shared",
+ "ledgerly-teams",
+]
+
+[[package]]
 name = "ledgerly-expenses"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "ledgerly-shared",
+ "ledgerly-teams",
  "thiserror",
+]
+
+[[package]]
+name = "ledgerly-identity"
+version = "0.1.0"
+dependencies = [
+ "ledgerly-shared",
+]
+
+[[package]]
+name = "ledgerly-imports"
+version = "0.1.0"
+dependencies = [
+ "ledgerly-expenses",
+ "ledgerly-shared",
+ "ledgerly-teams",
+]
+
+[[package]]
+name = "ledgerly-parity-tests"
+version = "0.1.0"
+
+[[package]]
+name = "ledgerly-receipts"
+version = "0.1.0"
+dependencies = [
+ "ledgerly-expenses",
+ "ledgerly-shared",
 ]
 
 [[package]]
@@ -262,6 +322,14 @@ dependencies = [
  "serde_json",
  "thiserror",
  "uuid",
+]
+
+[[package]]
+name = "ledgerly-teams"
+version = "0.1.0"
+dependencies = [
+ "ledgerly-identity",
+ "ledgerly-shared",
 ]
 
 [[package]]

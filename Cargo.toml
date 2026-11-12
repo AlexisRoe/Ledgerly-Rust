@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/expenses", "crates/shared"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -25,7 +25,14 @@ todo = "deny"
 unimplemented = "deny"
 
 [workspace.dependencies]
+ledgerly-api = { path = "crates/api" }
+ledgerly-audit = { path = "crates/audit" }
+ledgerly-expenses = { path = "crates/expenses" }
+ledgerly-identity = { path = "crates/identity" }
+ledgerly-imports = { path = "crates/imports" }
+ledgerly-receipts = { path = "crates/receipts" }
 ledgerly-shared = { path = "crates/shared" }
+ledgerly-teams = { path = "crates/teams" }
 
 chrono = { version = "0.4.45", default-features = false, features = ["now", "std"] }
 proptest = "1.12.0"

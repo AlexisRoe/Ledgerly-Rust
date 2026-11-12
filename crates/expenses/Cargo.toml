@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 chrono.workspace = true
 ledgerly-shared.workspace = true
+ledgerly-teams.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

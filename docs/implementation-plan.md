@@ -101,7 +101,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** a running, observable, hardened service skeleton with all tooling and CI in place, and the complete parity suite ported as ignored tests.
 **Rust you meet:** `async`/`await`, tokio, axum `Router`/`State`/extractors, tower layers, `tracing`, config parsing into typed structs, crate visibility, multi-stage Docker builds.
 
-- [ ] **M1.1 All crates and the architecture test**
+- [x] **M1.1 All crates and the architecture test**
   - Do:
     - Create the empty crates `identity`, `teams`, `receipts`, `imports`, `audit`, `api` (placeholder until M3), `app` (binary `ledgerly`) and `parity-tests`, with dependencies exactly as in CONCEPT §3.
     - `crates/app/tests/architecture.rs` reads `cargo metadata` and asserts that the inter-crate dependency graph equals the allowed arrows.
