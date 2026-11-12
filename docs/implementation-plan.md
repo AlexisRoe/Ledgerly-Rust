@@ -60,7 +60,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Accept: EUR 2, JPY 0, KWD 3, CLF 4; XAU and XTS are rejected; the generator is reproducible (`just gen-currencies` produces no diff).
   - Java: `J/shared/money/Money.java`; Java learning log M0.
 
-- [ ] **M0.5 Money**
+- [x] **M0.5 Money**
   - Do: `Money { amount: Decimal, currency: Currency }` with a validating constructor:
     - positive (not zero, not negative);
     - scale no greater than the currency's minor units, then normalised to exactly that scale;
