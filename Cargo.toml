@@ -37,6 +37,7 @@ ledgerly-teams = { path = "crates/teams" }
 chrono = { version = "0.4.45", default-features = false, features = ["now", "std"] }
 proptest = "1.12.0"
 rust_decimal = { version = "1.43.0", default-features = false, features = ["std"] }
+secrecy = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"

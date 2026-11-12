@@ -4,3 +4,5 @@
 //! `vendor/ledgerly-java/SOURCE`.
 
 #![forbid(unsafe_code)]
+
+pub mod config;

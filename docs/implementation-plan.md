@@ -107,7 +107,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - `crates/app/tests/architecture.rs` reads `cargo metadata` and asserts that the inter-crate dependency graph equals the allowed arrows.
   - Accept: adding `teams → expenses` makes the test fail with a readable message.
 
-- [ ] **M1.2 Configuration**
+- [x] **M1.2 Configuration**
   - Do:
     - Read every environment variable Java reads, under Java's names (port spec §3.9; Java `.env.example`; `application*.yaml`), into typed structs.
     - `SPRING_PROFILES_ACTIVE` selects `local`, `test`, `prod` and `keycloak`, which combine as in Java.
