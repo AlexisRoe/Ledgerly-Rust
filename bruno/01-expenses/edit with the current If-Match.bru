@@ -1,0 +1,34 @@
+meta {
+  name: edit with the current If-Match
+  type: http
+  seq: 9
+}
+
+patch {
+  url: {{host}}/teams/{{teamId}}/expenses/{{draftId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  If-Match: {{draftEtag}}
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+body:json {
+  {
+    "merchant": "Bakery"
+  }
+}
+
+script:post-response {
+  bru.setVar("draftEtag", res.headers["etag"]);
+}
+
+assert {
+  res.status: eq 200
+  res.body.merchant: eq Bakery
+}

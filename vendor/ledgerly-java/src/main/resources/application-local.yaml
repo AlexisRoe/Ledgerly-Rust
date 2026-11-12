@@ -1,0 +1,18 @@
+# Human-readable console logs in local development.
+logging:
+  structured:
+    format:
+      console: ""
+
+# Where compose.yaml puts the object store and the malware scanner. Nothing like this has a default in prod.
+ledgerly:
+  storage:
+    s3:
+      endpoint: http://localhost:8333
+      bucket: ledgerly-files
+      access-key: ledgerly
+      secret-key: ledgerly-secret
+  receipts:
+    clamav:
+      host: localhost
+      port: 3310

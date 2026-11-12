@@ -1,0 +1,20 @@
+meta {
+  name: carol submits
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/expenses/{{flowId}}:submit
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq SUBMITTED
+}

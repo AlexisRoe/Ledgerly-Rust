@@ -1,0 +1,20 @@
+meta {
+  name: submit without a receipt
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/expenses/{{draftId}}:submit
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+assert {
+  res.status: eq 422
+  res.body.code: eq EXPENSE_RULE_VIOLATED
+}

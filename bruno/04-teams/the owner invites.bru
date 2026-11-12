@@ -1,0 +1,31 @@
+meta {
+  name: the owner invites
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/invitations
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{aliceToken}}
+}
+
+body:json {
+  {
+    "email": "erin@example.com",
+    "role": "APPROVER"
+  }
+}
+
+script:post-response {
+  bru.setVar("invitationId", res.body.id);
+}
+
+assert {
+  res.status: eq 201
+  res.body.status: eq PENDING
+}

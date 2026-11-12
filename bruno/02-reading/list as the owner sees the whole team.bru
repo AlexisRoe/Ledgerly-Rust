@@ -1,0 +1,25 @@
+meta {
+  name: list as the owner sees the whole team
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{host}}/teams/{{teamId}}/expenses?size=50
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{aliceToken}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("all demo expenses are visible", function () {
+    expect(res.body.page.totalElements).to.be.at.least(7);
+  });
+}

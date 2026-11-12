@@ -1,0 +1,39 @@
+meta {
+  name: create with too many decimals
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/expenses
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+body:json {
+  {
+    "money": {
+      "amount": "12.555",
+      "currency": "EUR"
+    },
+    "category": "MEALS",
+    "incurredOn": "2026-01-15",
+    "merchant": "Bruno Cafe",
+    "note": "Team lunch"
+  }
+}
+
+assert {
+  res.status: eq 400
+}
+
+tests {
+  test("the problem has a code and a trace id", function () {
+    expect(res.body.code).to.be.a("string");
+    expect(res.body.traceId).to.be.a("string");
+  });
+}
