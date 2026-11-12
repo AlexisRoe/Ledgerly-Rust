@@ -119,7 +119,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Accept: unit tests for each default, for JDBC URL parsing, and for the prod listing (all missing variables in one message). `Debug` of the config shows no secret.
   - Java: `J/shared/config/`, `ProductionEnvironmentCheck`.
 
-- [ ] **M1.3 Servers, probes, shutdown**
+- [x] **M1.3 Servers, probes, shutdown**
   - Do:
     - The API listener is on 8080 and management on 8081.
     - Management serves `/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness` and `/actuator/info`, with the **same JSON bodies and status codes Spring Boot produces**, and nothing else for now.

@@ -5,18 +5,32 @@
 use std::process::ExitCode;
 
 use ledgerly_app::config::{Config, ProcessEnvironment};
+use ledgerly_app::{App, stop_signal};
 
 fn main() -> ExitCode {
-    match Config::from_environment(&ProcessEnvironment) {
-        // Nothing to start yet: the listeners arrive in M1.3.
-        Ok(_config) => ExitCode::SUCCESS,
-        Err(error) => {
-            // The logging system is not up yet, and this has to be readable without it. The banner is the one
-            // Spring Boot prints for a failure analysis.
-            eprintln!(
-                "\n***************************\nAPPLICATION FAILED TO START\n***************************\n\n{error}\n"
-            );
-            ExitCode::FAILURE
-        }
+    let config = match Config::from_environment(&ProcessEnvironment) {
+        Ok(config) => config,
+        Err(error) => return failed_to_start(&error),
+    };
+    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+        Ok(runtime) => runtime,
+        Err(error) => return failed_to_start(&error),
+    };
+    match runtime.block_on(run(config)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => failed_to_start(&error),
     }
+}
+
+async fn run(config: Config) -> std::io::Result<()> {
+    let stop = stop_signal()?;
+    let app = App::bind(config).await?;
+    app.serve(stop).await
+}
+
+/// Reports why the process stops, readable without the logging system. The banner is the one Spring Boot
+/// prints for a failure analysis.
+fn failed_to_start(error: &dyn std::fmt::Display) -> ExitCode {
+    eprintln!("\n***************************\nAPPLICATION FAILED TO START\n***************************\n\n{error}\n");
+    ExitCode::FAILURE
 }

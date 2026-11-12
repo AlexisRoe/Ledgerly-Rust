@@ -10,19 +10,23 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-ledgerly-shared.workspace = true
+axum.workspace = true
+chrono.workspace = true
+ledgerly-api.workspace = true
+ledgerly-audit.workspace = true
+ledgerly-expenses.workspace = true
 ledgerly-identity.workspace = true
+ledgerly-imports.workspace = true
+ledgerly-receipts.workspace = true
+ledgerly-shared.workspace = true
 ledgerly-teams.workspace = true
 secrecy.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
-ledgerly-expenses.workspace = true
-ledgerly-receipts.workspace = true
-ledgerly-imports.workspace = true
-ledgerly-audit.workspace = true
-ledgerly-api.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+reqwest.workspace = true
 
 [[bin]]
 name = "ledgerly"

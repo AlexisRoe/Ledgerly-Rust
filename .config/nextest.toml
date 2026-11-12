@@ -1,0 +1,4 @@
+# A test that hangs (a server that never shuts down, a request nobody answers) is stopped instead of
+# blocking `just verify` forever.
+[profile.default]
+slow-timeout = { period = "30s", terminate-after = 4 }
