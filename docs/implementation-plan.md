@@ -54,7 +54,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Accept: v7 ids created in sequence sort in creation order. A `TeamId` can't be passed where an `ExpenseId` is expected (doc-test with `compile_fail`).
   - Java: `J/shared/id/`.
 
-- [ ] **M0.4 Currency table**
+- [x] **M0.4 Currency table**
   - Do: generate `currencies.rs` from OpenJDK 25's ISO 4217 data (`make/data/currency/currency.properties` at the `jdk-25` tag; the source URL and tag go in the file header). It maps each code to its default fraction digits exactly as `java.util.Currency.getDefaultFractionDigits()` returns them, including codes Java still accepts that have been withdrawn. Codes with `-1` (XAU, XTS, XXX, …) are present and marked as rejected.
   - Files: `crates/shared/src/money/currencies.rs`, `scripts/gen-currencies.sh`.
   - Accept: EUR 2, JPY 0, KWD 3, CLF 4; XAU and XTS are rejected; the generator is reproducible (`just gen-currencies` produces no diff).

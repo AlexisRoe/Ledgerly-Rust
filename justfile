@@ -27,3 +27,8 @@ clippy:
 test:
     cargo nextest run --workspace --locked
     cargo test --workspace --locked --doc
+
+# Regenerate the currency table from OpenJDK's ISO 4217 data (needs network). Must produce no diff.
+gen-currencies:
+    scripts/gen-currencies.sh
+    cargo fmt --all
