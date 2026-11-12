@@ -5,7 +5,11 @@ default:
     @just --list
 
 # Everything CI checks, in order. Grows with the milestones (docs/local-setup.md §4).
-verify: fmt-check clippy test
+verify: vendor-check fmt-check clippy test
+
+# Fail if a file vendored from Ledgerly-Java was changed, removed or added (ADR 0007). Works offline.
+vendor-check:
+    scripts/vendor-check.sh
 
 # Fail if any file is not formatted.
 fmt-check:

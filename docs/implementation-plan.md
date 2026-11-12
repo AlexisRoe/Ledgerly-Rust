@@ -43,7 +43,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Files: `Cargo.toml`, `rust-toolchain.toml`, `mise.toml`, `justfile`, `crates/{shared,expenses}/`.
   - Accept: `just verify` is green. A deliberately added `unsafe {}` or `.unwrap()` in non-test code fails it (then remove it).
 
-- [ ] **M0.2 Vendor drift check**
+- [x] **M0.2 Vendor drift check**
   - Do: `just vendor-check` verifies every file listed in `vendor/ledgerly-java.SHA256SUMS` (paths relative to the repository root, some with spaces; `shasum -a 256 -c` handles that) and that no unlisted file exists under `vendor/ledgerly-java/`, `api/` or `bruno/`. It works offline and runs first in `just verify`.
   - Files: `justfile`, `scripts/vendor-check.sh`.
   - Accept: editing any vendored byte (including in `api/openapi.yaml` or a Bruno request), or adding a file under `vendor/ledgerly-java/`, `api/` or `bruno/`, makes `just verify` fail with the file's name.
