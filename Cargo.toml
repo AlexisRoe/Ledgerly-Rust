@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = ["crates/expenses", "crates/shared"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+publish = false
+
+# Shared by every crate through `[lints] workspace = true`.
+#
+# `clippy::indexing_slicing` and `clippy::arithmetic_side_effects` are not listed here: they are denied with
+# `#![deny(...)]` at the top of each `domain` module, where untrusted values meet arithmetic (plan M0.1).
+# Test code is exempt from the clippy denies through `clippy.toml`.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[workspace.dependencies]
+ledgerly-shared = { path = "crates/shared" }

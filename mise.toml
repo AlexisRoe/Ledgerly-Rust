@@ -1,0 +1,18 @@
+# Every tool the project needs, pinned (docs/local-setup.md §2). `mise install` reads this file.
+# The Rust version is repeated in rust-toolchain.toml so that cargo and rust-analyzer agree without mise.
+
+[tools]
+rust = { version = "1.99.1", components = "rustfmt,clippy" }
+just = "1.59.0"
+# Lets the two `cargo:` tools below install as prebuilt binaries instead of compiling from source.
+cargo-binstall = "1.27.0"
+"cargo:cargo-nextest" = "0.9.151"
+cargo-deny = "0.20.2"
+"cargo:sqlx-cli" = "0.9.0"
+node = "26.13.1"
+pre-commit = "4.7.0"
+gitleaks = "8.30.1"
+
+[env]
+# npx tools (Redocly, Prettier, Bruno CLI) never run package install scripts.
+NPM_CONFIG_IGNORE_SCRIPTS = "true"

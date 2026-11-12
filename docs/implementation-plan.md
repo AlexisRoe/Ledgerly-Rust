@@ -32,7 +32,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** Money and the Expense state machine, correct and fully unit-tested, in plain Rust.
 **Rust you meet:** ownership and borrowing, structs and enums, exhaustive `match`, `Result` and `thiserror`, newtypes, traits (`Clock`), `rust_decimal`, unit and property tests.
 
-- [ ] **M0.1 Workspace and toolchain**
+- [x] **M0.1 Workspace and toolchain**
   - Do:
     - Cargo workspace with crates `shared` and `expenses` (libs).
     - `[workspace.lints]`: `unsafe_code = "forbid"`, plus clippy `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `indexing_slicing` and `arithmetic_side_effects` all `deny`. `indexing_slicing` and `arithmetic_side_effects` are denied with `#![deny(...)]` at the top of each `domain` module. Tests may `allow` via `#[cfg(test)]`.
