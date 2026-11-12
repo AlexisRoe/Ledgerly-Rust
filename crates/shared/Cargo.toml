@@ -9,7 +9,12 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Test helpers for other crates' tests, such as `FixedClock`. Never enabled in the `ledgerly` binary.
+testing = []
+
 [dependencies]
+chrono.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 thiserror.workspace = true

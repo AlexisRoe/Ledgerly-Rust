@@ -27,6 +27,7 @@ unimplemented = "deny"
 [workspace.dependencies]
 ledgerly-shared = { path = "crates/shared" }
 
+chrono = { version = "0.4.45", default-features = false, features = ["now", "std"] }
 proptest = "1.12.0"
 rust_decimal = { version = "1.43.0", default-features = false, features = ["std"] }
 serde = { version = "1.0.229", features = ["derive"] }

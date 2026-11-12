@@ -71,7 +71,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Accept: EUR `10.001` is rejected, JPY `1.5` rejected, KWD `1.001` accepted. EUR `10.0` equals EUR `10.00`, and their hashes are equal. `proptest`: any accepted `Money` round-trips through its string form unchanged.
   - Java: `J/shared/money/Money.java`, `JT/shared/money/*`.
 
-- [ ] **M0.6 Expense vocabulary**
+- [x] **M0.6 Expense vocabulary**
   - Do: `Category`, `ExpenseStatus`, `Role` (ladder, `includes`), `Actor { id, role }`, `Merchant` and `Note` (length-capped, trimmed per Java; a whitespace-only merchant is rejected), `RejectionReason` (non-blank, ≤ 1000), and the `Clock` trait with `SystemClock` and a test `FixedClock`.
   - Files: `crates/shared/src/{role.rs,clock.rs}`, `crates/expenses/src/domain/`.
   - Accept: unit tests for every cap and every blank case, using the values from the Java tests.

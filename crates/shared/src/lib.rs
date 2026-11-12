@@ -5,5 +5,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod clock;
 pub mod id;
 pub mod money;
+pub mod role;
+pub mod text;
