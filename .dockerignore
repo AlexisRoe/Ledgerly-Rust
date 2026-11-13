@@ -10,3 +10,5 @@
 !vendor/ledgerly-java/src/main/resources/db/migration
 !.sqlx
 !.cargo
+# Served as Swagger UI's spec in the `local` profile (crates/app/src/docs.rs).
+!api/openapi.yaml

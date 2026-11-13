@@ -14,7 +14,6 @@ mod m3 {
 
     /// Java: `SwaggerUiProfileTest.Local.servesUiAndSpec`.
     #[tokio::test]
-    #[ignore = "M3"]
     async fn serves_ui_and_spec() {
         let world = World::start().await;
 
@@ -30,7 +29,6 @@ mod m3 {
     /// Java: `SwaggerUiProfileTest.LocalDocsShortcut.docsLeadsToTheUiWithoutAToken`. Java's client follows the
     /// redirect; this one does not, so it follows it once by hand.
     #[tokio::test]
-    #[ignore = "M3"]
     async fn docs_leads_to_the_ui_without_a_token() {
         let world = World::start().await;
 

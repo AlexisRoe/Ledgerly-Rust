@@ -1297,6 +1297,7 @@ dependencies = [
  "opentelemetry_sdk",
  "reqwest",
  "secrecy",
+ "serde-saphyr",
  "serde_json",
  "sqlx",
  "thiserror",

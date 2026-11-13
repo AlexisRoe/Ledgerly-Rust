@@ -68,7 +68,6 @@ mod m3 {
     /// Java: `ExpensesApiTest.unknownPathIsAProblemToo`. Java sends a token; the 404 with `REQUEST_REJECTED`
     /// for a route that does not exist is what M3 builds, and the token check comes in M5.
     #[tokio::test]
-    #[ignore = "M3"]
     async fn unknown_path_is_a_problem_too() {
         let world = World::start().await;
 

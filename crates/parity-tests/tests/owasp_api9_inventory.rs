@@ -25,7 +25,6 @@ mod m3 {
 
     /// Java: `Api9ImproperInventoryManagementTest.theSpecTheApplicationServesIsTheFileInTheRepository`.
     #[tokio::test]
-    #[ignore = "M3"]
     async fn the_spec_the_application_serves_is_the_file_in_the_repository() {
         let world = World::start().await;
 

@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 pub mod config;
+mod docs;
 pub mod logging;
 mod management;
 mod server;
@@ -37,8 +38,15 @@ use crate::telemetry::Telemetry;
 ///
 /// Tests and the binary build it with this one function, so that both run the same routes and layers. The
 /// routes come from one table ([`routes`]), which the inventory test compares with the spec.
-pub fn router(_config: &Config, telemetry: &Telemetry, pool: &PgPool) -> Router {
-    layered(routes(pool), telemetry)
+///
+/// In the `local` profile it also serves Swagger UI at `/docs` and `/swagger-ui/…`.
+pub fn router(config: &Config, telemetry: &Telemetry, pool: &PgPool) -> Router {
+    let extra = if config.profiles.local {
+        docs::routes()
+    } else {
+        Router::new()
+    };
+    layered_with(extra, routes(pool), telemetry)
 }
 
 /// Every endpoint the API serves.
@@ -57,7 +65,12 @@ pub fn routes(pool: &PgPool) -> Routes {
 ///
 /// Public so that tests can put a route of their own behind exactly these layers.
 pub fn layered(routes: Routes, telemetry: &Telemetry) -> Router {
-    Router::new()
+    layered_with(Router::new(), routes, telemetry)
+}
+
+/// [`layered`], with routes that are not part of the API (Swagger UI) tried first.
+fn layered_with(extra: Router, routes: Routes, telemetry: &Telemetry) -> Router {
+    extra
         .fallback_service(routes.into_service())
         .layer(CatchPanicLayer::custom(unhandled_panic))
         .layer(axum::middleware::from_fn(web::render))

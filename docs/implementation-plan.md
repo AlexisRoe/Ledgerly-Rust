@@ -258,7 +258,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: `Idempotency-Key` on create, using Java's table and semantics (port spec §3.4): same key and same body replays (the expense as it is now); same key and different body → 422; in progress → 409; 24 h expiry. The request hash is **Rust's canonical form** (ADR 0005, accepted exceptions), not Java's `toString()`.
   - Accept: tests for replay, mismatch, concurrency (two tasks with the same key create exactly one expense) and expiry with `FixedClock`.
 
-- [ ] **M3.6 Inventory check**
+- [x] **M3.6 Inventory check**
   - Do: a test asserts that the route table the router is built from equals the spec's paths and methods (API9). Swagger UI at `/docs` (static, vendored spec) in `local` only.
   - Accept: adding an undocumented route fails the test. In `prod`, `/docs` gets 401 like any other path.
 

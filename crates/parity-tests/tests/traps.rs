@@ -140,7 +140,7 @@ mod m3 {
 
     /// §4.1: an unknown route is a problem with `REQUEST_REJECTED`, its catalogue type and a trace id.
     #[tokio::test]
-    #[ignore = "M3"]
+    #[ignore = "M3: expects the catalogue's type and title for REQUEST_REJECTED, but Java's ProblemFactory.enrich (src/main/java/com/ledgerly/shared/error/ProblemFactory.java) only adds code and traceId to Spring's own problem, which keeps type about:blank and title Not Found; raised in learning log M3"]
     async fn an_unknown_route_is_a_catalogued_problem_with_a_trace_id() {
         let world = World::start().await;
 

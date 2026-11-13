@@ -32,6 +32,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+serde-saphyr.workspace = true
 ledgerly-shared = { workspace = true, features = ["testing"] }
 tower.workspace = true
 reqwest.workspace = true
