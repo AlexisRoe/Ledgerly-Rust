@@ -65,13 +65,14 @@ async fn submitted(world: &World, team: &SignedInTeam) -> Response {
 mod m3 {
     use super::*;
 
-    /// Java: `ExpensesApiTest.unknownPathIsAProblemToo`. Java sends a token; the 404 with `REQUEST_REJECTED`
-    /// for a route that does not exist is what M3 builds, and the token check comes in M5.
+    /// Java: `ExpensesApiTest.unknownPathIsAProblemToo`, with a token as in Java: without one, any unknown path
+    /// is 401 (authentication comes before routing, M5).
     #[tokio::test]
     async fn unknown_path_is_a_problem_too() {
         let world = World::start().await;
+        let user = world.user().await;
 
-        let response = world.anonymous().get(&format!("{V1}/nope")).send_unchecked().await;
+        let response = world.as_user(&user).get(&format!("{V1}/nope")).send_unchecked().await;
 
         assert_eq!(response.status, 404);
         assert_eq!(response.problem_code().as_deref(), Some("REQUEST_REJECTED"));

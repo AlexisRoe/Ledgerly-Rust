@@ -151,12 +151,14 @@ fn id(response: &Response) -> String {
 mod m3 {
     use super::*;
 
-    /// §4.1: an unknown route is Spring's 404 problem with `REQUEST_REJECTED` and a trace id.
+    /// §4.1: an unknown route is Spring's 404 problem with `REQUEST_REJECTED` and a trace id, for a signed-in
+    /// caller (without a token it is 401, see `m5`).
     #[tokio::test]
     async fn an_unknown_route_is_a_catalogued_problem_with_a_trace_id() {
         let world = World::start().await;
+        let user = world.user().await;
 
-        let response = world.anonymous().get(&format!("{V1}/nope")).send_unchecked().await;
+        let response = world.as_user(&user).get(&format!("{V1}/nope")).send_unchecked().await;
 
         assert_eq!(response.status, 404);
         assert_catalogued(&response, "REQUEST_REJECTED");
