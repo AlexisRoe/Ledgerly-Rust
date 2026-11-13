@@ -5,8 +5,9 @@
 //! object store and a fake scanner; here they are SeaweedFS and ClamAV from `compose.yaml`, which recognises
 //! the EICAR file. Its `claimant` and `colleague` are the team's MEMBER and colleague here.
 //!
-//! Elsewhere: the tests with the scanner switched off are in `receipts_scanner_outage.rs`. The presigned link
-//! is checked through its URL, since the store's record of presigned links is internal to Java's test.
+//! Elsewhere: the tests with the scanner switched off are in `receipts_scanner_outage.rs`. Presigned links are
+//! followed and the object store's answer is checked, since the store's record of presigned links is internal
+//! to Java's test.
 
 // clippy.toml exempts `#[test]` functions only; the helpers of a test file are test code too.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
@@ -14,7 +15,6 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use ledgerly_parity_tests::encoding::query_parameter;
 use ledgerly_parity_tests::fixtures::{EXE, infected_pdf};
 use ledgerly_parity_tests::http::{Client, Response};
 use ledgerly_parity_tests::{Session, SignedInTeam, World, eventually};
@@ -359,7 +359,9 @@ mod m7 {
     // --- names and storage keys (path traversal) ---
 
     /// Java: `ReceiptsApiTest.aTraversalFileNameIsOnlyMetadata`. Java reads the download name, lifetime and
-    /// type of the presigned link from its fake store; here they are read from the link's query parameters.
+    /// type of the presigned link from its fake store. Here the link is followed (reviewer's decision after
+    /// M1), and the object store's answer must carry them: an attachment named `passwd.pdf` of type
+    /// `application/pdf`. The lifetime comes from `expiresAt`.
     #[tokio::test]
     #[ignore = "M7"]
     async fn a_traversal_file_name_is_only_metadata() {
@@ -377,22 +379,31 @@ mod m7 {
         let suffix = key.strip_prefix("receipts/").unwrap_or_else(|| panic!("{key}"));
         assert!(suffix.parse::<Uuid>().is_ok() && suffix.len() == 36, "{key}");
         await_status(&world, &team, e, &receipt, "ACCEPTED").await;
-        let url = claimant
+        let link = claimant
             .get(&format!("{}/{receipt}/download", base(&team, e)))
             .send()
             .await
-            .json()["url"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let disposition = query_parameter(&url, "response-content-disposition").unwrap_or_else(|| panic!("{url}"));
-        assert!(disposition.contains("passwd.pdf"), "{disposition}");
-        let ttl: u64 = query_parameter(&url, "X-Amz-Expires").unwrap().parse().unwrap();
-        assert!(ttl <= 300, "{ttl}");
-        assert_eq!(
-            query_parameter(&url, "response-content-type").as_deref(),
-            Some("application/pdf")
+            .json();
+        let expires_at: DateTime<Utc> = link["expiresAt"].as_str().unwrap().parse().unwrap();
+        assert!(expires_at <= Utc::now() + chrono::Duration::minutes(5) + chrono::Duration::seconds(5));
+
+        let file = reqwest::get(world.target.object_store_url(link["url"].as_str().unwrap()))
+            .await
+            .unwrap();
+
+        assert_eq!(file.status(), 200);
+        let header = |name: &str| {
+            file.headers()
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned)
+        };
+        let disposition = header("content-disposition").unwrap_or_default();
+        assert!(
+            disposition.contains("attachment") && disposition.contains("passwd.pdf"),
+            "{disposition}"
         );
+        assert_eq!(header("content-type").as_deref(), Some("application/pdf"));
     }
 
     /// Java: `ReceiptsApiTest.controlCharactersInTheFileNameAreDropped`.

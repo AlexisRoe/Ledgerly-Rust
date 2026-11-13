@@ -74,34 +74,6 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
         .into()
 }
 
-/// The value of the query parameter `name` of `url`, percent-decoded (`+` is a space).
-#[must_use]
-pub fn query_parameter(url: &str, name: &str) -> Option<String> {
-    let query = url.split_once('?')?.1;
-    query.split('&').find_map(|pair| {
-        let (key, value) = pair.split_once('=')?;
-        (key == name).then(|| percent_decode(value))
-    })
-}
-
-fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%'
-            && let Some(byte) = text.get(i + 1..i + 3).and_then(|hex| u8::from_str_radix(hex, 16).ok())
-        {
-            out.push(byte);
-            i += 3;
-            continue;
-        }
-        out.push(if bytes[i] == b'+' { b' ' } else { bytes[i] });
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 /// Lower-case hex.
 #[must_use]
 pub fn hex(bytes: &[u8]) -> String {
@@ -163,19 +135,6 @@ mod tests {
             )),
             "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"
         );
-    }
-
-    #[test]
-    fn query_parameters_are_percent_decoded() {
-        let url =
-            "http://s3/b/k?response-content-disposition=attachment%3B%20filename%3D%22passwd.pdf%22&X-Amz-Expires=300";
-        assert_eq!(
-            query_parameter(url, "response-content-disposition").as_deref(),
-            Some("attachment; filename=\"passwd.pdf\"")
-        );
-        assert_eq!(query_parameter(url, "X-Amz-Expires").as_deref(), Some("300"));
-        assert_eq!(query_parameter(url, "missing"), None);
-        assert_eq!(query_parameter("http://x/?a=1+2%2", "a").as_deref(), Some("1 2%2"));
     }
 
     #[test]

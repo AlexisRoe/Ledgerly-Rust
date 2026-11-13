@@ -69,6 +69,18 @@ impl Target {
         Client::new(&self.management_url)
     }
 
+    /// `url` (a presigned link the API handed out) with its scheme and host replaced by `PARITY_S3_ENDPOINT`.
+    ///
+    /// The app names the object store as it reaches it, which inside Compose is `http://seaweedfs:8333`; the
+    /// tests reach the same store through the published port. The development store does not check
+    /// signatures, so the changed host does not invalidate the link.
+    #[must_use]
+    pub fn object_store_url(&self, url: &str) -> String {
+        let after_scheme = url.split_once("://").map_or(url, |(_, rest)| rest);
+        let path = after_scheme.find('/').map_or("/", |at| &after_scheme[at..]);
+        format!("{}{path}", self.s3_endpoint.trim_end_matches('/'))
+    }
+
     /// Everything the app has logged so far (stdout and stderr of its container).
     ///
     /// # Panics
@@ -107,6 +119,24 @@ fn management_default(base_url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_presigned_link_is_pointed_at_the_published_object_store() {
+        let target = Target {
+            base_url: "http://127.0.0.1:8080".to_owned(),
+            management_url: "http://127.0.0.1:8081".to_owned(),
+            database_url: String::new(),
+            s3_endpoint: "http://127.0.0.1:8333/".to_owned(),
+            s3_bucket: "ledgerly-files".to_owned(),
+            keycloak_url: String::new(),
+            app_container: None,
+        };
+
+        assert_eq!(
+            target.object_store_url("http://seaweedfs:8333/ledgerly-files/receipts/x?X-Amz-Expires=300&a=b"),
+            "http://127.0.0.1:8333/ledgerly-files/receipts/x?X-Amz-Expires=300&a=b"
+        );
+    }
 
     #[test]
     fn the_management_port_defaults_to_8081_on_the_same_host() {
