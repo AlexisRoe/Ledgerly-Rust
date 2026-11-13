@@ -70,7 +70,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.registerAnswersIdenticallyForNewAndTakenEmails`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn register_answers_identically_for_new_and_taken_emails() {
         let world = World::start().await;
         let email = new_email();
@@ -92,7 +91,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.passwordIsStoredAsAnArgon2idHash`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn password_is_stored_as_an_argon2id_hash() {
         let world = World::start().await;
         let user = registered(&world).await;
@@ -109,7 +107,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.weakOrOversizedInputIsRejected`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn weak_or_oversized_input_is_rejected() {
         let world = World::start().await;
 
@@ -122,7 +119,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.verificationTokenWorksOnceAndMarksTheUserVerified`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn verification_token_works_once_and_marks_the_user_verified() {
         let world = World::start().await;
         let user = registered(&world).await;
@@ -142,7 +138,6 @@ mod m5 {
     /// Java: `AuthApiTest.verificationTokenIsStoredOnlyAsAHash`. The token the application issued is not
     /// known here, but what it stored for it is: 64 hex characters, the size of a SHA-256.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn verification_token_is_stored_only_as_a_hash() {
         let world = World::start().await;
         let user = registered(&world).await;
@@ -162,7 +157,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.guessedVerificationTokensAreRejected`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn guessed_verification_tokens_are_rejected() {
         let world = World::start().await;
 
@@ -173,7 +167,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.loginReturnsAccessTokenAndHardenedRefreshCookie`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn login_returns_access_token_and_hardened_refresh_cookie() {
         let world = World::start().await;
 
@@ -193,7 +186,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.unverifiedUsersMayLogIn`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn unverified_users_may_log_in() {
         let world = World::start().await;
         let user = registered(&world).await;
@@ -203,7 +195,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.unknownEmailAndWrongPasswordLookTheSame`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn unknown_email_and_wrong_password_look_the_same() {
         let world = World::start().await;
         let user = registered(&world).await;
@@ -220,7 +211,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.accountLocksAfterFiveFailuresEvenForTheRightPassword`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn account_locks_after_five_failures_even_for_the_right_password() {
         let world = World::start().await;
         let user = registered(&world).await;
@@ -237,7 +227,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.aSuccessfulLoginResetsTheFailureCounter`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn a_successful_login_resets_the_failure_counter() {
         let world = World::start().await;
         let user = registered(&world).await;
@@ -256,7 +245,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.accessTokenCarriesOnlySubIatExpAndJti`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn access_token_carries_only_sub_iat_exp_and_jti() {
         let world = World::start().await;
         let user = registered(&world).await;
@@ -274,7 +262,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.jwksPublishesOnlyThePublicKeyThatVerifiesTokens`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn jwks_publishes_only_the_public_key_that_verifies_tokens() {
         let world = World::start().await;
         let token = access_token(&logged_in(&world).await);

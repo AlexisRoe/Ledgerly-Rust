@@ -21,9 +21,6 @@ const METHODS: [&str; 7] = ["get", "put", "post", "delete", "options", "head", "
 /// Documented operations that are not served yet, with the milestone that serves them. The test fails when one
 /// of them starts being served without being taken off this list, so the list only ever shrinks.
 const NOT_YET: &[(&str, &str, &str)] = &[
-    ("M5", "POST", "/api/v1/auth/register"),
-    ("M5", "POST", "/api/v1/auth/verify"),
-    ("M5", "POST", "/api/v1/auth/login"),
     ("M5", "POST", "/api/v1/auth/refresh"),
     ("M5", "POST", "/api/v1/auth/logout"),
     ("M6", "GET", "/api/v1/me"),
@@ -96,7 +93,7 @@ async fn served() -> Operations {
         ("LEDGERLY_RECEIPTS_CLAMAV_PORT", "3310"),
     ]);
     let config = Config::from_environment(&environment).expect("the test profile's settings are complete");
-    let modules = Modules::new(&config).expect("the test profile generates a signing key");
+    let modules = Modules::new(&config, &pool).expect("the test profile generates a signing key");
     ledgerly_app::routes(&Limits::default(), &modules, &pool)
         .operations()
         .map(|(method, template)| (method.as_str().to_owned(), template.to_owned()))

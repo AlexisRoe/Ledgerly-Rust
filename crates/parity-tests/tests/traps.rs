@@ -169,7 +169,6 @@ mod m5 {
     /// §4.1, Bruno `05-security/an over-long password is refused before any hashing`: a 200-character login
     /// password is `VALIDATION_FAILED`, not a failed login.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn an_over_long_login_password_is_a_validation_error() {
         let world = World::start().await;
 
@@ -216,7 +215,6 @@ mod m5 {
     /// §4.4 "Lockout": failures are counted per email whether or not the account exists (Java's learning log,
     /// M10), so an address that is registered after five failures starts locked.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn failures_count_per_email_even_before_the_account_exists() {
         let world = World::start().await;
         let email = format!("later-{}@example.com", Uuid::new_v4());
@@ -231,7 +229,6 @@ mod m5 {
 
     /// §4.4 "Auth": emails are stored lower-case, and logging in is case-insensitive in the address.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn emails_are_stored_lower_case() {
         let world = World::start().await;
         let email = format!("Mixed.Case-{}@Example.COM", Uuid::new_v4().simple());

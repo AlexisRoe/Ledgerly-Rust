@@ -301,7 +301,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: 32 random bytes as unpadded Base64url (43 chars), stored as lower-case hex SHA-256. Comparison in constant time.
   - Accept: unit tests for length, alphabet and hash format.
 
-- [ ] **M5.3 Register, verify, login**
+- [x] **M5.3 Register, verify, login**
   - Do:
     - Register always answers 202 with Java's exact body.
     - Verify: single use, 24 h. Login: the same 401 for an unknown email and a wrong password.

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into users (id, email, password_hash, verified, created_at) values ($1, $2, $3, false, $4) on conflict (email) do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "10053de37ff5208c4c922be1c3ca027b7e525558a6003336fe35c6be97e491bb"
+}

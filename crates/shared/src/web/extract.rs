@@ -98,7 +98,7 @@ pub struct Violations(Vec<FieldViolation>);
 
 impl Violations {
     /// `@NotNull`: the property is missing or `null`.
-    pub fn require<T>(&mut self, field: &str, value: Option<&T>) {
+    pub fn require<T: ?Sized>(&mut self, field: &str, value: Option<&T>) {
         if value.is_none() {
             self.add(field, "must not be null");
         }
@@ -121,6 +121,15 @@ impl Violations {
             && !matches(value)
         {
             self.add(field, format!("must match \"{regexp}\""));
+        }
+    }
+
+    /// `@Email`, Hibernate's check (see [`crate::email`]). A missing value is not checked.
+    pub fn email(&mut self, field: &str, value: Option<&str>) {
+        if let Some(value) = value
+            && !crate::email::is_well_formed(value)
+        {
+            self.add(field, "must be a well-formed email address");
         }
     }
 

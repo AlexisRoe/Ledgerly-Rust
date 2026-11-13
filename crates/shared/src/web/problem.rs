@@ -369,6 +369,14 @@ impl Problem {
             .with_header(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"))
     }
 
+    /// 401 as a use case answers it (a refused login or refresh), without the `WWW-Authenticate` challenge:
+    /// Java's `Unauthenticated` exception goes through `ProblemExceptionHandler`, not the security layer's
+    /// entry point.
+    #[must_use]
+    pub fn not_authenticated() -> Self {
+        Self::new(ErrorCode::Unauthenticated, "Authentication required")
+    }
+
     /// 403 `FORBIDDEN`. Java: `Forbidden`.
     #[must_use]
     pub fn forbidden(detail: impl Into<String>) -> Self {

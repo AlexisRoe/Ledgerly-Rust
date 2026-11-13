@@ -9,11 +9,13 @@
 pub mod clock;
 pub mod config;
 pub mod database;
+pub mod email;
 pub mod id;
 pub mod idempotency;
 pub mod iso;
 pub mod money;
 pub mod paging;
+pub mod ratelimit;
 pub mod role;
 pub mod text;
 pub mod version;

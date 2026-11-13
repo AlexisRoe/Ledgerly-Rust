@@ -72,7 +72,6 @@ mod m5 {
     /// Java: `ChunkedBodyLimitTest.aSmallChunkedBodyIsNotTouchedByTheLimit`: it reaches the login, which
     /// refuses an unknown user.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn a_small_chunked_body_is_not_touched_by_the_limit() {
         let (status, _) = post_chunked(r#"{"email":"nobody@example.com","password":"correct-horse-battery"}"#).await;
 

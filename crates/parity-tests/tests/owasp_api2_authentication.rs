@@ -41,7 +41,6 @@ mod m5 {
     /// Java: `Api2BrokenAuthenticationTest.failedLoginsLockTheAccountEvenAgainstTheRightPassword`, without its
     /// last step (the lock ends after 16 minutes), which needs a clock.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn failed_logins_lock_the_account_even_against_the_right_password() {
         let world = World::start().await;
         let user = world.register_and_verify(PASSWORD).await;
@@ -55,7 +54,6 @@ mod m5 {
 
     /// Java: `Api2BrokenAuthenticationTest.unknownEmailAndWrongPasswordAreIndistinguishable`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn unknown_email_and_wrong_password_are_indistinguishable() {
         let world = World::start().await;
         let user = world.register_and_verify(PASSWORD).await;
@@ -72,7 +70,6 @@ mod m5 {
 
     /// Java: `Api2BrokenAuthenticationTest.registeringAnExistingEmailLooksLikeRegisteringANewOne`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn registering_an_existing_email_looks_like_registering_a_new_one() {
         let world = World::start().await;
         let user = world.register_and_verify(PASSWORD).await;
@@ -89,7 +86,6 @@ mod m5 {
     /// Java: `Api2BrokenAuthenticationTest.passwordsAreStoredAsArgon2idHashes`. Java reads the row through its
     /// own `JdbcClient`; the suite reads the same column.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn passwords_are_stored_as_argon2id_hashes() {
         let world = World::start().await;
         let user = world.register_and_verify(PASSWORD).await;

@@ -218,7 +218,6 @@ pub(crate) struct PublicJwk {
 }
 
 /// A token that was just signed, and how long it lives.
-#[cfg_attr(not(test), expect(dead_code, reason = "login and refresh read it from M5.3"))]
 pub(crate) struct IssuedToken {
     pub(crate) token: SecretString,
     pub(crate) expires_in_seconds: i64,
@@ -282,7 +281,6 @@ impl AccessTokens {
     }
 
     /// A token for `user`. Java: `AccessTokenIssuer.issue` and `ttlSeconds`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "login and refresh issue tokens from M5.3"))]
     pub(crate) fn issue(&self, user: UserId) -> Result<IssuedToken, IssuingFailed> {
         let now = self.clock.now();
         let expires = now.checked_add_signed(self.ttl).ok_or(IssuingFailed)?;

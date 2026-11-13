@@ -21,10 +21,11 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::response::IntoResponse;
-use ledgerly_identity::{Identity, KeyError};
+use ledgerly_identity::{Identity, IdentityError};
 use ledgerly_shared::clock::{Clock, SystemClock};
 use ledgerly_shared::config::Limits;
 use ledgerly_shared::database::SchemaError;
+use ledgerly_shared::ratelimit::RateLimiter;
 use ledgerly_shared::web::{self, Problem, Routes};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
@@ -47,7 +48,7 @@ pub enum StartupError {
     #[error("{0}")]
     Schema(#[from] SchemaError),
     #[error("{0}")]
-    Keys(#[from] KeyError),
+    Identity(#[from] IdentityError),
 }
 
 /// The modules that keep state between requests, built once at startup.
@@ -58,14 +59,16 @@ pub struct Modules {
 }
 
 impl Modules {
-    /// Wires the modules for `config`, on the system clock.
+    /// Wires the modules for `config` and `pool`, on the system clock, with one rate limiter for the process.
     ///
     /// # Errors
     ///
-    /// A [`KeyError`] if the configured signing key cannot be used, or none is configured where one is needed.
-    pub fn new(config: &Config) -> Result<Self, KeyError> {
+    /// An [`IdentityError`] if the configured signing key cannot be used, none is configured where one is
+    /// needed, or the lock duration is zero.
+    pub fn new(config: &Config, pool: &PgPool) -> Result<Self, IdentityError> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-        let identity = Identity::new(&config.auth, config.profiles, clock.clone())?;
+        let limiter = RateLimiter::new(clock.clone());
+        let identity = Identity::new(&config.auth, config.profiles, pool, &clock, &limiter)?;
         Ok(Self { clock, identity })
     }
 }
@@ -144,10 +147,10 @@ impl App {
     ///
     /// # Errors
     ///
-    /// [`StartupError::Keys`] if the signing key cannot be used, [`StartupError::Io`] if a port cannot be
+    /// [`StartupError::Identity`] if the signing key cannot be used, [`StartupError::Io`] if a port cannot be
     /// bound, for example because it is in use.
     pub async fn bind(config: Config, telemetry: Telemetry, pool: PgPool) -> Result<Self, StartupError> {
-        let modules = Modules::new(&config)?;
+        let modules = Modules::new(&config, &pool)?;
         let api = TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.server.api_port)).await?;
         let management = TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.server.management_port)).await?;
         Ok(Self {

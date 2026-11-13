@@ -6,4 +6,5 @@
 crates/app/src/config.rs:generic-api-key:494
 # A P-256 key pair made for the access-token tests only (crates/identity/src/access_token/tests.rs). It signs
 # nothing anywhere else; the tests need a fixed pair to check the kid against an independently computed thumbprint.
+506e24299ac4a2544efbbcff5ffeb8eb44d824e3:crates/identity/src/access_token/tests.rs:private-key:12
 crates/identity/src/access_token/tests.rs:private-key:12
