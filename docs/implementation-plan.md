@@ -297,7 +297,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: Argon2id with m=16384, t=2, p=1, a 16-byte salt and a 32-byte hash, as a PHC string in standard Base64 without padding (port spec §4). Login for an unknown email verifies against a dummy hash, so the time is the same; register hashes before checking whether the email exists.
   - Accept: a hash Rust produces parses as Spring's format (`$argon2id$v=19$m=16384,t=2,p=1$…`), and a PHC string built to Spring's documented encoding verifies. Password length is validated before hashing (an over-long password → 400 without hashing).
 
-- [ ] **M5.2 Opaque tokens**
+- [x] **M5.2 Opaque tokens**
   - Do: 32 random bytes as unpadded Base64url (43 chars), stored as lower-case hex SHA-256. Comparison in constant time.
   - Accept: unit tests for length, alphabet and hash format.
 

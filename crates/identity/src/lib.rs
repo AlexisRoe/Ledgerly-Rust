@@ -5,5 +5,10 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "register, login and refresh use it from M5.3")
+)]
+mod opaque_token;
 #[cfg_attr(not(test), expect(dead_code, reason = "register and login use it from M5.3"))]
 mod password;
