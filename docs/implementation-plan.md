@@ -254,7 +254,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - A PATCH that changes nothing writes nothing: version (ETag) and `updated_at` stay, as with Hibernate's dirty checking. The use case compares before and after and skips the `update` (decided after M2).
   - Accept: in-process tests (axum `oneshot`) for every status code in the spec for these paths, plus the M3 abuse tests from Java's plan (PATCH with `status` rejected, MEMBER `:approve` 403, self-approval 409, EUR `12.345` 400, future date 400).
 
-- [ ] **M3.5 Idempotency**
+- [x] **M3.5 Idempotency**
   - Do: `Idempotency-Key` on create, using Java's table and semantics (port spec §3.4): same key and same body replays (the expense as it is now); same key and different body → 422; in progress → 409; 24 h expiry. The request hash is **Rust's canonical form** (ADR 0005, accepted exceptions), not Java's `toString()`.
   - Accept: tests for replay, mismatch, concurrency (two tasks with the same key create exactly one expense) and expiry with `FixedClock`.
 

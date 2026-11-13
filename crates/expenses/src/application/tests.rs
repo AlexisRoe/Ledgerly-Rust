@@ -96,11 +96,14 @@ impl World {
 
     async fn draft(&self) -> Versioned<Expense> {
         self.create()
-            .execute(CreateExpenseCommand {
-                team: self.team,
-                claimant: self.member,
-                expense: lunch(),
-            })
+            .execute(
+                CreateExpenseCommand {
+                    team: self.team,
+                    claimant: self.member,
+                    expense: lunch(),
+                },
+                None,
+            )
             .await
             .unwrap()
     }
@@ -189,11 +192,14 @@ async fn a_non_teammate_cannot_create_and_nothing_is_written() {
 
     let outcome = world
         .create()
-        .execute(CreateExpenseCommand {
-            team: world.team,
-            claimant: UserId::new_v7(),
-            expense: lunch(),
-        })
+        .execute(
+            CreateExpenseCommand {
+                team: world.team,
+                claimant: UserId::new_v7(),
+                expense: lunch(),
+            },
+            None,
+        )
         .await;
 
     assert!(matches!(outcome, Err(UseCaseError::NotFound)), "{outcome:?}");
@@ -206,11 +212,14 @@ async fn field_rules_refuse_in_javas_order_and_write_nothing() {
     let world = World::new(&database);
     let use_case = world.create();
     let create = |expense| {
-        use_case.execute(CreateExpenseCommand {
-            team: world.team,
-            claimant: world.member,
-            expense,
-        })
+        use_case.execute(
+            CreateExpenseCommand {
+                team: world.team,
+                claimant: world.member,
+                expense,
+            },
+            None,
+        )
     };
 
     // U+00A0 is not whitespace to Java's `String.strip`, so that merchant is not blank. A tab is.
@@ -523,11 +532,14 @@ async fn transitions_are_refused_as_java_refuses_them() {
     // An approver's own expense: self-dealing once it is submitted.
     let own = world
         .create()
-        .execute(CreateExpenseCommand {
-            team: world.team,
-            claimant: world.approver,
-            expense: lunch(),
-        })
+        .execute(
+            CreateExpenseCommand {
+                team: world.team,
+                claimant: world.approver,
+                expense: lunch(),
+            },
+            None,
+        )
         .await
         .unwrap()
         .value
@@ -542,4 +554,176 @@ async fn transitions_are_refused_as_java_refuses_them() {
         .execute(Action::Approve, world.team, own, world.approver, None)
         .await;
     assert!(matches!(refused(self_approval), ExpenseError::SelfDealing { .. }));
+}
+
+// --- idempotency (M3.5) -----------------------------------------------------------------------------------------
+
+impl World {
+    async fn create_with_key(
+        &self,
+        use_case: &CreateExpense,
+        claimant: UserId,
+        expense: NewExpense,
+        key: &str,
+    ) -> Result<Versioned<Expense>, UseCaseError> {
+        use_case
+            .execute(
+                CreateExpenseCommand {
+                    team: self.team,
+                    claimant,
+                    expense,
+                },
+                Some(key),
+            )
+            .await
+    }
+}
+
+/// Java: `ExpensesApiTest.sameKeySameBodyReplaysTheOriginal`; a replay shows the expense as it is now.
+#[tokio::test]
+async fn the_same_key_and_request_replay_the_expense_as_it_is_now() {
+    let database = TestDatabase::new().await.unwrap();
+    let world = World::new(&database);
+    let create = world.create();
+
+    let first = world
+        .create_with_key(&create, world.member, lunch(), "key-12345678")
+        .await
+        .unwrap();
+    let edited = world
+        .update()
+        .execute(UpdateExpenseCommand {
+            merchant: Some("Bakery".to_owned()),
+            ..world.edit(first.value.id(), world.member, first.version)
+        })
+        .await
+        .unwrap();
+    let replay = world
+        .create_with_key(&create, world.member, lunch(), "key-12345678")
+        .await
+        .unwrap();
+
+    assert_eq!(replay, edited);
+    assert_eq!(world.rows().await, 1);
+}
+
+/// Java: `ExpensesApiTest.sameKeyDifferentBodyIs422` and `keysArePerUser`.
+#[tokio::test]
+async fn a_different_request_under_the_same_key_is_refused_but_keys_are_per_user() {
+    let database = TestDatabase::new().await.unwrap();
+    let world = World::new(&database);
+    let create = world.create();
+    world
+        .create_with_key(&create, world.member, lunch(), "key-12345678")
+        .await
+        .unwrap();
+
+    let changed = NewExpense {
+        merchant: "Other".to_owned(),
+        ..lunch()
+    };
+    let reused = world
+        .create_with_key(&create, world.member, changed, "key-12345678")
+        .await;
+    assert!(matches!(reused, Err(UseCaseError::IdempotencyKeyReused)), "{reused:?}");
+    // The raw merchant counts: Java hashes the request as received, before stripping.
+    let padded = NewExpense {
+        merchant: format!("{} ", lunch().merchant),
+        ..lunch()
+    };
+    let padded = world
+        .create_with_key(&create, world.member, padded, "key-12345678")
+        .await;
+    assert!(matches!(padded, Err(UseCaseError::IdempotencyKeyReused)), "{padded:?}");
+
+    world
+        .create_with_key(&create, world.colleague, lunch(), "key-12345678")
+        .await
+        .unwrap();
+    assert_eq!(world.rows().await, 2);
+}
+
+/// Two requests with the same key at the same time create exactly one expense.
+#[tokio::test]
+async fn two_concurrent_requests_with_one_key_create_one_expense() {
+    let database = TestDatabase::new().await.unwrap();
+    let world = World::new(&database);
+    let create = world.create();
+
+    let (first, second) = tokio::join!(
+        world.create_with_key(&create, world.member, lunch(), "key-concurrent"),
+        world.create_with_key(&create, world.member, lunch(), "key-concurrent"),
+    );
+
+    let outcomes = [first, second];
+    assert_eq!(world.rows().await, 1, "{outcomes:?}");
+    assert!(outcomes.iter().any(Result::is_ok), "{outcomes:?}");
+    for outcome in &outcomes {
+        assert!(
+            matches!(outcome, Ok(_) | Err(UseCaseError::IdempotencyInProgress(_))),
+            "{outcome:?}"
+        );
+    }
+}
+
+/// Keys expire after 24 hours: then the same key starts afresh, whatever the body.
+#[tokio::test]
+async fn a_key_expires_after_24_hours() {
+    let database = TestDatabase::new().await.unwrap();
+    let world = World::new(&database);
+    let clock = Arc::new(FixedClock::at(now()));
+    let create = CreateExpense::new(world.pool.clone(), clock.clone(), world.memberships.clone());
+    world
+        .create_with_key(&create, world.member, lunch(), "key-expiring")
+        .await
+        .unwrap();
+    let other = NewExpense {
+        merchant: "Other".to_owned(),
+        ..lunch()
+    };
+
+    clock.advance(chrono::TimeDelta::hours(24) - chrono::TimeDelta::seconds(1));
+    let within = world
+        .create_with_key(&create, world.member, other.clone(), "key-expiring")
+        .await;
+    assert!(matches!(within, Err(UseCaseError::IdempotencyKeyReused)), "{within:?}");
+
+    clock.advance(chrono::TimeDelta::seconds(1));
+    let after = world
+        .create_with_key(&create, world.member, other, "key-expiring")
+        .await
+        .unwrap();
+    assert_eq!(after.value.merchant().as_str(), "Other");
+    assert_eq!(world.rows().await, 2);
+}
+
+/// Java: the expense a key created was deleted, so there is nothing to replay: 409.
+#[tokio::test]
+async fn a_replay_of_a_deleted_expense_is_a_conflict() {
+    let database = TestDatabase::new().await.unwrap();
+    let world = World::new(&database);
+    let create = world.create();
+    let first = world
+        .create_with_key(&create, world.member, lunch(), "key-deleted")
+        .await
+        .unwrap();
+    world
+        .delete()
+        .execute(world.team, first.value.id(), world.member, first.version)
+        .await
+        .unwrap();
+
+    let replay = world
+        .create_with_key(&create, world.member, lunch(), "key-deleted")
+        .await;
+
+    assert!(
+        matches!(
+            replay,
+            Err(UseCaseError::IdempotencyInProgress(
+                "The expense created by this key no longer exists"
+            ))
+        ),
+        "{replay:?}"
+    );
 }

@@ -103,13 +103,9 @@ async fn create(
     let team = team(&parameters)?;
     let headers = request.headers().clone();
     let body: CreateExpenseRequest = read_json(request).await?;
+    let idempotency_key = header_text(&headers, "idempotency-key");
     let mut violations = Violations::default();
-    violations.size(
-        "idempotencyKey",
-        header_text(&headers, "idempotency-key").as_deref(),
-        8,
-        128,
-    );
+    violations.size("idempotencyKey", idempotency_key.as_deref(), 8, 128);
     violations.into_result()?;
     let money = body.money.as_ref().map(dto::MoneyBody::to_money).transpose()?;
     let (Some(money), Some(category), Some(incurred_on), Some(merchant)) =
@@ -129,7 +125,11 @@ async fn create(
             note: body.note,
         },
     };
-    let created = api.create.execute(command).await.map_err(|e| problem::failure(&e))?;
+    let created = api
+        .create
+        .execute(command, idempotency_key.as_deref())
+        .await
+        .map_err(|e| problem::failure(&e))?;
     let location = format!("/api/v1/teams/{team}/expenses/{}", created.value.id());
     let mut response = (StatusCode::CREATED, axum::Json(ExpenseResponse::from(&created))).into_response();
     insert_header(response.headers_mut(), header::LOCATION, &location);

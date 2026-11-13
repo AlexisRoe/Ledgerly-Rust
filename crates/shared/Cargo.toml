@@ -23,6 +23,7 @@ rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 sqlx = { workspace = true, features = ["macros"] }
 thiserror.workspace = true
 tokio = { workspace = true, optional = true }

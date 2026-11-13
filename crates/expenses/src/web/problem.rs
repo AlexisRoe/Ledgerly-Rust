@@ -31,6 +31,11 @@ pub(crate) fn failure(error: &UseCaseError) -> Problem {
     match error {
         UseCaseError::NotFound => Problem::not_found(),
         UseCaseError::Stale => Problem::precondition_failed(),
+        UseCaseError::IdempotencyKeyReused => Problem::new(
+            ErrorCode::IdempotencyKeyReused,
+            "This Idempotency-Key was used with a different request",
+        ),
+        UseCaseError::IdempotencyInProgress(detail) => Problem::new(ErrorCode::IdempotencyInProgress, *detail),
         UseCaseError::Refused(refused) => refusal(refused),
         UseCaseError::Storage(PersistenceError::Conflict { .. }) => Problem::precondition_failed(),
         UseCaseError::Storage(storage @ (PersistenceError::Corrupt { .. } | PersistenceError::Database(_))) => {

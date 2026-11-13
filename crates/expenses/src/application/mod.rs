@@ -37,6 +37,13 @@ pub(crate) enum UseCaseError {
     /// The client's `If-Match` names an older version. Java: `PreconditionFailed`.
     #[error("the expense changed since the version the client read")]
     Stale,
+    /// The `Idempotency-Key` was used before with a different request. Java: `Unprocessable(IDEMPOTENCY_KEY_REUSED)`.
+    #[error("the idempotency key was used with a different request")]
+    IdempotencyKeyReused,
+    /// The key's first request is still running, or its expense is gone. Java: `Conflict(IDEMPOTENCY_IN_PROGRESS)`,
+    /// with Java's detail.
+    #[error("{0}")]
+    IdempotencyInProgress(&'static str),
     /// The domain refused: a field rule, a transition, a role. Nothing was written.
     #[error(transparent)]
     Refused(#[from] ExpenseError),

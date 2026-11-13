@@ -653,3 +653,46 @@ async fn an_unknown_action_and_a_wrong_method_are_springs_rejections() {
         (StatusCode::BAD_REQUEST, "REQUEST_REJECTED")
     );
 }
+
+// --- idempotency (M3.5) -----------------------------------------------------------------------------------------
+
+/// Java: `ExpensesApiTest.sameKeySameBodyReplaysTheOriginal`, `sameKeyDifferentBodyIs422`,
+/// `keysArePerUser` and `withoutAKeyEveryPostCreates`.
+#[tokio::test]
+async fn an_idempotency_key_replays_the_same_request_and_refuses_another() {
+    let world = World::new().await;
+    let keyed = |caller: UserId, body: Value| {
+        world.send(
+            Some(caller),
+            Request::post(world.expenses()).header("idempotency-key", "key-12345678"),
+            Some(body),
+        )
+    };
+
+    let first = keyed(world.member, lunch()).await;
+    let replay = keyed(world.member, lunch()).await;
+    assert_eq!(
+        (first.status, replay.status),
+        (StatusCode::CREATED, StatusCode::CREATED)
+    );
+    assert_eq!(replay.body["id"], first.body["id"]);
+    assert_eq!(replay.headers["location"], first.headers["location"]);
+
+    let different = keyed(world.member, with(lunch(), "merchant", json!("Other"))).await;
+    assert_eq!(
+        (different.status, different.code()),
+        (StatusCode::UNPROCESSABLE_ENTITY, "IDEMPOTENCY_KEY_REUSED")
+    );
+    assert_eq!(
+        different.body["detail"],
+        "This Idempotency-Key was used with a different request"
+    );
+
+    let colleague = keyed(world.colleague, lunch()).await;
+    assert_eq!(colleague.status, StatusCode::CREATED);
+    assert_ne!(colleague.body["id"], first.body["id"]);
+
+    let unkeyed = world.create_as(world.member, lunch()).await;
+    let again = world.create_as(world.member, lunch()).await;
+    assert_ne!(unkeyed.body["id"], again.body["id"]);
+}

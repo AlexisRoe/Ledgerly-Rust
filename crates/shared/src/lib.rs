@@ -10,6 +10,7 @@ pub mod clock;
 pub mod config;
 pub mod database;
 pub mod id;
+pub mod idempotency;
 pub mod money;
 pub mod role;
 pub mod text;
