@@ -34,17 +34,22 @@ ledgerly-receipts = { path = "crates/receipts" }
 ledgerly-shared = { path = "crates/shared" }
 ledgerly-teams = { path = "crates/teams" }
 
+argon2 = "0.6.0"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 chrono = { version = "0.4.45", default-features = false, features = ["now", "std"] }
+jsonschema = { version = "0.61.2", default-features = false }
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace"] }
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace"] }
 proptest = "1.12.0"
-reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "multipart"] }
 rust_decimal = { version = "1.43.0", default-features = false, features = ["std"] }
 secrecy = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+serde-saphyr = "2.1.1"
+sha2 = "0.11.1"
+sqlx = { version = "0.9.0", default-features = false, features = ["chrono", "postgres", "runtime-tokio", "rust_decimal", "uuid"] }
 thiserror = "2.0.21"
 tower = { version = "0.5.3", default-features = false, features = ["util"] }
 tracing = "0.1.44"

@@ -9,4 +9,20 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# No workspace crate here, on purpose: the suite is a black box (ADR 0011) and the architecture test checks it.
 [dependencies]
+argon2.workspace = true
+chrono.workspace = true
+jsonschema.workspace = true
+reqwest.workspace = true
+rust_decimal.workspace = true
+serde-saphyr.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[[bin]]
+name = "parity"
+path = "src/bin/parity.rs"

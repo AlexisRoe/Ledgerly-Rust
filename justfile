@@ -5,8 +5,8 @@ set dotenv-load := true
 default:
     @just --list
 
-# Everything CI checks, in order. Grows with the milestones (docs/local-setup.md §4).
-verify: vendor-check fmt-check clippy deny test config-check openapi-lint
+# Everything CI checks, in order (docs/local-setup.md §4). The last step, the parity suite, needs Docker.
+verify: vendor-check fmt-check clippy deny test config-check openapi-lint parity
 
 # Fail if a file vendored from Ledgerly-Java was changed, removed or added (ADR 0007). Works offline.
 vendor-check:
@@ -28,9 +28,10 @@ clippy:
 deny:
     cargo deny check
 
-# Unit and integration tests with nextest, then doc-tests (nextest does not run those).
+# Unit and integration tests with nextest, then doc-tests (nextest does not run those). The parity tests under
+# crates/parity-tests/tests need a running app and have their own task, `just parity`.
 test:
-    cargo nextest run --workspace --locked
+    cargo nextest run --workspace --locked -E 'not (package(ledgerly-parity-tests) & kind(test))'
     cargo test --workspace --locked --doc
 
 # Fail if a YAML or JSON file of ours is not formatted (the vendored ones are in .prettierignore).
@@ -96,3 +97,17 @@ logs:
 # Show the running containers.
 ps:
     docker compose --profile app ps
+
+# --- acceptance ---
+
+# Run the black-box parity suite and print passed / ignored / failed per milestone (ADR 0011). Without an
+# argument it builds the image and starts the app once per run group; with a base URL it runs the default group
+# against that deployment, e.g. `just parity http://127.0.0.1:8080` (set PARITY_DATABASE_URL if it is not the
+# Compose database).
+parity url="":
+    {{ if url == "" { "just image" } else { "true" } }}
+    cargo run --locked --quiet -p ledgerly-parity-tests --bin parity -- {{ url }}
+
+# Run the vendored Bruno collection against a running `local` app (`just up` first).
+api-test:
+    cd bruno && npx --yes @usebruno/cli@4.3.0 run --env local -r

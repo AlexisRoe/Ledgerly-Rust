@@ -12,7 +12,18 @@ ignore = []
 [licenses]
 version = 2
 # Permissive licences only. Extend this list only with a reason next to the new entry.
-allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib"]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    # MIT without the attribution clause, so strictly more permissive than MIT. Comes in with `jsonschema`
+    # (borrow-or-share), which only the parity suite uses.
+    "MIT-0",
+]
 confidence-threshold = 0.9
 # The list is the policy (plan M1.7), not a record of what the tree happens to contain today.
 unused-allowed-license = "allow"

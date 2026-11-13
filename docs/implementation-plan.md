@@ -163,7 +163,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - `.github/workflows/upstream.yml` runs weekly and reports (doesn't fail) whether Ledgerly-Java's `main` is ahead of `SOURCE`.
   - Accept: CI is green on a push of this branch, as checked by the reviewer, since the agent doesn't push.
 
-- [ ] **M1.9 Parity suite: harness**
+- [x] **M1.9 Parity suite: harness**
   - Do:
     - `crates/parity-tests` holds tests that talk only HTTP and SQL.
       - `PARITY_BASE_URL`: the API under test. `PARITY_DATABASE_URL`: its database, used for fixtures and assertions on stored data.
