@@ -142,7 +142,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - `.env.example` with Java's keys and comments.
   - Accept: from a clean checkout, `just up` reaches a healthy app, and `docker compose ps` shows only `127.0.0.1` bindings.
 
-- [ ] **M1.6 First Dockerfile**
+- [x] **M1.6 First Dockerfile**
   - Do: the multi-stage build from ADR 0012 (cargo-chef, `cargo auditable build --release`, distroless `cc-debian12:nonroot`, all images pinned by digest). Hardening is finished in M11.
   - Accept: `just image` builds. `docker run … id` is impossible (no shell). The image config's `User` is `65532` or `nonroot`.
 
