@@ -10,6 +10,7 @@ mod query;
 mod routing;
 
 pub use current_user::CurrentUser;
+pub(crate) use extract::parse_uuid;
 pub use extract::{Json, MAX_JSON_BODY_SIZE, Validate, Violations, header_text, read_json, uuid_parameter};
 pub use problem::{ErrorCode, FieldViolation, Problem, TraceContext, render};
 pub use query::QueryParameters;

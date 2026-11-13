@@ -13,6 +13,7 @@ pub mod id;
 pub mod idempotency;
 pub mod iso;
 pub mod money;
+pub mod paging;
 pub mod role;
 pub mod text;
 pub mod version;

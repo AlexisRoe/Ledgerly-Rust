@@ -34,6 +34,7 @@ ledgerly-shared = { path = "crates/shared" }
 ledgerly-teams = { path = "crates/teams" }
 
 argon2 = "0.6.0"
+base64 = "0.23.1"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 crc = "3.4.0"
 http-body-util = "0.1.5"

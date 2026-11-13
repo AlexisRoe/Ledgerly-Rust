@@ -280,7 +280,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - Response in Spring's `PagedModel` shape.
   - Accept: 250 seeded expenses paged by 100 visit each exactly once; `sort=password` → 400; inventory §4.4 traps for this endpoint.
 
-- [ ] **M4.2 Cursor codec and keyset helper**
+- [x] **M4.2 Cursor codec and keyset helper**
   - Do: `Cursor { t: Instant, id: Uuid }` encoded as unpadded Base64url JSON with keys in Java's order (port spec §3.6); junk → 400. A keyset query helper (`(created_at, id) < ($1, $2) … LIMIT n+1`), tested against `expenses`.
   - Accept: inserting rows while paging produces no duplicates. A cursor Java produced decodes (test vector built from the format spec).
 
