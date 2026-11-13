@@ -487,6 +487,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 
 - [ ] **M10.2 Headers and CORS**
   - Do: Java's exact security headers on every response, including errors and 404s (inventory §4.3). The CORS exact-origin allowlist from `LEDGERLY_SECURITY_ALLOWED_ORIGINS`: a wildcard or a path refuses startup, and a disallowed origin on a real request gets 403 as Java does.
+    - Also Spring's implicit answers the route table does not give yet (decided after M3): `OPTIONS` on a known path is 200 with `Allow` (and a CORS preflight where allowed), and an `Accept` the endpoint cannot produce is 406.
   - Accept: Api8 parity tests and Bruno `05-security`.
 
 - [ ] **M10.3 Metrics and traces**

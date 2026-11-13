@@ -107,7 +107,11 @@ const CATALOGUE: &[(&str, u16, &str, &str)] = &[
 ];
 
 /// Checks a problem body against the catalogue and that it carries a W3C trace id (§4.1 "When the problem
-/// body appears"). `REQUEST_REJECTED` keeps the status Spring chose, so only its other members are checked.
+/// body appears").
+///
+/// `REQUEST_REJECTED` marks a problem Spring built itself: Java's `ProblemFactory.enrich` adds only `code` and
+/// `traceId`, so status, `type` (`about:blank`) and `title` (the status's reason phrase) stay Spring's (decided
+/// after M3).
 fn assert_catalogued(response: &Response, code: &str) {
     let body = response.json();
     let (_, status, slug, title) = CATALOGUE
@@ -119,8 +123,17 @@ fn assert_catalogued(response: &Response, code: &str) {
         assert_eq!(response.status, *status, "{body}");
     }
     assert_eq!(body["status"], response.status, "{body}");
-    assert_eq!(body["type"], format!("https://ledgerly.dev/problems/{slug}"), "{body}");
-    assert_eq!(body["title"], *title, "{body}");
+    if code == "REQUEST_REJECTED" {
+        let reason = reqwest::StatusCode::from_u16(response.status)
+            .unwrap()
+            .canonical_reason()
+            .unwrap();
+        assert_eq!(body["type"], "about:blank", "{body}");
+        assert_eq!(body["title"], reason, "{body}");
+    } else {
+        assert_eq!(body["type"], format!("https://ledgerly.dev/problems/{slug}"), "{body}");
+        assert_eq!(body["title"], *title, "{body}");
+    }
     assert_eq!(response.media_type().as_deref(), Some("application/problem+json"));
     let trace_id = body["traceId"]
         .as_str()
@@ -138,9 +151,8 @@ fn id(response: &Response) -> String {
 mod m3 {
     use super::*;
 
-    /// §4.1: an unknown route is a problem with `REQUEST_REJECTED`, its catalogue type and a trace id.
+    /// §4.1: an unknown route is Spring's 404 problem with `REQUEST_REJECTED` and a trace id.
     #[tokio::test]
-    #[ignore = "M3: expects the catalogue's type and title for REQUEST_REJECTED, but Java's ProblemFactory.enrich (src/main/java/com/ledgerly/shared/error/ProblemFactory.java) only adds code and traceId to Spring's own problem, which keeps type about:blank and title Not Found; raised in learning log M3"]
     async fn an_unknown_route_is_a_catalogued_problem_with_a_trace_id() {
         let world = World::start().await;
 
