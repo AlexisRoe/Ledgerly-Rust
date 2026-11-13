@@ -1,4 +1,4 @@
-use crate::fixtures::{Fixtures, PASSWORD, User};
+use crate::fixtures::Fixtures;
 use crate::http::Client;
 
 /// Where the system under test is, read from the environment `just parity` sets.
@@ -14,6 +14,11 @@ pub struct Target {
     pub s3_endpoint: String,
     /// `PARITY_S3_BUCKET`: the bucket the API is configured with.
     pub s3_bucket: String,
+    /// `PARITY_KEYCLOAK_URL`: the Keycloak of `compose.yaml`, as the tests reach it.
+    pub keycloak_url: String,
+    /// `PARITY_APP_CONTAINER`: the name of the container the app runs in, when `just parity` started it. Its
+    /// stdout is the app's log.
+    pub app_container: Option<String>,
 }
 
 fn variable(name: &str) -> Option<String> {
@@ -47,6 +52,8 @@ impl Target {
                 .unwrap_or_else(|| "postgres://ledgerly:ledgerly@127.0.0.1:5432/ledgerly".to_owned()),
             s3_endpoint: variable("PARITY_S3_ENDPOINT").unwrap_or_else(|| "http://127.0.0.1:8333".to_owned()),
             s3_bucket: variable("PARITY_S3_BUCKET").unwrap_or_else(|| "ledgerly-files".to_owned()),
+            keycloak_url: variable("PARITY_KEYCLOAK_URL").unwrap_or_else(|| "http://127.0.0.1:8180".to_owned()),
+            app_container: variable("PARITY_APP_CONTAINER"),
         }
     }
 
@@ -62,29 +69,26 @@ impl Target {
         Client::new(&self.management_url)
     }
 
-    /// Logs a fixture user in over HTTP and returns the access token. This is how the suite gets tokens: it
-    /// cannot mint them, as Java's tests do with `AccessTokenIssuer`.
+    /// Everything the app has logged so far (stdout and stderr of its container).
     ///
     /// # Panics
     ///
-    /// Panics if the login is refused.
-    pub async fn token_for(&self, user: &User) -> String {
-        let response = self
-            .api()
-            .post("/api/v1/auth/login")
-            .json(&serde_json::json!({"email": user.email, "password": PASSWORD}))
-            .send()
-            .await;
-        assert_eq!(
-            response.status,
-            200,
-            "login of a fixture user failed: {}",
-            response.text()
-        );
-        response.json()["accessToken"]
-            .as_str()
-            .expect("a login response has an accessToken")
-            .to_owned()
+    /// Panics if the app was not started by `just parity`, or if Docker cannot be asked.
+    #[must_use]
+    pub fn app_logs(&self) -> String {
+        let container = self.app_container.as_deref().unwrap_or_else(|| {
+            panic!("PARITY_APP_CONTAINER is not set: the logs can only be read when `just parity` started the app")
+        });
+        let output = std::process::Command::new("docker")
+            .args(["logs", container])
+            .output()
+            .unwrap_or_else(|error| panic!("docker logs {container}: {error}"));
+        assert!(output.status.success(), "docker logs {container} failed");
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
     }
 
     /// Connects to the database for fixtures and assertions on stored data.

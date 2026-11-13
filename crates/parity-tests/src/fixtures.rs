@@ -26,6 +26,28 @@ pub const PASSWORD: &str = "parity-suite-password";
 /// The minimal PDF of Java's `OwaspTestBase.PDF`.
 pub const PDF: &[u8] = b"%PDF-1.4\n1 0 obj << >> endobj\n%%EOF\n";
 
+/// The EICAR anti-malware test file: 68 harmless bytes that every scanner reports as infected. It is put
+/// together here from two halves so that no file in this repository contains it, and a scanner on a
+/// developer's machine leaves the checkout alone.
+#[must_use]
+pub fn eicar() -> String {
+    [
+        r"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD",
+        "-ANTIVIRUS-TEST-FILE!$H+H*",
+    ]
+    .concat()
+}
+
+/// `"%PDF-1.4\n" + EICAR`: what Java's tests upload as an infected receipt. It starts like a PDF, so the type
+/// check lets it through to the scanner.
+#[must_use]
+pub fn infected_pdf() -> Vec<u8> {
+    format!("%PDF-1.4\n{}", eicar()).into_bytes()
+}
+
+/// The first bytes of a Windows executable, as in Java's tests: content that is neither a receipt nor a CSV.
+pub const EXE: &[u8] = &[b'M', b'Z', 0x90, 0, 3, 0, 0, 0, 4, 0, 0, 0, 0xFF, 0xFF, 0, 0];
+
 /// A user that can log in with [`PASSWORD`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct User {
@@ -305,6 +327,26 @@ impl Fixtures {
         id
     }
 
+    /// True if the object store has an object under `key` in the bucket the API uses.
+    pub async fn object_exists(&self, key: &str) -> bool {
+        let response = self
+            .http
+            .head(format!("{}/{}/{key}", self.s3_endpoint, self.s3_bucket))
+            .send()
+            .await
+            .unwrap_or_else(|error| panic!("PARITY_S3_ENDPOINT: the object store cannot be reached ({error})"));
+        response.status().is_success()
+    }
+
+    /// The `storage_key` column of a receipt.
+    pub async fn storage_key(&self, receipt: Uuid) -> String {
+        sqlx::query_scalar("select storage_key from receipts where id = $1")
+            .bind(receipt)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or_else(|error| panic!("no receipt {receipt}: {error}"))
+    }
+
     /// Stores an object under `key` in the bucket the API uses, creating the bucket if it is missing. The
     /// development object store takes unsigned requests; a deployment with real credentials needs its objects
     /// put there by other means.
@@ -359,6 +401,16 @@ mod tests {
     fn the_fixture_hash_is_computed_once() {
         assert!(std::ptr::eq(fixture_password_hash(), fixture_password_hash()));
         assert!(fixture_password_hash().starts_with("$argon2id$v=19$m=16384,t=2,p=1$"));
+    }
+
+    #[test]
+    fn the_eicar_file_is_the_68_standard_bytes() {
+        let eicar = eicar();
+
+        assert_eq!(eicar.len(), 68);
+        assert!(eicar.starts_with("X5O!P%@AP[4\\PZX54(P^)7CC)7}$"));
+        assert!(eicar.ends_with("$H+H*"));
+        assert!(infected_pdf().starts_with(b"%PDF-1.4\n"));
     }
 
     #[test]

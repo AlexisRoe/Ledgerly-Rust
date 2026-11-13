@@ -57,17 +57,19 @@ fn run(existing_deployment: Option<&str>) -> Result<bool, String> {
             None => {
                 eprintln!("parity: group `{}`: starting the app", group.name);
                 let container = start_app(group)?;
+                compose(&["stop"], group.stopped_services);
                 let result = wait_until_ready().and_then(|()| {
                     run_tests(
                         &files,
                         &format!("http://127.0.0.1:{API_PORT}"),
-                        Some(&format!("http://127.0.0.1:{MANAGEMENT_PORT}")),
+                        Some((&format!("http://127.0.0.1:{MANAGEMENT_PORT}"), &container)),
                     )
                 });
                 if result.is_err() {
                     print_logs(&container);
                 }
                 stop_app(&container);
+                compose(&["start"], group.stopped_services);
                 outcomes.extend(result?);
             }
         }
@@ -106,7 +108,7 @@ fn list_tests() -> Result<Vec<Listed>, String> {
 fn run_tests(
     files: &BTreeSet<&str>,
     base_url: &str,
-    management_url: Option<&str>,
+    own_container: Option<(&str, &str)>,
 ) -> Result<Vec<(TestId, Outcome)>, String> {
     let filter = files
         .iter()
@@ -120,8 +122,11 @@ fn run_tests(
         .env("NEXTEST_EXPERIMENTAL_LIBTEST_JSON", "1")
         .env("PARITY_BASE_URL", base_url)
         .stderr(Stdio::inherit());
-    if let Some(management_url) = management_url {
-        command.env("PARITY_MANAGEMENT_URL", management_url);
+    if let Some((management_url, container)) = own_container {
+        // The container's name lets the log-hygiene test read what the app wrote to stdout.
+        command
+            .env("PARITY_MANAGEMENT_URL", management_url)
+            .env("PARITY_APP_CONTAINER", container);
     }
     let output = command
         .output()
@@ -175,6 +180,20 @@ fn stop_app(container: &str) {
     // Stopping a container that does not exist fails, which is fine.
     let _ = Command::new("docker")
         .args(["rm", "--force", container])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+/// `docker compose <action> <services>`, for stopping and restarting a dependency around a group.
+fn compose(action: &[&str], services: &[&str]) {
+    if services.is_empty() {
+        return;
+    }
+    let _ = Command::new("docker")
+        .arg("compose")
+        .args(action)
+        .args(services)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();

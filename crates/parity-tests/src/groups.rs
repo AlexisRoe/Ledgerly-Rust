@@ -13,6 +13,9 @@ pub struct Group {
     pub files: &'static [&'static str],
     /// Environment of the app, on top of [`BASE_ENVIRONMENT`].
     pub environment: &'static [(&'static str, &'static str)],
+    /// Compose services that are stopped while the group runs and started again afterwards. Java flips a
+    /// switch on a fake scanner; from outside, an outage is a stopped container (ADR 0011).
+    pub stopped_services: &'static [&'static str],
 }
 
 /// What every group starts the app with: Java's `test` profile and `src/test/resources/application-test.yaml`,
@@ -38,6 +41,7 @@ pub const DEFAULT: Group = Group {
     name: "default",
     files: &[],
     environment: &[],
+    stopped_services: &[],
 };
 
 /// Every group, the default one first.
@@ -55,12 +59,12 @@ pub const GROUPS: &[Group] = &[
             "owasp_api8_security_misconfiguration",
             "owasp_api10_unsafe_consumption",
             "owasp_log_hygiene",
-            "owasp_metrics",
         ],
         environment: &[
             ("LEDGERLY_LIMITS_REQUESTS_PER_MINUTE", "250"),
             ("LEDGERLY_SECURITY_ALLOWED_ORIGINS", "https://app.example.com"),
         ],
+        stopped_services: &[],
     },
     // `Api4UnrestrictedResourceConsumptionTest`: limits low enough to hit in one test.
     Group {
@@ -70,19 +74,66 @@ pub const GROUPS: &[Group] = &[
             ("LEDGERLY_LIMITS_REQUESTS_PER_MINUTE", "30"),
             ("LEDGERLY_LIMITS_AUTH_REQUESTS_PER_MINUTE", "12"),
             ("LEDGERLY_SECURITY_ALLOWED_ORIGINS", "https://app.example.com"),
+            // Each test claims its own client address in X-Forwarded-For (see `World::client_address`).
+            ("SERVER_FORWARD_HEADERS_STRATEGY", "native"),
         ],
+        stopped_services: &[],
     },
     // `BatchAndExportApiTest`: an export cap a test can exceed.
     Group {
         name: "export",
         files: &["expenses_batch_and_export"],
         environment: &[("LEDGERLY_LIMITS_MAX_EXPORT_ROWS", "1200")],
+        stopped_services: &[],
+    },
+    // `MetricsTest` compares counters before and after. Its file has the app to itself and runs one test at a
+    // time (.config/nextest.toml), so that nothing else moves the counters.
+    Group {
+        name: "metrics",
+        files: &["owasp_metrics"],
+        environment: &[("LEDGERLY_LIMITS_REQUESTS_PER_MINUTE", "250")],
+        stopped_services: &[],
+    },
+    // `FakeMalwareScanner.unavailable = true`: the scanner gives no answer.
+    Group {
+        name: "scanner-down",
+        files: &["receipts_scanner_outage"],
+        environment: &[],
+        stopped_services: &["clamav"],
+    },
+    // `KeycloakEndToEndTest`: tokens come from the realm in `compose.yaml`. M11 has to settle the issuer: the
+    // app reaches Keycloak as `keycloak:8080`, the tests as `127.0.0.1:8180`, and both must see one `iss`.
+    Group {
+        name: "keycloak",
+        files: &["keycloak"],
+        environment: &[
+            ("SPRING_PROFILES_ACTIVE", "test,keycloak"),
+            (
+                "SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI",
+                "http://keycloak:8080/realms/ledgerly",
+            ),
+        ],
+        stopped_services: &[],
+    },
+    // `ExternalIdentityTest`: the identity provider cannot be reached.
+    Group {
+        name: "keycloak-down",
+        files: &["keycloak_unreachable"],
+        environment: &[
+            ("SPRING_PROFILES_ACTIVE", "test,keycloak"),
+            (
+                "SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI",
+                "http://keycloak:8080/realms/ledgerly",
+            ),
+        ],
+        stopped_services: &["keycloak"],
     },
     // `SwaggerUiProfileTest`, `Api9ImproperInventoryManagementTest`: the `local` profile serves the docs.
     Group {
         name: "local",
         files: &["local_profile", "owasp_api9_inventory"],
         environment: &[("SPRING_PROFILES_ACTIVE", "local,test")],
+        stopped_services: &[],
     },
 ];
 

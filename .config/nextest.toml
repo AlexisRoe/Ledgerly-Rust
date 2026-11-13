@@ -2,3 +2,11 @@
 # blocking `just verify` forever.
 [profile.default]
 slow-timeout = { period = "30s", terminate-after = 4 }
+
+# MetricsTest compares counters before and after an action, so its tests must not run at the same time.
+[test-groups]
+serial = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(=owasp_metrics)'
+test-group = 'serial'

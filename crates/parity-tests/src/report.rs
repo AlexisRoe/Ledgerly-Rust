@@ -52,6 +52,10 @@ pub fn parse_list(json: &str) -> Result<Vec<Listed>, String> {
             continue;
         }
         let file = suite["binary-name"].as_str().ok_or("a suite has no `binary-name`")?;
+        // Checks the suite against the inventory and needs no app; `just test` runs it.
+        if file == "inventory" {
+            continue;
+        }
         let cases = suite["testcases"].as_object().ok_or("a suite has no `testcases`")?;
         for (name, case) in cases {
             listed.push(Listed {

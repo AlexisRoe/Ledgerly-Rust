@@ -173,7 +173,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - `just api-test` runs the vendored Bruno collection (pinned Bruno CLI) against a `local` app.
   - Accept: `just parity` runs and prints `passed / ignored / failed` per milestone tag.
 
-- [ ] **M1.10 Parity suite: port every test, ignored**
+- [x] **M1.10 Parity suite: port every test, ignored**
   - Do:
     - For every row in `reference/java-test-inventory.md` §1–§2 marked `BB` or `BB+S`, write the equivalent test, marked `#[ignore = "M<N>"]` with its **Feat** milestone.
     - For each parity trap in §4 (error codes, status precedence, headers, formats, audit content, operational surface), write one explicit test.

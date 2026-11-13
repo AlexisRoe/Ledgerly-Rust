@@ -14,6 +14,8 @@ use crate::spec::Spec;
 pub struct Client {
     http: reqwest::Client,
     base_url: String,
+    bearer: Option<String>,
+    default_headers: Vec<(String, String)>,
 }
 
 impl Client {
@@ -27,13 +29,36 @@ impl Client {
         Self {
             http,
             base_url: base_url.trim_end_matches('/').to_owned(),
+            bearer: None,
+            default_headers: Vec::new(),
         }
+    }
+
+    /// The same client, sending this header with every request.
+    #[must_use]
+    pub fn with_default_header(mut self, name: &str, value: &str) -> Self {
+        self.default_headers.push((name.to_owned(), value.to_owned()));
+        self
+    }
+
+    /// The same client, sending `Authorization: Bearer <token>` with every request.
+    #[must_use]
+    pub fn with_bearer(mut self, token: &str) -> Self {
+        self.bearer = Some(token.to_owned());
+        self
     }
 
     /// Starts a request. `path` begins with `/` and includes the server prefix: `/api/v1/me`.
     pub fn request(&self, method: Method, path: &str) -> Request {
+        let mut builder = self.http.request(method.clone(), format!("{}{path}", self.base_url));
+        if let Some(token) = &self.bearer {
+            builder = builder.bearer_auth(token);
+        }
+        for (name, value) in &self.default_headers {
+            builder = builder.header(name, value);
+        }
         Request {
-            builder: self.http.request(method.clone(), format!("{}{path}", self.base_url)),
+            builder,
             method,
             path: path.to_owned(),
         }
@@ -74,12 +99,6 @@ pub struct Request {
 }
 
 impl Request {
-    /// Adds `Authorization: Bearer <token>`.
-    pub fn bearer(mut self, token: &str) -> Self {
-        self.builder = self.builder.bearer_auth(token);
-        self
-    }
-
     pub fn header(mut self, name: &str, value: &str) -> Self {
         self.builder = self.builder.header(name, value);
         self
@@ -205,6 +224,36 @@ impl Response {
             .unwrap_or_else(|error| panic!("the body is not JSON ({error}): {}", self.text()))
     }
 
+    /// The names of the top-level properties of a JSON object body, in the order the server wrote them.
+    /// (`json()` cannot tell: a parsed object is sorted by name.)
+    ///
+    /// # Panics
+    ///
+    /// Panics, quoting the body, if it is not a JSON object.
+    #[must_use]
+    pub fn property_names(&self) -> Vec<String> {
+        struct Names;
+        impl<'de> serde::de::Visitor<'de> for Names {
+            type Value = Vec<String>;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a JSON object")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut names = Vec::new();
+                while let Some(name) = map.next_key::<String>()? {
+                    map.next_value::<serde::de::IgnoredAny>()?;
+                    names.push(name);
+                }
+                Ok(names)
+            }
+        }
+        let mut deserializer = serde_json::Deserializer::from_slice(&self.body);
+        serde::Deserializer::deserialize_map(&mut deserializer, Names)
+            .unwrap_or_else(|error| panic!("the body is not a JSON object ({error}): {}", self.text()))
+    }
+
     /// The `code` of a problem body, or `None` if the body is not a problem document with one.
     #[must_use]
     pub fn problem_code(&self) -> Option<String> {
@@ -262,6 +311,16 @@ mod tests {
         assert_eq!(response.cookie("refresh_token").as_deref(), Some("abc123"));
         assert_eq!(response.cookie("missing"), None);
         assert_eq!(response.header_values("set-cookie").len(), 2);
+    }
+
+    #[test]
+    fn property_names_keep_the_order_of_the_body() {
+        let response = response(
+            &[],
+            r#"{"id":"1","email":"a@b.c","role":"MEMBER","status":{"z":1,"a":2}}"#,
+        );
+
+        assert_eq!(response.property_names(), ["id", "email", "role", "status"]);
     }
 
     #[test]

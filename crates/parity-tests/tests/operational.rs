@@ -3,6 +3,9 @@
 //! Java: `src/test/java/com/ledgerly/ActuatorHealthTest.java`, and the management-port half of
 //! `owasp/Api8SecurityMisconfigurationTest.java`.
 
+// clippy.toml exempts `#[test]` functions only; the helpers of a test file are test code too.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+
 use ledgerly_parity_tests::Target;
 use serde_json::json;
 

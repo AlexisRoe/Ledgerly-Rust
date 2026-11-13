@@ -181,6 +181,19 @@ user-supplied URL with `java.net.http.HttpClient`) that is used only by the test
 | `everyPathIsVersionedExceptTheKeyDiscoveryDocument` | Every mapped route is `/api/v1/...` or `/.well-known/jwks.json`. | INT | M5 |
 | `theSpecTheApplicationServesIsTheFileInTheRepository` | `GET /swagger-ui/openapi.yaml` (no token, local profile) is **byte-equal** to `api/openapi.yaml` and contains `openapi: 3.1.0`. | BB+H(profile local) | M3 |
 
+### Api10UnsafeConsumptionOfApisTest.java
+
+Added when M1.10 ported the OWASP tests: the class exists at the pinned commit but was missing from this list.
+
+| Method | Observable HTTP behaviour asserted | Kind | Feat | BB setup |
+| --- | --- | --- | --- | --- |
+| `aFormulaInTheDataIsEscapedInTheExport` | A merchant `=HYPERLINK(...)` and a note `@SUM(1+1)` (set by SQL) come out of `expenses.csv` prefixed with `'` and RFC 4180-quoted; no data line contains `,=` or `,@`. | BB+S | M8 | M8 |
+| `aFormulaThatEntersThroughAnImportIsStoredAsTypedAndEscapedOnTheWayOut` | An imported merchant `=cmd\|' /C calc'!A0` and note `+1+1` are stored verbatim (DB) and exported as `'=cmd...` and `,'+1+1`. | BB+S | M8 | M8 |
+| `aFileIsNeverAcceptedUntilTheScannerHasClearlySaidSo` | With the scanner unavailable, an upload stays `PENDING_SCAN` and its download is 404. | BB+H(scanner) | M7 | M7 |
+| `anInfectedFileIsQuarantinedAndNeverServed` | An EICAR upload becomes `QUARANTINED` within 20 s; download is 404 for the claimant and the approver. | BB+S | M7 | M7 |
+| `theClaimedFileTypeAndNameAreNeverTrusted` | An EXE named `invoice.pdf` and HTML declared as `image/png` both give 415. | BB+S | M7 | M7 |
+| `aCsvThatIsReallyBinaryIsRefused` | An EXE uploaded as an import gives 415; the export still gives 200. | BB+S | M8 | M8 |
+
 ### LogHygieneTest.java
 
 | Method | What it asserts | Kind | Feat |

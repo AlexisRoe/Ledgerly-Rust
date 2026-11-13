@@ -1,6 +1,9 @@
 //! Not ported from Java: checks that the harness itself can do what the ported tests rely on. If a migration
 //! changes a table, this fails here, with a clear message, and not in fifty tests at once.
 
+// clippy.toml exempts `#[test]` functions only; the helpers of a test file are test code too.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+
 use ledgerly_parity_tests::Target;
 use ledgerly_parity_tests::encoding::sha256_hex;
 use ledgerly_parity_tests::fixtures::Expense;

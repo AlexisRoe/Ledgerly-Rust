@@ -6,6 +6,7 @@
 //!
 //! What a test gets from here:
 //!
+//! - [`World`]: all of the below in one value, with the calls most tests start with.
 //! - [`Target`]: where the system under test is (`PARITY_BASE_URL`, `PARITY_DATABASE_URL`, …).
 //! - [`http::Client`]: requests against the API or the management port. Every response is checked against the
 //!   vendored `api/openapi.yaml` unless the test opts out for a path the spec does not describe.
@@ -25,8 +26,12 @@ pub mod encoding;
 pub mod fixtures;
 pub mod groups;
 pub mod http;
+pub mod jwt;
+pub mod prometheus;
 pub mod report;
 pub mod spec;
 mod target;
+mod world;
 
 pub use target::Target;
+pub use world::{Session, SignedInTeam, V1, World, eventually, expense_json, today};

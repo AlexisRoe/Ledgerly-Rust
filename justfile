@@ -29,9 +29,10 @@ deny:
     cargo deny check
 
 # Unit and integration tests with nextest, then doc-tests (nextest does not run those). The parity tests under
-# crates/parity-tests/tests need a running app and have their own task, `just parity`.
+# crates/parity-tests/tests need a running app and have their own task, `just parity`; only the inventory
+# check among them runs here.
 test:
-    cargo nextest run --workspace --locked -E 'not (package(ledgerly-parity-tests) & kind(test))'
+    cargo nextest run --workspace --locked -E 'not (package(ledgerly-parity-tests) & kind(test) & not binary(=inventory))'
     cargo test --workspace --locked --doc
 
 # Fail if a YAML or JSON file of ours is not formatted (the vendored ones are in .prettierignore).
