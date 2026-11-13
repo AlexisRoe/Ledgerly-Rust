@@ -312,6 +312,12 @@ async fn weak_malformed_or_oversized_input_is_a_validation_problem() {
             "size must be between 0 and 254",
         ),
         (json!({"password": PASSWORD}), "email", "must not be null"),
+        // Hibernate's @Email accepts "", Java registers it; refused here (decision after M5).
+        (
+            json!({"email": "", "password": PASSWORD}),
+            "email",
+            "must be a well-formed email address",
+        ),
         (json!({"email": email}), "password", "must not be null"),
     ] {
         let reply = world.post("/api/v1/auth/register", &body).await;

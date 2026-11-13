@@ -124,10 +124,12 @@ impl Violations {
         }
     }
 
-    /// `@Email`, Hibernate's check (see [`crate::email`]). A missing value is not checked.
+    /// `@Email`, Hibernate's check (see [`crate::email`]), except that the empty text is refused too: Hibernate
+    /// accepts `""`, so Java registers an account without an email (refused here by decision of the reviewer
+    /// after M5). A missing value is not checked.
     pub fn email(&mut self, field: &str, value: Option<&str>) {
         if let Some(value) = value
-            && !crate::email::is_well_formed(value)
+            && (value.is_empty() || !crate::email::is_well_formed(value))
         {
             self.add(field, "must be a well-formed email address");
         }

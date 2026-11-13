@@ -135,12 +135,16 @@ impl SigningKeys {
     /// `kid` is the public key's RFC 7638 thumbprint, so it is the same after every restart. Java:
     /// `JwtKeys.fromPem` with `keyIDFromThumbprint()`.
     ///
-    /// Like Java, it does not check that the two keys belong together.
+    /// Unlike Java, it checks that the public key is the private key's own, and refuses a pair that is not
+    /// (decision of the reviewer after M5): Java starts with such a pair and then refuses every token it issues.
     fn from_text(private_key: &SecretString, public_key: &str) -> Result<Self, KeyError> {
         let private_der = Zeroizing::new(pem_body(private_key.expose_secret()).ok_or(KeyError::Invalid)?);
         let signing = SigningKey::from_pkcs8_der(&private_der).map_err(|_| KeyError::Invalid)?;
         let public_der = pem_body(public_key).ok_or(KeyError::Invalid)?;
         let verifying = VerifyingKey::from_public_key_der(&public_der).map_err(|_| KeyError::Invalid)?;
+        if *signing.verifying_key() != verifying {
+            return Err(KeyError::Invalid);
+        }
         let kid = thumbprint(&verifying);
         Ok(Self {
             signing,

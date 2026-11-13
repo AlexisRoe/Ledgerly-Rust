@@ -169,6 +169,20 @@ fn an_unreadable_key_is_refused_without_quoting_it() {
     }
 }
 
+/// Decision after M5: a public key that is not the private key's own stops the start (Java starts and then
+/// refuses every token).
+#[test]
+fn a_public_key_of_another_pair_is_refused() {
+    let other = SigningKeys::from_config(None, None, true).unwrap();
+    let other_public = p256::pkcs8::EncodePublicKey::to_public_key_der(&other.verifying).unwrap();
+    let other_public = base64::engine::general_purpose::STANDARD.encode(other_public.as_bytes());
+
+    let error =
+        SigningKeys::from_config(Some(&SecretString::from(PRIVATE_PEM)), Some(&other_public), false).unwrap_err();
+
+    assert!(matches!(error, KeyError::Invalid));
+}
+
 #[test]
 fn debug_shows_the_kid_and_nothing_of_the_key() {
     let printed = format!("{:?}", fixed_keys());
