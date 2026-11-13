@@ -3,7 +3,7 @@
 //! Java counterpart: `ProductionEnvironmentCheckTest.theWholeApplicationRefusesToStartInProdWithoutConfiguration`.
 
 // clippy.toml exempts `#[test]` functions only; the helpers of an integration test are test code too.
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::process::Command;
 
@@ -83,16 +83,23 @@ fn health_status(port: u16) -> Option<u16> {
 }
 
 #[test]
-fn the_binary_serves_until_sigterm_and_then_exits_cleanly() {
+fn the_binary_logs_ecs_json_serves_until_sigterm_and_then_exits_cleanly() {
     let (api_port, management_port) = (free_port(), free_port());
-    let mut child = Command::new(env!("CARGO_BIN_EXE_ledgerly"))
+    let child = Command::new(env!("CARGO_BIN_EXE_ledgerly"))
         .env_clear()
-        .env("SPRING_PROFILES_ACTIVE", "local")
+        .env("SPRING_PROFILES_ACTIVE", "test")
         .env("SPRING_DATASOURCE_URL", "jdbc:postgresql://localhost:5432/ledgerly")
         .env("SPRING_DATASOURCE_USERNAME", "ledgerly")
-        .env("SPRING_DATASOURCE_PASSWORD", "ledgerly")
+        .env("SPRING_DATASOURCE_PASSWORD", "pw-4f9a")
+        .env("LEDGERLY_STORAGE_S3_ENDPOINT", "http://localhost:8333")
+        .env("LEDGERLY_STORAGE_S3_BUCKET", "test-files")
+        .env("LEDGERLY_STORAGE_S3_ACCESS_KEY", "key-2b8e")
+        .env("LEDGERLY_STORAGE_S3_SECRET_KEY", "secret-9d3f")
+        .env("LEDGERLY_RECEIPTS_CLAMAV_HOST", "localhost")
+        .env("LEDGERLY_RECEIPTS_CLAMAV_PORT", "3310")
         .env("SERVER_PORT", api_port.to_string())
         .env("MANAGEMENT_SERVER_PORT", management_port.to_string())
+        .stdout(std::process::Stdio::piped())
         .spawn()
         .unwrap();
 
@@ -109,7 +116,33 @@ fn the_binary_serves_until_sigterm_and_then_exits_cleanly() {
         .unwrap();
     assert!(killed.success());
 
-    let status = child.wait().unwrap();
-    assert_eq!(status.code(), Some(0), "SIGTERM ends the process with exit code 0");
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "SIGTERM ends the process with exit code 0"
+    );
     assert_eq!(health_status(management_port), None);
+
+    // Java: `LedgerlyApplicationTest` asserts that the log lines are JSON with a `message` member.
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let messages: Vec<String> = stdout
+        .lines()
+        .map(|line| {
+            let json: serde_json::Value =
+                serde_json::from_str(line).unwrap_or_else(|_| panic!("not a JSON log line: {line}"));
+            assert_eq!(json["service"]["name"], "ledgerly");
+            json["message"].as_str().unwrap().to_owned()
+        })
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            "Started Ledgerly",
+            "Commencing graceful shutdown. Waiting for active requests to complete"
+        ]
+    );
+    for secret in ["pw-4f9a", "key-2b8e", "secret-9d3f"] {
+        assert!(!stdout.contains(secret));
+    }
 }

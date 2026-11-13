@@ -36,6 +36,9 @@ ledgerly-teams = { path = "crates/teams" }
 
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 chrono = { version = "0.4.45", default-features = false, features = ["now", "std"] }
+opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace"] }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace"] }
 proptest = "1.12.0"
 reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
 rust_decimal = { version = "1.43.0", default-features = false, features = ["std"] }
@@ -43,5 +46,8 @@ secrecy = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
+tower = { version = "0.5.3", default-features = false, features = ["util"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "fmt", "registry", "std"] }
 tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 uuid = { version = "1.29.2", features = ["serde", "v4", "v7"] }

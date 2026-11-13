@@ -127,7 +127,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Accept: an integration test starts the app on random ports. Health is `UP`, readiness is `UP`, and an unknown management path gives 404. A shutdown test shows that an in-flight request completes.
   - Java: `R/application.yaml` `management.*`; port spec §3.9; Java deployment doc "Ports and probes".
 
-- [ ] **M1.4 Logging and tracing**
+- [x] **M1.4 Logging and tracing**
   - Do:
     - A `tracing` subscriber with an ECS JSON formatter writing Spring Boot's `ecs` field set (port spec §3.8). In `local`, human-readable output instead.
     - A request span with `traceId` and `spanId` (W3C, 32/16 hex), and OTLP trace export to `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT`.

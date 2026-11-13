@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use ledgerly_app::App;
 use ledgerly_app::config::Config;
+use ledgerly_app::telemetry::Telemetry;
 use serde_json::{Value, json};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -35,7 +36,8 @@ async fn start() -> Running {
         ("MANAGEMENT_SERVER_PORT", "0"),
     ]);
     let config = Config::from_environment(&environment).unwrap();
-    let app = App::bind(config).await.unwrap();
+    let telemetry = Telemetry::new(&config.tracing).unwrap();
+    let app = App::bind(config, telemetry).await.unwrap();
     let port = |address: SocketAddr| SocketAddr::from(([127, 0, 0, 1], address.port()));
     let api = port(app.api_address().unwrap());
     let management = port(app.management_address().unwrap());
