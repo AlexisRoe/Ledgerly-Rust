@@ -6,7 +6,10 @@ default:
     @just --list
 
 # Everything CI checks, in order (docs/local-setup.md §4). The last step, the parity suite, needs Docker.
-verify: vendor-check fmt-check clippy deny test config-check openapi-lint parity
+verify: check parity
+
+# Everything except the parity suite: what the CI `verify` job runs. CI runs the parity suite as its own job.
+check: vendor-check fmt-check clippy deny test config-check openapi-lint
 
 # Fail if a file vendored from Ledgerly-Java was changed, removed or added (ADR 0007). Works offline.
 vendor-check:

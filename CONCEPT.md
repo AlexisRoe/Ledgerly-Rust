@@ -174,7 +174,7 @@ The parity suite starts out complete and **ignored**. Every parity test is porte
 
 See [`docs/local-setup.md`](docs/local-setup.md) (install OrbStack and mise, then `mise install && pre-commit install && just up`) and [`docs/deployment.md`](docs/deployment.md).
 
-CI (GitHub Actions, on every push to any branch): `verify` (the same as `just verify`), `openapi-lint`, `format-config`, `gitleaks` over the full history, `deny`, `vendor-drift`, and `image`, which builds the image, checks that it runs as non-root, scans it with Trivy and uploads the SBOM. Actions are SHA-pinned, the token is `contents: read`, and checkouts use `persist-credentials: false`. A scheduled weekly job reports whether Ledgerly-Java has moved past the vendored commit; it doesn't fail the build.
+CI (GitHub Actions, on every push to any branch): `verify` (`just check`) and `parity` (`just parity`), which together are `just verify`, `openapi-lint`, `format-config`, `gitleaks` over the full history, `deny`, `vendor-drift`, and `image`, which builds the image, checks that it runs as non-root, scans it with Trivy and uploads the SBOM. Actions are SHA-pinned, the token is `contents: read`, and checkouts use `persist-credentials: false`. A scheduled weekly job reports whether Ledgerly-Java has moved past the vendored commit; it doesn't fail the build.
 
 ## 8. How work proceeds
 

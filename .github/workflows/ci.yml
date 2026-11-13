@@ -23,7 +23,9 @@ env:
   MISE_TOOLS: rust just cargo-binstall cargo:cargo-nextest cargo-deny node
 
 jobs:
-  # The same as `just verify` on a developer machine: drift check, fmt, clippy, deny, tests, Prettier, Redocly.
+  # `just check`: drift check, fmt, clippy, deny, tests, Prettier, Redocly. Together with the `parity` job below
+  # this is `just verify` on a developer machine; the slow parity suite runs in parallel, so lint and test
+  # failures show up first.
   verify:
     runs-on: ubuntu-latest
     steps:
@@ -34,7 +36,25 @@ jobs:
         with:
           install_args: ${{ env.MISE_TOOLS }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: just verify
+      - run: just check
+
+  # The black-box parity suite (ADR 0011): builds the image and starts it once per run group against the
+  # services of compose.yaml. The runner has Docker; ClamAV runs natively on its amd64.
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: rust just cargo-binstall cargo:cargo-nextest
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: just parity
+      - name: Stop the stack
+        if: always()
+        run: docker compose --profile app down -v
 
   openapi-lint:
     runs-on: ubuntu-latest
