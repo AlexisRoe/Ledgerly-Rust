@@ -14,17 +14,17 @@ pub mod telemetry;
 #[cfg(test)]
 mod tests;
 
+use std::any::Any;
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
-
-use std::any::Any;
-
 use std::sync::Arc;
 
 use axum::Router;
 use axum::response::IntoResponse;
+use ledgerly_identity::{Identity, KeyError};
 use ledgerly_shared::clock::{Clock, SystemClock};
 use ledgerly_shared::config::Limits;
+use ledgerly_shared::database::SchemaError;
 use ledgerly_shared::web::{self, Problem, Routes};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
@@ -35,26 +35,62 @@ pub use crate::management::BuildInfo;
 use crate::server::Shutdown;
 use crate::telemetry::Telemetry;
 
+/// Why the service did not start. None of the messages contains a secret: the configuration was already
+/// redacted, `sqlx` names the host and user of a failed connection but never the password, and a key error
+/// does not quote the key.
+#[derive(Debug, thiserror::Error)]
+pub enum StartupError {
+    #[error("{0}")]
+    Io(#[from] io::Error),
+    #[error("Failed to connect to the database: {0}")]
+    Database(#[from] sqlx::Error),
+    #[error("{0}")]
+    Schema(#[from] SchemaError),
+    #[error("{0}")]
+    Keys(#[from] KeyError),
+}
+
+/// The modules that keep state between requests, built once at startup.
+#[derive(Debug, Clone)]
+pub struct Modules {
+    clock: Arc<dyn Clock>,
+    identity: Identity,
+}
+
+impl Modules {
+    /// Wires the modules for `config`, on the system clock.
+    ///
+    /// # Errors
+    ///
+    /// A [`KeyError`] if the configured signing key cannot be used, or none is configured where one is needed.
+    pub fn new(config: &Config) -> Result<Self, KeyError> {
+        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+        let identity = Identity::new(&config.auth, config.profiles, clock.clone())?;
+        Ok(Self { clock, identity })
+    }
+}
+
 /// The API router: everything served on the public port.
 ///
 /// Tests and the binary build it with this one function, so that both run the same routes and layers. The
 /// routes come from one table ([`routes`]), which the inventory test compares with the spec.
 ///
 /// In the `local` profile it also serves Swagger UI at `/docs` and `/swagger-ui/…`.
-pub fn router(config: &Config, telemetry: &Telemetry, pool: &PgPool) -> Router {
+pub fn router(config: &Config, modules: &Modules, telemetry: &Telemetry, pool: &PgPool) -> Router {
     let extra = if config.profiles.local {
         docs::routes()
     } else {
         Router::new()
     };
-    layered_with(extra, routes(&config.limits, pool), telemetry)
+    layered_with(extra, routes(&config.limits, modules, pool), telemetry)
 }
 
 /// Every endpoint the API serves, with the configured limits.
 #[must_use]
-pub fn routes(limits: &Limits, pool: &PgPool) -> Routes {
-    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-    Routes::new().merge(ledgerly_expenses::routes(pool, &clock, limits))
+pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
+    Routes::new()
+        .merge(modules.identity.routes())
+        .merge(ledgerly_expenses::routes(pool, &modules.clock, limits))
 }
 
 /// `routes` behind the layers every API request passes, from the outside in:
@@ -97,23 +133,28 @@ pub struct App {
     api: TcpListener,
     management: TcpListener,
     config: Config,
+    modules: Modules,
     telemetry: Telemetry,
     pool: PgPool,
 }
 
 impl App {
-    /// Binds the API port and the management port on every interface, like Spring Boot's default.
+    /// Wires the modules, then binds the API port and the management port on every interface, like Spring
+    /// Boot's default.
     ///
     /// # Errors
     ///
-    /// Returns the I/O error if a port cannot be bound, for example because it is in use.
-    pub async fn bind(config: Config, telemetry: Telemetry, pool: PgPool) -> io::Result<Self> {
+    /// [`StartupError::Keys`] if the signing key cannot be used, [`StartupError::Io`] if a port cannot be
+    /// bound, for example because it is in use.
+    pub async fn bind(config: Config, telemetry: Telemetry, pool: PgPool) -> Result<Self, StartupError> {
+        let modules = Modules::new(&config)?;
         let api = TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.server.api_port)).await?;
         let management = TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.server.management_port)).await?;
         Ok(Self {
             api,
             management,
             config,
+            modules,
             telemetry,
             pool,
         })
@@ -153,7 +194,7 @@ impl App {
 
         let api = server::serve(
             self.api,
-            router(&self.config, &self.telemetry, &self.pool),
+            router(&self.config, &self.modules, &self.telemetry, &self.pool),
             api_shutdown.clone(),
             drain,
         );

@@ -4,3 +4,6 @@
 # The same line in the current file (working-tree and pre-commit scans have no commit). If the line moves, the
 # finding comes back: check it is still the fake value, then update the number.
 crates/app/src/config.rs:generic-api-key:494
+# A P-256 key pair made for the access-token tests only (crates/identity/src/access_token/tests.rs). It signs
+# nothing anywhere else; the tests need a fixed pair to check the kid against an independently computed thumbprint.
+crates/identity/src/access_token/tests.rs:private-key:12

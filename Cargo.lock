@@ -1342,14 +1342,23 @@ name = "ledgerly-identity"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "axum",
  "base64 0.23.1",
+ "chrono",
  "getrandom 0.4.3",
+ "http-body-util",
  "ledgerly-shared",
+ "p256",
  "secrecy",
+ "serde",
+ "serde_json",
  "sha2 0.11.1",
  "subtle",
  "thiserror",
+ "tokio",
+ "tower",
  "tracing",
+ "uuid",
  "zeroize",
 ]
 

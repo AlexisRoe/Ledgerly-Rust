@@ -309,7 +309,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - The `local`-only verification log line, with Java's exact text.
   - Accept: parity tests tagged M5 for these paths. In-process clock tests for lock expiry and verification expiry (ported from `JT/identity/`).
 
-- [ ] **M5.4 Access tokens and JWKS**
+- [x] **M5.4 Access tokens and JWKS**
   - Do:
     - ES256 tokens; the header has `alg` and `kid`; the claims are only `sub`, `iat`, `exp` (+10 min) and `jti` (v4).
     - The `kid` is the RFC 7638 thumbprint for configured keys, or a random v4 for keys generated in `local`/`test`.

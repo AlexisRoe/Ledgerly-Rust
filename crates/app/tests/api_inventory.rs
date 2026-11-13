@@ -8,8 +8,10 @@
 // clippy.toml exempts `#[test]` functions only; the helpers of an integration test are test code too.
 #![allow(clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
+use ledgerly_app::Modules;
+use ledgerly_app::config::Config;
 use ledgerly_shared::config::Limits;
 use serde_json::Value;
 
@@ -24,7 +26,6 @@ const NOT_YET: &[(&str, &str, &str)] = &[
     ("M5", "POST", "/api/v1/auth/login"),
     ("M5", "POST", "/api/v1/auth/refresh"),
     ("M5", "POST", "/api/v1/auth/logout"),
-    ("M5", "GET", "/.well-known/jwks.json"),
     ("M6", "GET", "/api/v1/me"),
     ("M6", "POST", "/api/v1/teams"),
     ("M6", "POST", "/api/v1/teams/{teamId}:leave"),
@@ -82,7 +83,21 @@ async fn served() -> Operations {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_lazy("postgres://ledgerly@127.0.0.1:9/ledgerly")
         .expect("a lazy pool needs no database");
-    ledgerly_app::routes(&Limits::default(), &pool)
+    let environment = HashMap::from([
+        ("SPRING_PROFILES_ACTIVE", "test"),
+        ("SPRING_DATASOURCE_URL", "jdbc:postgresql://localhost:5432/ledgerly"),
+        ("SPRING_DATASOURCE_USERNAME", "ledgerly"),
+        ("SPRING_DATASOURCE_PASSWORD", "ledgerly"),
+        ("LEDGERLY_STORAGE_S3_ENDPOINT", "http://localhost:8333"),
+        ("LEDGERLY_STORAGE_S3_BUCKET", "test-files"),
+        ("LEDGERLY_STORAGE_S3_ACCESS_KEY", "test"),
+        ("LEDGERLY_STORAGE_S3_SECRET_KEY", "test-secret"),
+        ("LEDGERLY_RECEIPTS_CLAMAV_HOST", "localhost"),
+        ("LEDGERLY_RECEIPTS_CLAMAV_PORT", "3310"),
+    ]);
+    let config = Config::from_environment(&environment).expect("the test profile's settings are complete");
+    let modules = Modules::new(&config).expect("the test profile generates a signing key");
+    ledgerly_app::routes(&Limits::default(), &modules, &pool)
         .operations()
         .map(|(method, template)| (method.as_str().to_owned(), template.to_owned()))
         .collect()

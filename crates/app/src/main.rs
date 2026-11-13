@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use ledgerly_app::config::{Config, ProcessEnvironment};
 use ledgerly_app::telemetry::Telemetry;
-use ledgerly_app::{App, logging, stop_signal};
+use ledgerly_app::{App, StartupError, logging, stop_signal};
 use ledgerly_shared::database;
 
 fn main() -> ExitCode {
@@ -53,18 +53,6 @@ async fn run(config: Config, telemetry: Telemetry) -> Result<(), StartupError> {
     // Closed after the last request has finished.
     pool.close().await;
     Ok(())
-}
-
-/// Why `run` ended with an error. None of the messages contains a secret: the configuration was already
-/// redacted, and `sqlx` names the host and user of a failed connection, never the password.
-#[derive(Debug, thiserror::Error)]
-enum StartupError {
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
-    #[error("Failed to connect to the database: {0}")]
-    Database(#[from] sqlx::Error),
-    #[error("{0}")]
-    Schema(#[from] database::SchemaError),
 }
 
 /// Reports why the process stops, readable without the logging system. The banner is the one Spring Boot

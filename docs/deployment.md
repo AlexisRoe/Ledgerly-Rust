@@ -36,7 +36,7 @@ Set `SPRING_PROFILES_ACTIVE=prod`. The prod profile has **no defaults**: unless 
 | Setting (environment variable) | What |
 | --- | --- |
 | `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | PostgreSQL. The URL may be in JDBC form (`jdbc:postgresql://host:5432/db`) or `postgres://` form |
-| `LEDGERLY_AUTH_JWT_PRIVATE_KEY`, `LEDGERLY_AUTH_JWT_PUBLIC_KEY` | ES256 key pair for access tokens, PEM (newlines kept or written as `\n`). Not needed with the `keycloak` profile. Use the *same* pair as a Java deployment if both serve the same users |
+| `LEDGERLY_AUTH_JWT_PRIVATE_KEY`, `LEDGERLY_AUTH_JWT_PUBLIC_KEY` | ES256 key pair for access tokens: PKCS#8 (private) and X.509 SubjectPublicKeyInfo (public), as PEM with its line breaks or as the bare Base64 body. The `kid` is the public key's RFC 7638 thumbprint. Not needed with the `keycloak` profile. Use the *same* pair as a Java deployment if both serve the same users |
 | `LEDGERLY_STORAGE_S3_ENDPOINT`, `_REGION`, `_BUCKET`, `_ACCESS_KEY`, `_SECRET_KEY` | S3-compatible object store (private bucket) |
 | `LEDGERLY_RECEIPTS_CLAMAV_HOST`, `_PORT` | clamd |
 | `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI` | Only with the `keycloak` profile |
