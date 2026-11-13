@@ -1,0 +1,106 @@
+# The local stack: the same services, images and digests as Ledgerly-Java's compose file
+# (vendor/ledgerly-java/compose.yaml), plus a one-shot Flyway that builds the schema from Java's migrations
+# (ADR 0006) and the Rust app.
+#
+# Hardening (docs/local-setup.md §5):
+#  - every port is published on 127.0.0.1 only. These services have development passwords or none at all, so they
+#    must not be reachable from the network the laptop is on.
+#  - images are pinned by digest: a tag can be moved to different content, a digest cannot. Renovate proposes updates.
+services:
+  lgtm:
+    image: grafana/otel-lgtm:0.40.0@sha256:72e05804790e6e0d8c0b70a6d5ff1f721ef7b203463374631e99aa3429bd0cf6
+    ports:
+      - "127.0.0.1:3000:3000" # Grafana (admin/admin)
+      - "127.0.0.1:4317:4317" # OTLP gRPC
+      - "127.0.0.1:4318:4318" # OTLP HTTP
+
+  postgres:
+    image: postgres:17@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3
+    environment:
+      POSTGRES_DB: ledgerly
+      POSTGRES_USER: ledgerly
+      POSTGRES_PASSWORD: ledgerly
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledgerly -d ledgerly"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Runs once and exits: applies Ledgerly-Java's migrations, unchanged, with the application's credentials.
+  # Java does this inside the application at start-up; here it is a separate step (`just migrate`). The version is
+  # the Flyway that Java's Spring Boot manages, so both write the same flyway_schema_history.
+  flyway:
+    image: flyway/flyway:12.11.0@sha256:d24a5083a9d423bbbd5b8faa49819b6211740efef9c9d4c9d5d6307788952936
+    command: migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/ledgerly
+      FLYWAY_USER: ledgerly
+      FLYWAY_PASSWORD: ledgerly
+      FLYWAY_CONNECT_RETRIES: "30"
+      REDGATE_DISABLE_TELEMETRY: "true"
+    volumes:
+      - ./vendor/ledgerly-java/src/main/resources/db/migration:/flyway/sql:ro
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest@sha256:c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860
+    command: server -s3 -s3.port=8333 -dir=/data
+    ports:
+      - "127.0.0.1:8333:8333" # S3 API (no auth configured: local only)
+
+  clamav:
+    image: clamav/clamav:1.5.4@sha256:6d87c712e3391e13c1ba6e05dfb074d4b1ddb5a6834b23bb9da990d2a4ef042a
+    platform: linux/amd64 # no arm64 image is published; Apple Silicon runs it under emulation
+    ports:
+      - "127.0.0.1:3310:3310" # clamd; the first start downloads signatures and takes a few minutes
+
+  # Only needed with the `keycloak` profile (SPRING_PROFILES_ACTIVE=local,keycloak): the identity provider that
+  # replaces Ledgerly's own login. The realm (client, audience mapper, two users) is imported on first start.
+  # Users: alice@example.com / alice-password (email verified), bob@example.com / bob-password (not verified).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8@sha256:3879c623248408de29a5303178b5816c77e8dfef3890c361f8c0bbeaa979ba3b
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    volumes:
+      - ./vendor/ledgerly-java/keycloak/ledgerly-realm.json:/opt/keycloak/data/import/ledgerly-realm.json:ro
+    ports:
+      - "127.0.0.1:8180:8080" # admin console: http://localhost:8180 (admin/admin)
+
+  # The application itself, for `just up` (compose profile "app"). Build the image first (`just image`).
+  # It runs with the `local` profile: a throw-away token key, human-readable logs, Swagger UI and the demo data
+  # (docs/deployment.md). Not for production: use the `prod` profile and real secrets there.
+  app:
+    image: ledgerly-rust:0.1.0
+    profiles: ["app"]
+    depends_on:
+      flyway:
+        condition: service_completed_successfully
+      seaweedfs:
+        condition: service_started
+      clamav:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ledgerly
+      SPRING_DATASOURCE_USERNAME: ledgerly
+      SPRING_DATASOURCE_PASSWORD: ledgerly
+      LEDGERLY_STORAGE_S3_ENDPOINT: http://seaweedfs:8333
+      LEDGERLY_RECEIPTS_CLAMAV_HOST: clamav
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/traces
+    # The application needs to write nowhere but /tmp (upload staging), and needs no Linux capability.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8080:8080" # API and Swagger UI: http://localhost:8080/docs
+      - "127.0.0.1:8081:8081" # actuator (local only: do not publish this in production)

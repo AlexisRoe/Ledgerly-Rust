@@ -133,7 +133,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - A request span with `traceId` and `spanId` (W3C, 32/16 hex), and OTLP trace export to `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT`.
   - Accept: a test captures one log line and asserts its exact key set. The `traceId` in the log equals the one later used in problem bodies (an assertion added in M3).
 
-- [ ] **M1.5 Compose and the dev loop**
+- [x] **M1.5 Compose and the dev loop**
   - Do:
     - `compose.yaml` with Java's services and digests (`vendor/ledgerly-java/compose.yaml`: postgres, seaweedfs, clamav, lgtm, keycloak), plus a one-shot `flyway` service (pinned by digest) that mounts `vendor/ledgerly-java/src/main/resources/db/migration` read-only and migrates with the app's credentials.
     - An `app` service (profile `app`) built from the Dockerfile, which `depends_on` `flyway` completing successfully. It runs `read_only`, with tmpfs `/tmp`, `cap_drop: ALL` and `no-new-privileges`.

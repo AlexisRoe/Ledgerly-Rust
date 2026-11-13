@@ -1,4 +1,5 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
+set dotenv-load := true
 
 # List every task.
 default:
@@ -32,3 +33,50 @@ test:
 gen-currencies:
     scripts/gen-currencies.sh
     cargo fmt --all
+
+# --- run and stop ---
+
+image_tag := "ledgerly-rust:0.1.0"
+
+# Start only the dependencies (Postgres, object store, ClamAV, Grafana), then build the schema.
+deps:
+    docker compose up -d postgres seaweedfs clamav lgtm
+    just migrate
+
+# Apply Ledgerly-Java's migrations with the Flyway container (ADR 0006). Does nothing if the schema is current.
+migrate:
+    docker compose run --rm flyway
+
+# Run the application on the host with the `local` profile, against the Compose services on localhost.
+# `just deps` first. A value in the environment or in .env wins over the development defaults here.
+run:
+    SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}" \
+    SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:postgresql://localhost:5432/ledgerly}" \
+    SPRING_DATASOURCE_USERNAME="${SPRING_DATASOURCE_USERNAME:-ledgerly}" \
+    SPRING_DATASOURCE_PASSWORD="${SPRING_DATASOURCE_PASSWORD:-ledgerly}" \
+    cargo run --locked --bin ledgerly
+
+# Build the container image (ADR 0012).
+image:
+    docker build --build-arg LEDGERLY_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t {{ image_tag }} .
+
+# Build the image and run everything in Docker; returns when the app is ready (API http://localhost:8080).
+up: image
+    docker compose --profile app up -d postgres seaweedfs clamav lgtm app
+    scripts/wait-until-ready.sh http://127.0.0.1:8081/actuator/health/readiness
+
+# Stop everything and keep the data.
+down:
+    docker compose --profile app down
+
+# Stop everything and delete the data.
+reset:
+    docker compose --profile app down -v
+
+# Follow the application's container logs.
+logs:
+    docker compose --profile app logs -f app
+
+# Show the running containers.
+ps:
+    docker compose --profile app ps
