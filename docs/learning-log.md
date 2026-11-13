@@ -82,6 +82,59 @@ One section per milestone, written by the implementing agent when the milestone 
 
 ## M1 · First axum app
 
+`J/` is Ledgerly-Java's `src/main/java/com/ledgerly/`, `JT/` its `src/test/java/com/ledgerly/`, `R/` its `src/main/resources/` (vendored under `vendor/ledgerly-java/`).
+
+- **Java → Rust:**
+  - Spring Modulith's `ApplicationModules.verify()` (`JT/ModularityTest.java`) → one crate per module and `crates/app/tests/architecture.rs`, which reads `cargo metadata` and compares the graph with CONCEPT §3. A cycle no longer needs a test: cargo refuses `teams → expenses` before anything compiles. The test still catches a wrong arrow that is not a cycle (`receipts → identity`), with the edge named.
+  - `@ConfigurationProperties` records with `@DefaultValue`, `application*.yaml` and `ProductionEnvironmentCheck` (`J/shared/config/`) → plain structs in `crates/shared/src/config/` and one reader in `crates/app/src/config.rs`. Spring binds by reflection and fails on the first bad value; the reader collects every missing or unusable setting and reports them together, under Java's names (`SPRING_DATASOURCE_URL`, `LEDGERLY_LIMITS_*`). Secrets are `SecretString` from the moment they are read, so `Debug` of the whole config prints `[REDACTED]` (test `debug_of_the_config_shows_no_secret`).
+  - Spring Boot's `DurationStyle` and `DataSize` → `parse_duration` and `parse_data_size` (`crates/shared/src/config/`), with the same units and the same binary megabytes.
+  - Tomcat with `server.shutdown: graceful` and Actuator on `management.server.port` → two axum listeners (`crates/app/src/lib.rs`, `server.rs`, `management.rs`). Spring's lifecycle phases become one `tokio::join!`: on SIGTERM readiness turns `OUT_OF_SERVICE`, the API drains for up to 30 s, then the management listener stops.
+  - Logback's ECS encoder plus the MDC → a `tracing_subscriber::Layer` (`crates/app/src/logging.rs`) that writes Spring Boot 4.2's member list in its order, and span fields in place of the MDC. A field is attached to the span of a request instead of being put into and removed from a thread-local, so it cannot leak into the next request on the same thread.
+  - Micrometer Tracing with the OTel bridge → the OpenTelemetry SDK used directly in a middleware (`crates/app/src/telemetry.rs`); the ids are also stored in the request's extensions for the problem bodies of M3.
+  - Paketo buildpacks → a hand-written multi-stage `Dockerfile` (ADR 0012): 39 MB, user 65532, no shell.
+  - JUnit with `@SpringBootTest`, `MutableClock`, `CapturedVerificationTokens` and seeders → `crates/parity-tests`, a black box (ADR 0011). Where Java mints a token, the suite logs in; where Java reads its mailbox, the suite writes a verification with a token it knows; where Java flips `FakeMalwareScanner.unavailable`, the suite stops the ClamAV container; where Java gives a test class its own properties, the suite starts the app once per run group.
+- **Rust features that carried the weight:**
+  - Traits as seams: `config::Environment` (the process environment or a `HashMap` in tests), `tracing_subscriber::Layer`.
+  - `tokio::sync::watch` for the shutdown switch (`server.rs`): any number of waiters, and a waiter that arrives late still sees that shutdown has started.
+  - `tokio::select!` and `tokio::join!` for "drain, but not longer than 30 s" and "stop the listeners in order".
+  - `secrecy::SecretString` and the type system for the redaction rule.
+  - Integration tests that start the real binary (`crates/app/tests/startup.rs`) and send it SIGTERM.
+- **Surprises and dead ends:**
+  - The first drain test assumed that `serve` returning means the cut-off request has failed. It does not: the connection task belongs to the runtime and lives until the runtime stops, which the binary does right after. The test now checks that `serve` returns on time and that the request never got an answer (53897d0).
+  - `docs/reference/java-port-spec.md` §3.8 listed ECS fields as dotted keys (`log.level`). Spring Boot 4.2 writes nested objects (`"log":{"level":…}`). Corrected from Boot's source at `v4.2.0-RC2` (c6af184).
+  - `redgate/flyway` publishes no arm64 image; `flyway/flyway` at the same version does (b8f4803).
+  - Docker Desktop was not running when the image was first built; nothing in the repository was at fault.
+  - `docs/reference/java-test-inventory.md` §1 had no `Api10UnsafeConsumptionOfApisTest`, although the class exists at the pinned commit. The inventory check (`crates/parity-tests/tests/inventory.rs`) found it because a parity test named a class the inventory did not know (d355e99).
+  - nextest has no global timeout by default, and a test that waits for a server that never stops waits forever. `.config/nextest.toml` now ends a test after two minutes.
+  - sqlx 0.9 wants `&'static str` (or `SqlStr`) for a query, not any `&str`.
+- **Parity traps:**
+  - Spring Boot's health body with probes enabled is `{"groups":["liveness","readiness"],"status":"UP"}`; Java's test greps for `"status":"UP"` without a space, so the JSON must be compact.
+  - Actuator answers with `application/vnd.spring-boot.actuator.v3+json`, not `application/json`.
+  - `application-keycloak.yaml` gives the issuer a default (`${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/ledgerly}`) that also applies in `prod`. Implemented as Java does (open question 3).
+  - The `prod` failure text is Spring's failure analyzer's: a "needs these settings, which are not set" block and the "Set them in the environment…" action.
+  - Java's tests run with `requests-per-minute=100000` (`application-test.yaml`); the parity groups do the same, and override it where Java's test classes do.
+  - Java's ID in an `Idempotency-Key` test is a literal (`key-12345678`). Against a database that is never cleaned, a literal key would replay an earlier run, so the parity tests use fresh keys.
+- **Decisions:**
+  - Required settings are checked in every profile, not only `prod`. Java fails there too, through `@NotBlank`, one setting at a time.
+  - A database URL with a user or password in it is refused, so the URL is never a secret and can be named in errors.
+  - Negative durations are refused.
+  - The management listener answers 404 in Spring's error shape for every path it does not serve. M1.3 asks for 404; whether Java answers 401 there is open question 1.
+  - `/actuator/info` reports a `build` block with `group: com.ledgerly`, the Cargo version and, when the image build passes it, the build time.
+  - `just verify` ends with `just parity`, as `docs/local-setup.md` §4 lists, so it needs Docker. `just test` runs everything else, including the inventory check.
+  - The parity suite reads the milestone of a test from its `m<N>` module and also marks it `#[ignore = "M<N>"]`, so `cargo nextest list` and the report agree.
+  - Fixture users share one Argon2id hash in Spring's parameters, computed once per test process (Argon2 with 16 MiB is too slow per user).
+  - In the `api4` group every test claims its own client address in `X-Forwarded-For`, and the app is started with `SERVER_FORWARD_HEADERS_STRATEGY=native` (a variable Java's `.env.example` names). Without that, the logins the fixtures need would use up the 12-per-minute allowance that the test is about.
+  - The EICAR string is assembled from two halves in `crates/parity-tests/src/fixtures.rs`, so that a virus scanner on a developer machine leaves the checkout alone.
+  - New dependencies, each named in its commit: secrecy, tokio, axum, tracing, tracing-subscriber, opentelemetry (+ sdk, otlp), and for the suite sqlx, reqwest, jsonschema, argon2, sha2, p256, serde-saphyr. `deny.toml` allows MIT-0 for one transitive crate of jsonschema.
+- **Open questions:**
+  1. **Unknown paths on the management port.** Rust answers 404 (the plan's wording). Java's actuator security chain denies non-exposed endpoints, which may make the answer 401 or 403. Only "≠ 200" is asserted by Java. Which status should Rust pin?
+  2. **`/actuator/health` body.** The `groups` member is from memory of Spring Boot with `probes.enabled`; the inventory only quotes `{"status":"UP"}`. Worth checking against a running Java once.
+  3. **Keycloak issuer in `prod`.** Java's YAML default applies in `prod`, which contradicts ADR 0013's "nothing in prod has a default". Rust copies Java. Fix upstream?
+  4. **Keycloak issuer in the parity suite (M11).** The app reaches Keycloak as `keycloak:8080`, the tests as `127.0.0.1:8180`; Keycloak puts the requested host into `iss`, so the two will not match without `KC_HOSTNAME` or a shared hostname. To be settled in M11; the `keycloak` run group is a placeholder until then.
+  5. **Presigned links.** Java's tests read the download name and lifetime from a fake store. The parity test reads them from the link's `response-content-disposition` and `X-Amz-Expires` parameters, which is how the AWS SDK encodes them; the inventory notes that Java's encoding was never checked. M7 will show whether both agree.
+  6. **CI runs `just verify`, and with it the parity suite**, which builds the image and starts ClamAV (amd64 only). It is not known yet how long that takes on GitHub's runners; the reviewer will see it on the first push.
+  7. **The prometheus test asserts `jvm_memory_used_bytes` and `http_server_requests`**, names of the JVM and of Spring MVC (inventory §4.6). The ported test keeps them, so it will fail in M10 unless Rust emits series under those names. Emulate them, or mark the assertion as Java-specific?
+
 ## M2 · Persist expenses
 
 ## M3 · Contract, validation, errors
