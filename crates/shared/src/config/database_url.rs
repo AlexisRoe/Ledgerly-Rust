@@ -14,7 +14,8 @@ pub struct DatabaseUrl {
 }
 
 /// Why a database URL was refused. The messages never repeat the URL: one written by hand may hold a password.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+/// They name a parameter, but never its value.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum InvalidDatabaseUrl {
     #[error("must start with jdbc:postgresql://, postgresql:// or postgres://")]
     UnknownScheme,
@@ -28,7 +29,16 @@ pub enum InvalidDatabaseUrl {
     InvalidPort,
     #[error("must name a database, as in jdbc:postgresql://host:5432/database")]
     MissingDatabase,
+    #[error("has the parameter {0}, which Ledgerly does not support; supported are ApplicationName and sslmode")]
+    UnsupportedParameter(String),
+    #[error("has an sslmode Ledgerly does not support; supported are disable, allow and prefer (no TLS yet)")]
+    UnsupportedSslMode,
 }
+
+/// The connection parameters Ledgerly passes on. Any other would be ignored silently, which for a setting
+/// such as `ssl=true` would mean an unencrypted connection the operator did not ask for. So they are refused.
+const SUPPORTED_PARAMETERS: [&str; 2] = ["ApplicationName", "sslmode"];
+const SUPPORTED_SSL_MODES: [&str; 3] = ["disable", "allow", "prefer"];
 
 const DEFAULT_PORT: u16 = 5432;
 
@@ -97,6 +107,18 @@ impl DatabaseUrl {
         {
             return Err(InvalidDatabaseUrl::HasCredentials);
         }
+        if let Some((key, _)) = parameters
+            .iter()
+            .find(|(key, _)| !SUPPORTED_PARAMETERS.contains(&key.as_str()))
+        {
+            return Err(InvalidDatabaseUrl::UnsupportedParameter(key.clone()));
+        }
+        if parameters
+            .iter()
+            .any(|(key, value)| key == "sslmode" && !SUPPORTED_SSL_MODES.contains(&value.as_str()))
+        {
+            return Err(InvalidDatabaseUrl::UnsupportedSslMode);
+        }
 
         Ok(Self {
             host: host.to_owned(),
@@ -127,6 +149,16 @@ impl DatabaseUrl {
     #[must_use]
     pub fn parameters(&self) -> &[(String, String)] {
         &self.parameters
+    }
+
+    /// The value of a connection parameter; the last one wins if it is given twice.
+    #[must_use]
+    pub fn parameter(&self, key: &str) -> Option<&str> {
+        self.parameters
+            .iter()
+            .rev()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.as_str())
     }
 }
 
@@ -160,15 +192,33 @@ mod tests {
     #[test]
     fn parameters_are_kept_in_order() {
         let url =
-            DatabaseUrl::parse("jdbc:postgresql://db/ledgerly?sslmode=require&ApplicationName=ledgerly&ssl").unwrap();
+            DatabaseUrl::parse("jdbc:postgresql://db/ledgerly?sslmode=disable&ApplicationName=ledgerly&sslmode=prefer")
+                .unwrap();
         assert_eq!(
             url.parameters(),
             [
-                ("sslmode".to_owned(), "require".to_owned()),
+                ("sslmode".to_owned(), "disable".to_owned()),
                 ("ApplicationName".to_owned(), "ledgerly".to_owned()),
-                ("ssl".to_owned(), String::new()),
+                ("sslmode".to_owned(), "prefer".to_owned()),
             ]
         );
+        assert_eq!(url.parameter("sslmode"), Some("prefer"));
+        assert_eq!(url.parameter("ApplicationName"), Some("ledgerly"));
+        assert_eq!(url.parameter("currentSchema"), None);
+    }
+
+    #[test]
+    fn parameters_that_would_be_ignored_are_refused() {
+        assert_eq!(
+            DatabaseUrl::parse("jdbc:postgresql://db/ledgerly?ssl=true"),
+            Err(InvalidDatabaseUrl::UnsupportedParameter("ssl".to_owned()))
+        );
+        assert_eq!(
+            DatabaseUrl::parse("jdbc:postgresql://db/ledgerly?sslmode=require"),
+            Err(InvalidDatabaseUrl::UnsupportedSslMode)
+        );
+        let error = DatabaseUrl::parse("jdbc:postgresql://db/ledgerly?sslpassword=hunter2").unwrap_err();
+        assert!(!error.to_string().contains("hunter2"));
     }
 
     #[test]
@@ -199,7 +249,7 @@ mod tests {
             ("jdbc:postgresql://db/", MissingDatabase),
             ("jdbc:postgresql://db/a/b", MissingDatabase),
         ] {
-            assert_eq!(DatabaseUrl::parse(text), Err(error), "{text}");
+            assert_eq!(DatabaseUrl::parse(text), Err(error.clone()), "{text}");
         }
     }
 

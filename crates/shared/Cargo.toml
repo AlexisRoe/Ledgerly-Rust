@@ -10,17 +10,23 @@ publish.workspace = true
 workspace = true
 
 [features]
-# Test helpers for other crates' tests, such as `FixedClock`. Never enabled in the `ledgerly` binary.
-testing = []
+# Test helpers for other crates' tests, such as `FixedClock` and `TestDatabase`. Never enabled in the `ledgerly`
+# binary.
+testing = ["dep:tokio"]
 
 [dependencies]
 chrono.workspace = true
+crc.workspace = true
 rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true
+sqlx = { workspace = true, features = ["macros"] }
 thiserror.workspace = true
+tokio = { workspace = true, optional = true }
 uuid.workspace = true
 
 [dev-dependencies]
+ledgerly-shared = { workspace = true, features = ["testing"] }
 proptest.workspace = true
 serde_json.workspace = true
+tokio.workspace = true

@@ -1,11 +1,39 @@
 //! What the `ledgerly` binary does before it serves anything.
 //!
 //! Java counterpart: `ProductionEnvironmentCheckTest.theWholeApplicationRefusesToStartInProdWithoutConfiguration`.
+//! The schema check (plan M2.1) has none: Java migrates at startup instead.
 
 // clippy.toml exempts `#[test]` functions only; the helpers of an integration test are test code too.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::process::Command;
+
+use ledgerly_shared::database::TestDatabase;
+
+/// A test database, and the runtime its pool lives on, for tests that drive the binary synchronously.
+fn test_database() -> (tokio::runtime::Runtime, TestDatabase) {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let database = runtime.block_on(TestDatabase::new()).unwrap();
+    (runtime, database)
+}
+
+/// The `ledgerly` binary in the `test` profile with every required setting, pointed at `database`.
+fn ledgerly(database: &TestDatabase) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ledgerly"));
+    command
+        .env_clear()
+        .env("SPRING_PROFILES_ACTIVE", "test")
+        .env("SPRING_DATASOURCE_URL", database.jdbc_url())
+        .env("SPRING_DATASOURCE_USERNAME", TestDatabase::USERNAME)
+        .env("SPRING_DATASOURCE_PASSWORD", TestDatabase::PASSWORD)
+        .env("LEDGERLY_STORAGE_S3_ENDPOINT", "http://localhost:8333")
+        .env("LEDGERLY_STORAGE_S3_BUCKET", "test-files")
+        .env("LEDGERLY_STORAGE_S3_ACCESS_KEY", "key-2b8e")
+        .env("LEDGERLY_STORAGE_S3_SECRET_KEY", "secret-9d3f")
+        .env("LEDGERLY_RECEIPTS_CLAMAV_HOST", "localhost")
+        .env("LEDGERLY_RECEIPTS_CLAMAV_PORT", "3310");
+    command
+}
 
 #[test]
 fn prod_without_configuration_exits_non_zero_and_lists_every_missing_variable() {
@@ -84,19 +112,9 @@ fn health_status(port: u16) -> Option<u16> {
 
 #[test]
 fn the_binary_logs_ecs_json_serves_until_sigterm_and_then_exits_cleanly() {
+    let (_runtime, database) = test_database();
     let (api_port, management_port) = (free_port(), free_port());
-    let child = Command::new(env!("CARGO_BIN_EXE_ledgerly"))
-        .env_clear()
-        .env("SPRING_PROFILES_ACTIVE", "test")
-        .env("SPRING_DATASOURCE_URL", "jdbc:postgresql://localhost:5432/ledgerly")
-        .env("SPRING_DATASOURCE_USERNAME", "ledgerly")
-        .env("SPRING_DATASOURCE_PASSWORD", "pw-4f9a")
-        .env("LEDGERLY_STORAGE_S3_ENDPOINT", "http://localhost:8333")
-        .env("LEDGERLY_STORAGE_S3_BUCKET", "test-files")
-        .env("LEDGERLY_STORAGE_S3_ACCESS_KEY", "key-2b8e")
-        .env("LEDGERLY_STORAGE_S3_SECRET_KEY", "secret-9d3f")
-        .env("LEDGERLY_RECEIPTS_CLAMAV_HOST", "localhost")
-        .env("LEDGERLY_RECEIPTS_CLAMAV_PORT", "3310")
+    let child = ledgerly(&database)
         .env("SERVER_PORT", api_port.to_string())
         .env("MANAGEMENT_SERVER_PORT", management_port.to_string())
         .stdout(std::process::Stdio::piped())
@@ -142,7 +160,50 @@ fn the_binary_logs_ecs_json_serves_until_sigterm_and_then_exits_cleanly() {
             "Commencing graceful shutdown. Waiting for active requests to complete"
         ]
     );
-    for secret in ["pw-4f9a", "key-2b8e", "secret-9d3f"] {
+    for secret in ["key-2b8e", "secret-9d3f"] {
         assert!(!stdout.contains(secret));
     }
+}
+
+#[test]
+fn a_database_without_v10_stops_the_start_and_names_the_version() {
+    let (runtime, database) = test_database();
+    runtime
+        .block_on(sqlx::query("delete from flyway_schema_history where version = '10'").execute(database.pool()))
+        .unwrap();
+    let (api_port, management_port) = (free_port(), free_port());
+
+    let output = ledgerly(&database)
+        .env("SERVER_PORT", api_port.to_string())
+        .env("MANAGEMENT_SERVER_PORT", management_port.to_string())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("APPLICATION FAILED TO START"), "{stderr}");
+    assert!(
+        stderr.contains("V10 (external identity) has not been applied"),
+        "{stderr}"
+    );
+    // It stopped before it opened a port.
+    assert_eq!(health_status(management_port), None);
+}
+
+#[test]
+fn a_database_that_cannot_be_reached_stops_the_start_without_printing_the_password() {
+    let output = Command::new(env!("CARGO_BIN_EXE_ledgerly"))
+        .env_clear()
+        .env("SPRING_PROFILES_ACTIVE", "local")
+        // Nothing listens on port 1.
+        .env("SPRING_DATASOURCE_URL", "jdbc:postgresql://127.0.0.1:1/ledgerly")
+        .env("SPRING_DATASOURCE_USERNAME", "ledgerly")
+        .env("SPRING_DATASOURCE_PASSWORD", "pw-4f9a")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("Failed to connect to the database"), "{stderr}");
+    assert!(!stderr.contains("pw-4f9a"), "{stderr}");
 }

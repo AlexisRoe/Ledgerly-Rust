@@ -57,6 +57,7 @@ just up        # build the image, start the dependencies, run Flyway, start the 
 | Regenerate server traits from `openapi.yaml` | `just generate` (needs Docker) |
 | Refresh `.sqlx/` after changing a query | `just sqlx-prepare` (needs `just deps`) |
 | Stop, keep data / stop, delete data | `just down` / `just reset` |
+| Remove the Postgres container the integration tests share | `just test-db-down` |
 
 `just verify` runs, in order:
 1. the vendor drift check;
@@ -64,13 +65,15 @@ just up        # build the image, start the dependencies, run Flyway, start the 
 3. `clippy -D warnings`;
 4. `cargo deny check`;
 5. a check that `just generate` produces no diff;
-6. `cargo nextest run`, with unit tests and testcontainers integration tests;
+6. `cargo nextest run`, with unit tests and integration tests against Postgres in Docker;
 7. Prettier and Redocly lint;
 8. the parity suite against a freshly started app.
 
 It needs Docker running.
 
-Builds do not need a database: `SQLX_OFFLINE=true` is the default and the query metadata in `.sqlx/` is committed.
+Builds do not need a database: `SQLX_OFFLINE=true` is the default (`.cargo/config.toml`) and the query metadata in `.sqlx/` is committed.
+
+Integration tests get a database each from `ledgerly_shared::database::TestDatabase`. They share one Postgres container (`ledgerly-test-postgres-<digest>`, port on `127.0.0.1` only), which stays up between runs so that the next run starts in a fraction of a second. Flyway migrates a template database there once per set of migrations; every test gets a copy of it. `just test-db-down` removes the container.
 
 ## 5. Hardening checklist (yours to do)
 
@@ -86,6 +89,6 @@ These protect your machine and the repository. The same reasoning as Java's [`lo
 | Symptom | Likely cause | First thing to check |
 | --- | --- | --- |
 | `error: no rows returned` or a sqlx compile error about missing query data | `.sqlx/` is stale after a query change | `just deps && just sqlx-prepare` |
-| App exits at startup with "schema not at expected version" | Flyway did not run, or ran a different set of migrations | `just migrate`; `docker compose logs flyway` |
+| App exits at startup with "The database schema does not match the migrations this build was made for" | Flyway did not run, or ran a different set of migrations; the message names each version | `just migrate`; `docker compose logs flyway` |
 | Receipts never leave `PENDING_SCAN` | ClamAV still downloading signatures (several minutes on first start, slower under emulation) | `docker compose logs clamav` |
-| Testcontainers tests hang | Docker not running, or OrbStack's socket not visible | `docker info`; for OrbStack, `DOCKER_HOST` is set automatically |
+| Integration tests fail with "`docker …` failed" | Docker not running, or the `docker` CLI not on `PATH` | `docker info`; `just test-db-down` and run again |

@@ -60,6 +60,16 @@ gen-currencies:
     scripts/gen-currencies.sh
     cargo fmt --all
 
+# Regenerate sqlx's offline query metadata in .sqlx/ from the Compose database (`just deps` first). Commit the result.
+sqlx-prepare:
+    DATABASE_URL="postgres://ledgerly:ledgerly@localhost:5432/ledgerly" \
+    cargo sqlx prepare --workspace -- --all-targets --all-features
+
+# Remove the Postgres container the integration tests share (it is kept between runs to save start-up time).
+test-db-down:
+    docker ps --all --quiet --filter "label=org.ledgerly.purpose=integration-tests" | xargs -r docker rm --force --volumes
+    docker network rm ledgerly-test 2>/dev/null || true
+
 # --- run and stop ---
 
 image_tag := "ledgerly-rust:0.1.0"

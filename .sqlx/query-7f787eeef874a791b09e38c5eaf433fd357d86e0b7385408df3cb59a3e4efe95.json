@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select version, script, checksum, success from flyway_schema_history order by installed_rank",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "flyway_schema_history",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "script",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "flyway_schema_history",
+            "name": "script"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "checksum",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "flyway_schema_history",
+            "name": "checksum"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "success",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "flyway_schema_history",
+            "name": "success"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "7f787eeef874a791b09e38c5eaf433fd357d86e0b7385408df3cb59a3e4efe95"
+}

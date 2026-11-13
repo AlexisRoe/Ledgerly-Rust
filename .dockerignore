@@ -1,7 +1,12 @@
-# Allowlist: the image build sees the Rust workspace and nothing else. No .git, no .env, no docs, no target/.
+# Allowlist: the image build sees the Rust workspace, the migrations and the sqlx metadata, and nothing else. No .git, no .env, no docs, no target/.
 # rust-toolchain.toml is left out on purpose: the builder image is the pinned toolchain, and the file would make
 # rustup download rustfmt and clippy, which a release build does not need.
 *
 !Cargo.toml
 !Cargo.lock
 !crates
+# The startup schema check embeds Ledgerly-Java's migrations (crates/shared/build.rs), and sqlx's query macros
+# read the offline metadata; .cargo/config.toml tells them to.
+!vendor/ledgerly-java/src/main/resources/db/migration
+!.sqlx
+!.cargo

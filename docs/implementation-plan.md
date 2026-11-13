@@ -190,7 +190,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** expenses saved and read with sqlx against the schema Flyway built.
 **Rust you meet:** sqlx macros and offline mode, executors and transactions (lifetimes in practice), `TryFrom` for row mapping, error conversion with `?`.
 
-- [ ] **M2.1 Pool and schema check**
+- [x] **M2.1 Pool and schema check**
   - Do: create the pool from config. At startup, compare `flyway_schema_history` with the vendored migrations (versions and Flyway checksums). On any difference, exit with a message naming the version.
   - Accept: the app refuses a database missing V10, and one with a tampered checksum. It starts on a freshly migrated one.
 
