@@ -244,6 +244,63 @@ One section per milestone, written by the implementing agent when the milestone 
 
 ## M4 · Paging and filtering
 
+`J/` is Ledgerly-Java's `src/main/java/com/ledgerly/` and `JT/` its `src/test/java/com/ledgerly/`, both at the commit in `vendor/ledgerly-java/SOURCE`. Commits: `794740f` (M4.1), `a11dba2` (M4.2).
+
+- **Java → Rust:**
+  - `ListExpenses.SortField` and `parseSort` (`J/expenses/internal/application/ListExpenses.java`), which hand Spring Data a property name → `SortField`, `Direction` and `Order` (`crates/expenses/src/persistence/mod.rs`), whose `column()` and `keyword()` are exhaustive `match`es returning `&'static str`. The only text in the `ORDER BY` is a literal in the code. Nothing the client sent can reach it, and the type system enforces that, not a review. `parse_sort` (`crates/expenses/src/application/list_expenses.rs`) keeps Java's messages.
+  - `ExpenseFilters` + `ExpenseSpecifications` (`J/expenses/internal/application/ExpenseFilters.java`, `J/expenses/internal/infrastructure/ExpenseSpecifications.java`), where every query "starts with `inTeam`" by convention → `filters::build` (`crates/expenses/src/application/filters.rs`) returns a `Criteria` (persistence) whose `team` field is not an `Option`. A criteria set without a team cannot be built. `push_criteria` writes the team first and binds every value with `QueryBuilder::push_bind`. The export (M8) is meant to reuse `Filter`/`build`, as Java's export reuses `ExpenseFilters`.
+  - `expenses.findAll(spec, PageRequest.of(page, size, sort))` and Spring Data's `Page` → `persistence::list` (offset/limit) and `persistence::count`, with `PageableExecutionUtils.getPage`'s rule for skipping the count written out in `ListExpenses::execute`. `ExpenseRow` now derives `sqlx::FromRow` for the dynamic query and is still used by `query_as!` in `find`.
+  - Spring's `@RequestParam` resolution (`RequestParamMethodArgumentResolver`, the default `ConversionService`) plus method validation of the generated interface's `@Min`/`@Max`/`@Pattern` → `QueryParameters` (`crates/shared/src/web/query.rs`) and the `list` handler (`crates/expenses/src/web/mod.rs`). The handler converts each parameter in declaration order, then collects every constraint violation into `Violations`, then calls the use case. This is the same three-phase order as M3's handlers: conversion, method validation, controller.
+  - `Cursor` record + Jackson `Map.of` + `java.util.Base64` (`J/shared/paging/Cursor.java`) → `Cursor` with a serde struct and a `base64` engine configured like Java's decoder (`crates/shared/src/paging/cursor.rs`). Java throws `InvalidRequest` from inside the paging code. Rust returns its own `InvalidCursor`, and `From<InvalidCursor> for Problem` decides the response at the web edge.
+  - `KeysetPaging.fetch(JdbcClient, String table, …, RowMapper<T>, Function<T, Cursor>)` (`J/shared/paging/KeysetPaging.java`) → `fetch<T>(…, table: &'static str, …, cursor_of: impl Fn(&T) -> Cursor)` with `T: for<'r> FromRow<'r, PgRow>` (`crates/shared/src/paging/keyset.rs`). Java's Javadoc asks that the table be "a developer constant, never user input"; `&'static str` makes that the default.
+  - `ISO_LOCAL_DATE`/`ISO_DATE`/the offset part of `ISO_INSTANT` → `shared::iso` (`crates/shared/src/iso.rs`). The body's `incurredOn`, the query's dates and the cursor's instant now share one strict parser.
+- **Rust features that carried the weight:**
+  - Higher-ranked trait bounds (`for<'r> FromRow<'r, PgRow>`) make the keyset helper generic over any row type (`keyset.rs`).
+  - `sqlx::QueryBuilder` with `push_bind`. In sqlx 0.9 it has no lifetime parameter, so bound values are owned (`push_bind(currency.clone())`).
+  - Closures as parsers, so that one `QueryParameters::convert` covers every enum and `convert_unless_blank` covers dates (`query.rs`).
+  - Let-chains (`if let … && from > to`) in `filters::build`.
+- **Surprises and dead ends:**
+  - The M4 parity tests can't run in M4. Every one of them (`crates/parity-tests/tests/expenses_list.rs`, ported in M1.10 and tagged M4) starts with `world.team()`, which logs four users in over HTTP (M5) and needs the team's memberships (M6). The same holds for Bruno `02-reading`. They stay ignored with that reason (open question 1). `crates/expenses/src/web/list_tests.rs` runs each of them in-process (same names, same data, plus the exact problem bodies).
+  - Java's list filter calls `Currency.getInstance`, which knows XXX, XAU and XTS; `Money` refuses them. Rust's `Currency::from_code` refuses them too, so the filter needs `Currency::is_known_code` (`crates/shared/src/money/currency.rs`): `currency=XXX` is 200 with nothing found, `ZZZ` is 400.
+  - The port spec said the list response is `{items, page}`. The spec's `ExpensePage` is `{content, page}`. Fixed in `docs/reference/java-port-spec.md` §3.6.
+  - The `base64` crate's ready-made `URL_SAFE_NO_PAD` refuses padded input and non-zero trailing bits. Java's `getUrlDecoder()` accepts both (Java's own `CursorTest` builds a padded token). The engine is configured with `DecodePaddingMode::Indifferent` and `with_decode_allow_trailing_bits(true)`.
+- **Parity traps:**
+  - Spring's conversion rules, each with a test in `query.rs` or `list_tests.rs`:
+    - `+` is a space.
+    - A `String` parameter given twice is joined with `,` (`sort=incurredOn&sort=asc` sorts ascending); other types take the first value.
+    - `""` means the default (`size=` is 20).
+    - Enums are trimmed with `String.trim()` and `""` is no filter.
+    - Blank UUIDs and dates are no filter.
+    - Integers go through `NumberUtils.parseNumber`: all whitespace removed, a sign, `0x`/`#` hex, Unicode digits.
+    - A date may carry an offset (`incurredTo=2026-01-31Z`), because the generated interface uses `@DateTimeFormat(iso = DATE)`, which is `ISO_DATE`, not `ISO_LOCAL_DATE`.
+  - Order of checks:
+    1. 401.
+    2. The first parameter that does not convert, in declaration order (`page, size, sort, status, category, claimantId, currency, incurredFrom, incurredTo`): Spring's type mismatch 400 `REQUEST_REJECTED` "Failed to convert 'size' with value: 'abc'".
+    3. All constraint violations together: 400 `VALIDATION_FAILED` with Hibernate Validator's default messages: `must be greater than or equal to 0`, `must be less than or equal to 100`, `must match "^(incurredOn|createdAt|amount)(,(asc|desc))?$"`, `must match "^[A-Z]{3}$"`.
+    4. Teammate, else 404.
+    5. Then the use case: size against `ledgerly.limits.max-page-size` ("size must be between 1 and N"), currency ("Unknown currency code"), sort ("Sorting by amount needs a currency filter"), then the date range ("incurredFrom must not be after incurredTo").
+
+    So a stranger gets 400 for `size=101` but 404 for `currency=ZZZ` or `sort=amount`.
+  - Both the spec's `maximum: 100` and the configured limit apply, as Java's learning log says.
+  - `page.size` and `page.number` echo the request. A page past the end is 200 with `content: []` and the real totals.
+  - The tie-breaker is the id in the *same* direction as the sort field. The default is `incurredOn,desc` with size 20.
+  - A MEMBER's `claimantId` is silently replaced by their own id, and `totalElements` counts only their rows.
+  - Cursor:
+    - JSON `{"t": Instant.toString(), "id": uuid}`, with `Instant.toString()` trimming the fraction to 0/3/6/9 digits (chrono's `SecondsFormat::AutoSi`).
+    - Java's `Map.of` key order changes between JVM starts, so decoding accepts both orders.
+    - `Instant.parse` takes an offset and any case, and the cursor decoder accepts both too.
+- **Decisions:**
+  - The page and the count run in one `REPEATABLE READ, READ ONLY` transaction, so the totals always match the page. Java uses the default `READ COMMITTED` (read-only); the difference only shows under concurrent writes.
+  - Constraint violations are listed in parameter order. Java's come from a `ConstraintViolationException`'s `HashSet`, in no defined order.
+  - UUIDs in query parameters and cursors: canonical 8-4-4-4-12 only, as for path parameters (M1 decision 6). Java's `UUID.fromString` also takes forms like `1-1-1-1-1`.
+  - An invalid `%` escape in the query stays literal, as in path parameters. Tomcat 11's handling (drop the parameter, or 400) was not checked.
+  - A type mismatch on a repeated parameter quotes the first value. Java would quote the array's `toString()`.
+  - `Cursor::encode` writes `t` before `id`.
+- **Parity tests:** no M4 parity test runs (open question 1): `expenses_list::m4::*` (16) are ignored with the reason "M6: needs signed-in teammates …". The suite stays at 12 passed, 256 ignored, 0 failed. `just verify`: 424 tests passed, including the 25 in `list_tests.rs`, the 6 in `crates/shared/tests/keyset_paging.rs` and the cursor's and `QueryParameters`' unit tests.
+- **Open questions:**
+  1. **The M4 parity tests need M5 and M6.** All 16 tests in `expenses_list.rs` (and Bruno `02-reading`) need signed-in teammates, which exist from M6. They are ignored with the reason "M6: needs signed-in teammates (login M5, team membership M6); in-process twin: …" but still sit in `mod m4`, so the progress meter counts them as M4-ignored. Move them into `mod m6` (and the plan's M4 "Done when" to M6), or keep them in `m4` and un-ignore them in M6?
+  2. **A repeated integer parameter whose first value is empty** (`size=&size=5`). As far as I can tell from Spring's code, Java gets `null` from the conversion, skips the default (the raw value was an array, not `""`), and unboxes `null` into `ListExpenses.Query`'s `int`: a 500. I did not run it to confirm. Rust uses the default (20). Replicate the 500, or keep the default?
+
 ## M5 · Authentication
 
 ## M6 · Teams and authorization
