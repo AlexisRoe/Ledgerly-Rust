@@ -487,7 +487,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Accept: Api8 parity tests and Bruno `05-security`.
 
 - [ ] **M10.3 Metrics and traces**
-  - Do: `/actuator/prometheus` on 8081, with Java's metric names and tags (port spec §3.8), plus HTTP server metrics. Spans around S3 and clamd calls.
+  - Do: `/actuator/prometheus` on 8081, with Java's metric names and tags (port spec §3.8), plus HTTP server metrics. Spans around S3 and clamd calls. The JVM and Spring MVC series Java's test also asserts (`jvm_memory_used_bytes`, `http_server_requests`) are Java-only; Rust exports `process_resident_memory_bytes` and `http_server_request_duration_seconds` instead.
   - Accept: the MetricsTest equivalents as parity tests that scrape `/actuator/prometheus`.
 
 - [ ] **M10.4 SSRF guard (API7)**

@@ -1076,8 +1076,10 @@ The spec defines statuses per operation, the `Problem` shape (`code` is a free s
   - `ledgerly_expenses_transitions_total{action="submit"...}`
   - `ledgerly_receipts_quarantined_total`
   - `ledgerly_imports_rows_skipped_total`
-- **`jvm_memory_used_bytes` and `http_server_requests`** are JVM- and Spring-specific names that the test asserts. A
-  Rust port must decide whether to emulate them.
+- **`jvm_memory_used_bytes` and `http_server_requests`** are JVM- and Spring-specific names that the test asserts.
+  Decided after M1: this part is Java-only. The Rust port asserts its equivalents instead,
+  `process_resident_memory_bytes` and `http_server_request_duration_seconds` (OpenTelemetry's
+  `http.server.request.duration`). The `ledgerly_*` names stay Java's.
 - Labels hold no emails and no ids.
 - Counters count successful transitions only.
 

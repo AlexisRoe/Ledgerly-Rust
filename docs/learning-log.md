@@ -133,7 +133,7 @@ One section per milestone, written by the implementing agent when the milestone 
   4. **Keycloak issuer in the parity suite (M11).** The app reaches Keycloak as `keycloak:8080`, the tests as `127.0.0.1:8180`; Keycloak puts the requested host into `iss`, so the two will not match without `KC_HOSTNAME` or a shared hostname. To be settled in M11; the `keycloak` run group is a placeholder until then.
   5. **Presigned links.** Java's tests read the download name and lifetime from a fake store. The parity test reads them from the link's `response-content-disposition` and `X-Amz-Expires` parameters, which is how the AWS SDK encodes them; the inventory notes that Java's encoding was never checked. M7 will show whether both agree.
   6. **CI runs `just verify`, and with it the parity suite**, which builds the image and starts ClamAV (amd64 only). It is not known yet how long that takes on GitHub's runners; the reviewer will see it on the first push.
-  7. **The prometheus test asserts `jvm_memory_used_bytes` and `http_server_requests`**, names of the JVM and of Spring MVC (inventory §4.6). The ported test keeps them, so it will fail in M10 unless Rust emits series under those names. Emulate them, or mark the assertion as Java-specific?
+  7. ~~**The prometheus test asserts `jvm_memory_used_bytes` and `http_server_requests`**~~ Decided by the reviewer: that part of `MetricsTest.prometheusExposesThemOnTheManagementPortOnly` is Java-only. `crates/parity-tests/tests/owasp_metrics.rs` asserts the Rust equivalents, `process_resident_memory_bytes` and `http_server_request_duration_seconds`; plan M10.3 and inventory §4.6 say so. Pointed at Java, this one assertion fails by design.
 
 ## M2 · Persist expenses
 

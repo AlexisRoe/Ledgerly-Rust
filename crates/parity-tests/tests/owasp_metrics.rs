@@ -29,6 +29,10 @@ async fn counter(world: &World, name: &str, labels: &[(&str, &str)]) -> f64 {
 const TRANSITIONS: &str = "ledgerly_expenses_transitions_total";
 const QUARANTINED: &str = "ledgerly_receipts_quarantined_total";
 const SKIPPED: &str = "ledgerly_imports_rows_skipped_total";
+/// Rust's counterpart of Java's `jvm_memory_used_bytes`.
+const PROCESS_MEMORY: &str = "process_resident_memory_bytes";
+/// Rust's counterpart of Spring MVC's `http_server_requests`.
+const HTTP_SERVER_REQUESTS: &str = "http_server_request_duration_seconds";
 
 mod m10 {
     use super::*;
@@ -144,9 +148,12 @@ mod m10 {
         let body = scrape(&world).await;
 
         assert!(body.contains("ledgerly_expenses_transitions_total{action=\"submit\""));
-        // Names of the JVM and of Spring MVC, which Java's test asserts as they are.
-        assert!(body.contains("jvm_memory_used_bytes"));
-        assert!(body.contains("http_server_requests"));
+        // Java asserts `jvm_memory_used_bytes` and `http_server_requests`: names of the JVM and of Spring MVC,
+        // which only Java has. That part of Java's test is Java-only; the Rust equivalents are asserted instead
+        // (decided by the reviewer after M1): the process's resident memory and the HTTP server's request
+        // histogram under OpenTelemetry's name `http.server.request.duration`.
+        assert!(body.contains(PROCESS_MEMORY), "{PROCESS_MEMORY} is missing");
+        assert!(body.contains(HTTP_SERVER_REQUESTS), "{HTTP_SERVER_REQUESTS} is missing");
         // Metric tags hold no ids or names: the series count must stay small.
         assert!(!body.contains(team.member.email()));
         assert!(!body.contains(&team.id.to_string()));
