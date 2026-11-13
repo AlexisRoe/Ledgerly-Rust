@@ -358,7 +358,7 @@ impl Pattern {
 
 /// Decodes `%XX` escapes as UTF-8. An escape that is not two hex digits stays as it is, and bytes that are not
 /// UTF-8 become U+FFFD; such a value fails the parameter's own parsing later.
-fn percent_decode(text: &str) -> String {
+pub(super) fn percent_decode(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut rest = bytes;

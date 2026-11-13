@@ -6,6 +6,8 @@
 //! Spring's method validation once all arguments are there), then what the controller itself parses.
 
 mod dto;
+#[cfg(test)]
+mod list_tests;
 mod problem;
 #[cfg(test)]
 mod tests;
@@ -16,20 +18,23 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use ledgerly_shared::clock::Clock;
+use ledgerly_shared::id::UserId;
 use ledgerly_shared::id::{ExpenseId, TeamId};
+use ledgerly_shared::iso;
 use ledgerly_shared::text::strip;
 use ledgerly_shared::version::{Version, Versioned};
 use ledgerly_shared::web::{
-    Body, CurrentUser, PathParameters, Problem, Routes, Violations, header_text, read_json, uuid_parameter,
+    Body, CurrentUser, PathParameters, Problem, QueryParameters, Routes, Violations, header_text, read_json,
+    uuid_parameter,
 };
 use sqlx::PgPool;
 
-use self::dto::{CreateExpenseRequest, ExpenseResponse, RejectRequest, UpdateExpenseRequest};
+use self::dto::{CreateExpenseRequest, ExpensePageResponse, ExpenseResponse, RejectRequest, UpdateExpenseRequest};
 use crate::application::{
-    CreateExpense, CreateExpenseCommand, DeleteExpense, GetExpense, MembershipLookup, TransitionExpense, UpdateExpense,
-    UpdateExpenseCommand,
+    CreateExpense, CreateExpenseCommand, DeleteExpense, Filter, GetExpense, ListExpenses, ListQuery, MembershipLookup,
+    TransitionExpense, UpdateExpense, UpdateExpenseCommand,
 };
-use crate::domain::{Action, Expense, NewExpense};
+use crate::domain::{Action, Category, Expense, ExpenseStatus, NewExpense};
 use crate::receipt_checks::ReceiptChecks;
 
 const EXPENSES: &str = "/api/v1/teams/{teamId}/expenses";
@@ -43,6 +48,7 @@ pub(crate) struct ExpensesApi {
     update: UpdateExpense,
     delete: DeleteExpense,
     transition: TransitionExpense,
+    list: ListExpenses,
 }
 
 impl ExpensesApi {
@@ -51,8 +57,10 @@ impl ExpensesApi {
         clock: &Arc<dyn Clock>,
         memberships: &Arc<dyn MembershipLookup>,
         receipts: &Arc<dyn ReceiptChecks>,
+        max_page_size: u32,
     ) -> Self {
         Self {
+            list: ListExpenses::new(pool.clone(), memberships.clone(), max_page_size),
             create: CreateExpense::new(pool.clone(), clock.clone(), memberships.clone()),
             get: GetExpense::new(pool.clone(), memberships.clone()),
             update: UpdateExpense::new(pool.clone(), clock.clone(), memberships.clone()),
@@ -61,7 +69,7 @@ impl ExpensesApi {
         }
     }
 
-    /// The expense endpoints of M3. List, batch and export follow in M4 and M8.
+    /// The expense endpoints of M3 and M4. Batch and export follow in M8.
     pub(crate) fn routes(self) -> Routes {
         let action = |action: Action, template: &'static str, routes: Routes, api: &Self| {
             let handler = move |state, user, parameters, request| transition(state, user, parameters, request, action);
@@ -73,6 +81,7 @@ impl ExpensesApi {
             routes.route(Method::POST, template, body, handler, api.clone())
         };
         let routes = Routes::new()
+            .route(Method::GET, EXPENSES, Body::Ignored, list, self.clone())
             .route(Method::POST, EXPENSES, Body::Json, create, self.clone())
             .route(Method::GET, EXPENSE, Body::Ignored, get, self.clone())
             .route(Method::PATCH, EXPENSE, Body::Json, update, self.clone())
@@ -91,6 +100,73 @@ impl ExpensesApi {
         .into_iter()
         .fold(routes, |routes, (verb, template)| action(verb, template, routes, &self))
     }
+}
+
+/// The spec's `sort` pattern, which Java's generated interface checks with `@Pattern`.
+const SORT_PATTERN: &str = "^(incurredOn|createdAt|amount)(,(asc|desc))?$";
+const CURRENCY_PATTERN: &str = "^[A-Z]{3}$";
+
+/// `GET /teams/{teamId}/expenses`: one page, filtered and sorted.
+///
+/// As Spring does it: every parameter is converted in the order Java's `listExpenses` declares them (the first
+/// that does not convert is a type-mismatch 400); then the spec's constraints are checked all together (400
+/// `VALIDATION_FAILED`, Java's method validation); then the use case checks membership and its own rules.
+async fn list(
+    State(api): State<ExpensesApi>,
+    user: CurrentUser,
+    parameters: PathParameters,
+    query: QueryParameters,
+) -> Result<Response, Problem> {
+    let team = team(&parameters)?;
+    let page = query.integer_or("page", 0)?;
+    let size = query.integer_or("size", 20)?;
+    let sort = query.text_or("sort", "incurredOn,desc");
+    let status = query.convert("status", |name| name.parse::<ExpenseStatus>().ok())?;
+    let category = query.convert("category", |name| name.parse::<Category>().ok())?;
+    let claimant = query.uuid("claimantId")?.map(UserId::from_uuid);
+    let currency = query.text("currency");
+    let incurred_from = query.convert_unless_blank("incurredFrom", iso::parse_date_with_optional_offset)?;
+    let incurred_to = query.convert_unless_blank("incurredTo", iso::parse_date_with_optional_offset)?;
+
+    let mut violations = Violations::default();
+    if page < 0 {
+        violations.add("page", "must be greater than or equal to 0");
+    }
+    if size < 1 {
+        violations.add("size", "must be greater than or equal to 1");
+    }
+    if size > 100 {
+        violations.add("size", "must be less than or equal to 100");
+    }
+    violations.pattern("sort", Some(&sort), SORT_PATTERN, is_sort);
+    violations.pattern("currency", currency.as_deref(), CURRENCY_PATTERN, |code| {
+        code.len() == 3 && code.bytes().all(|b| b.is_ascii_uppercase())
+    });
+    violations.into_result()?;
+
+    let query = ListQuery {
+        team,
+        caller: user.id(),
+        page,
+        size,
+        sort,
+        filter: Filter {
+            status,
+            category,
+            claimant,
+            currency,
+            incurred_from,
+            incurred_to,
+        },
+    };
+    let found = api.list.execute(query).await.map_err(|e| problem::failure(&e))?;
+    Ok(axum::Json(ExpensePageResponse::from(&found)).into_response())
+}
+
+/// `^(incurredOn|createdAt|amount)(,(asc|desc))?$`, matched against the whole value.
+fn is_sort(sort: &str) -> bool {
+    let (field, direction) = sort.split_once(',').map_or((sort, None), |(f, d)| (f, Some(d)));
+    matches!(field, "incurredOn" | "createdAt" | "amount") && direction.is_none_or(|d| matches!(d, "asc" | "desc"))
 }
 
 /// `POST /teams/{teamId}/expenses`: 201 with `Location` and `ETag`.

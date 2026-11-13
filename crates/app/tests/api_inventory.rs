@@ -10,6 +10,7 @@
 
 use std::collections::BTreeSet;
 
+use ledgerly_shared::config::Limits;
 use serde_json::Value;
 
 const SPEC: &str = include_str!("../../../api/openapi.yaml");
@@ -18,7 +19,6 @@ const METHODS: [&str; 7] = ["get", "put", "post", "delete", "options", "head", "
 /// Documented operations that are not served yet, with the milestone that serves them. The test fails when one
 /// of them starts being served without being taken off this list, so the list only ever shrinks.
 const NOT_YET: &[(&str, &str, &str)] = &[
-    ("M4", "GET", "/api/v1/teams/{teamId}/expenses"),
     ("M5", "POST", "/api/v1/auth/register"),
     ("M5", "POST", "/api/v1/auth/verify"),
     ("M5", "POST", "/api/v1/auth/login"),
@@ -82,7 +82,7 @@ async fn served() -> Operations {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_lazy("postgres://ledgerly@127.0.0.1:9/ledgerly")
         .expect("a lazy pool needs no database");
-    ledgerly_app::routes(&pool)
+    ledgerly_app::routes(&Limits::default(), &pool)
         .operations()
         .map(|(method, template)| (method.as_str().to_owned(), template.to_owned()))
         .collect()

@@ -70,6 +70,14 @@ impl Currency {
         }
     }
 
+    /// Whether `java.util.Currency.getInstance(code)` succeeds: any code Java knows, including those without minor
+    /// units (XAU, XTS, XXX, ...), which [`Currency::from_code`] refuses. Java's list and export filters accept
+    /// them; no stored expense can be in one.
+    #[must_use]
+    pub fn is_known_code(code: &str) -> bool {
+        CURRENCIES.binary_search_by(|(known, _)| (*known).cmp(code)).is_ok()
+    }
+
     /// The ISO 4217 code, such as `EUR`.
     #[must_use]
     pub const fn code(&self) -> &'static str {
@@ -103,6 +111,16 @@ impl FromStr for Currency {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn known_codes_include_those_without_minor_units() {
+        for code in ["EUR", "JPY", "XXX", "XAU", "XTS", "DEM"] {
+            assert!(Currency::is_known_code(code), "{code}");
+        }
+        for code in ["ZZZ", "eur", "EU", "EURO", ""] {
+            assert!(!Currency::is_known_code(code), "{code}");
+        }
+    }
 
     fn minor_units(code: &str) -> u8 {
         Currency::from_code(code).unwrap().minor_units()

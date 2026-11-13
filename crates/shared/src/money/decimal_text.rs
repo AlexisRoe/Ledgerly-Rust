@@ -125,7 +125,7 @@ impl JavaDecimal {
 }
 
 /// The ASCII digit with the value of `c` if `c` is a decimal digit for Java's `Character.isDigit(char)`, else `c`.
-fn to_ascii_digit(c: char) -> char {
+pub(crate) fn to_ascii_digit(c: char) -> char {
     let Ok(unit) = u16::try_from(u32::from(c)) else {
         // Outside the BMP: two surrogates in Java, neither of them a digit.
         return c;

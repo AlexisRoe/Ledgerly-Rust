@@ -11,11 +11,13 @@
 use std::str::FromStr;
 
 use chrono::NaiveDate;
+use ledgerly_shared::iso;
 use ledgerly_shared::money::Money;
 use ledgerly_shared::version::Versioned;
 use ledgerly_shared::web::{Problem, Validate, Violations};
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::application::ExpensePage;
 use crate::domain::{Category, Expense};
 
 const AMOUNT_PATTERN: &str = r"^[0-9]{1,15}(\.[0-9]{1,4})?$";
@@ -75,29 +77,10 @@ pub(crate) struct DateBody(pub NaiveDate);
 impl<'de> Deserialize<'de> for DateBody {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
-        parse_date(&text)
+        iso::parse_date(&text)
             .map(Self)
             .ok_or_else(|| serde::de::Error::custom("not an ISO date"))
     }
-}
-
-fn parse_date(text: &str) -> Option<NaiveDate> {
-    let bytes = text.as_bytes();
-    let shaped = bytes.len() == 10
-        && bytes.iter().enumerate().all(|(index, byte)| {
-            if index == 4 || index == 7 {
-                *byte == b'-'
-            } else {
-                byte.is_ascii_digit()
-            }
-        });
-    if !shaped {
-        return None;
-    }
-    let year = text.get(0..4)?.parse().ok()?;
-    let month = text.get(5..7)?.parse().ok()?;
-    let day = text.get(8..10)?.parse().ok()?;
-    NaiveDate::from_ymd_opt(year, month, day)
 }
 
 /// `POST /teams/{teamId}/expenses`.
@@ -213,6 +196,37 @@ impl From<&Versioned<Expense>> for ExpenseResponse {
     }
 }
 
+/// `GET /teams/{teamId}/expenses`: one page in the shape of Spring Data's `PagedModel`.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ExpensePageResponse {
+    content: Vec<ExpenseResponse>,
+    page: PageMetadata,
+}
+
+/// Java: the generated `PageMetadata(size, number, totalElements, totalPages)`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PageMetadata {
+    size: i32,
+    number: i32,
+    total_elements: i64,
+    total_pages: i32,
+}
+
+impl From<&ExpensePage> for ExpensePageResponse {
+    fn from(page: &ExpensePage) -> Self {
+        Self {
+            content: page.items.iter().map(ExpenseResponse::from).collect(),
+            page: PageMetadata {
+                size: page.size,
+                number: page.page,
+                total_elements: page.total_elements,
+                total_pages: page.total_pages,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,21 +249,6 @@ mod tests {
             "12.50\n",
         ] {
             assert!(!is_amount(bad), "{bad}");
-        }
-    }
-
-    #[test]
-    fn dates_are_strict_iso() {
-        assert_eq!(parse_date("2026-11-05"), NaiveDate::from_ymd_opt(2026, 11, 5));
-        for bad in [
-            "2026-11-5",
-            "2026-02-30",
-            "26-11-05",
-            "2026/11/05",
-            "yesterday",
-            "+2026-11-05",
-        ] {
-            assert_eq!(parse_date(bad), None, "{bad}");
         }
     }
 }

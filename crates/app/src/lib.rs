@@ -24,6 +24,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::response::IntoResponse;
 use ledgerly_shared::clock::{Clock, SystemClock};
+use ledgerly_shared::config::Limits;
 use ledgerly_shared::web::{self, Problem, Routes};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
@@ -46,14 +47,14 @@ pub fn router(config: &Config, telemetry: &Telemetry, pool: &PgPool) -> Router {
     } else {
         Router::new()
     };
-    layered_with(extra, routes(pool), telemetry)
+    layered_with(extra, routes(&config.limits, pool), telemetry)
 }
 
-/// Every endpoint the API serves.
+/// Every endpoint the API serves, with the configured limits.
 #[must_use]
-pub fn routes(pool: &PgPool) -> Routes {
+pub fn routes(limits: &Limits, pool: &PgPool) -> Routes {
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-    Routes::new().merge(ledgerly_expenses::routes(pool, &clock))
+    Routes::new().merge(ledgerly_expenses::routes(pool, &clock, limits))
 }
 
 /// `routes` behind the layers every API request passes, from the outside in:

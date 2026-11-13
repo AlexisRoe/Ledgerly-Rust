@@ -11,6 +11,7 @@ pub mod config;
 pub mod database;
 pub mod id;
 pub mod idempotency;
+pub mod iso;
 pub mod money;
 pub mod role;
 pub mod text;

@@ -166,7 +166,7 @@ pub fn uuid_parameter(parameters: &PathParameters, name: &str) -> Result<Uuid, P
 
 /// Only the canonical 8-4-4-4-12 form, in either case, which is what Java's `UUID.fromString` is given in
 /// practice. (The `uuid` crate would also take braces, a `urn:` prefix or no hyphens; Java takes none of them.)
-fn parse_uuid(value: &str) -> Option<Uuid> {
+pub(crate) fn parse_uuid(value: &str) -> Option<Uuid> {
     let canonical = value.len() == 36
         && value
             .char_indices()

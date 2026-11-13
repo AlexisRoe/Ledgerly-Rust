@@ -36,6 +36,7 @@ pub(crate) fn failure(error: &UseCaseError) -> Problem {
             "This Idempotency-Key was used with a different request",
         ),
         UseCaseError::IdempotencyInProgress(detail) => Problem::new(ErrorCode::IdempotencyInProgress, *detail),
+        UseCaseError::Invalid { field, message } => Problem::invalid_request(*field, message.clone()),
         UseCaseError::Refused(refused) => refusal(refused),
         UseCaseError::Storage(PersistenceError::Conflict { .. }) => Problem::precondition_failed(),
         UseCaseError::Storage(storage @ (PersistenceError::Corrupt { .. } | PersistenceError::Database(_))) => {
@@ -136,6 +137,21 @@ mod tests {
                 "incurredOn",
                 "incurredOn must not be in the future"
             )]
+        );
+    }
+
+    /// Java: `InvalidRequest(field, message)` from a use case.
+    #[test]
+    fn an_invalid_parameter_is_a_validation_problem_naming_it() {
+        let problem = failure(&UseCaseError::invalid(
+            "sort",
+            "Sorting by amount needs a currency filter",
+        ));
+
+        assert_eq!(summary(&problem).1, "VALIDATION_FAILED");
+        assert_eq!(
+            problem.violations(),
+            [FieldViolation::new("sort", "Sorting by amount needs a currency filter")]
         );
     }
 

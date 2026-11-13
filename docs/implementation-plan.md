@@ -271,7 +271,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** the expense list with Java's paging, filtering and sorting rules, and the cursor helpers for the audit trail.
 **Rust you meet:** generics and iterators, `sqlx::QueryBuilder` with bound parameters only, base64/serde for opaque cursors.
 
-- [ ] **M4.1 List endpoint**
+- [x] **M4.1 List endpoint**
   - Do:
     - `page`/`size` (size > 100 → 400, never clamped).
     - `sort` from the allowlist `incurredOn`, `createdAt`, `amount`. Anything else → 400. `amount` without a `currency` filter → 400.

@@ -9,7 +9,9 @@ mod create_expense;
 mod delete_expense;
 #[cfg(test)]
 pub(crate) mod doubles;
+mod filters;
 mod get_expense;
+mod list_expenses;
 mod membership;
 #[cfg(test)]
 mod tests;
@@ -19,7 +21,9 @@ mod update_expense;
 pub(crate) use {
     create_expense::{CreateExpense, CreateExpenseCommand},
     delete_expense::DeleteExpense,
+    filters::Filter,
     get_expense::GetExpense,
+    list_expenses::{ExpensePage, ListExpenses, ListQuery},
     membership::{MembershipLookup, NoTeamsYet},
     transition_expense::TransitionExpense,
     update_expense::{UpdateExpense, UpdateExpenseCommand},
@@ -44,11 +48,23 @@ pub(crate) enum UseCaseError {
     /// with Java's detail.
     #[error("{0}")]
     IdempotencyInProgress(&'static str),
+    /// A parameter of the request is not acceptable (page, size, sort, a filter). Java: `InvalidRequest`.
+    #[error("{field}: {message}")]
+    Invalid { field: &'static str, message: String },
     /// The domain refused: a field rule, a transition, a role. Nothing was written.
     #[error(transparent)]
     Refused(#[from] ExpenseError),
     #[error(transparent)]
     Storage(#[from] PersistenceError),
+}
+
+impl UseCaseError {
+    pub(crate) fn invalid(field: &'static str, message: impl Into<String>) -> Self {
+        Self::Invalid {
+            field,
+            message: message.into(),
+        }
+    }
 }
 
 /// Starting or committing the transaction failed.

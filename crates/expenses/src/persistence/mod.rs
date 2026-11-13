@@ -17,8 +17,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use ledgerly_shared::id::{ExpenseId, TeamId, UserId};
 use ledgerly_shared::money::{Currency, Money};
 use ledgerly_shared::version::{Version, Versioned};
-use sqlx::PgConnection;
 use sqlx::types::{Decimal, Uuid};
+use sqlx::{PgConnection, Postgres, QueryBuilder};
 
 use crate::domain::{Category, Expense, ExpenseStatus, Merchant, Note, Rejection, RejectionReason, StoredExpense};
 
@@ -66,6 +66,130 @@ pub(crate) async fn find(
     .fetch_optional(connection)
     .await?;
     row.map(Versioned::try_from).transpose()
+}
+
+/// What the query selects: always one team, and for a MEMBER always their own expenses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Criteria {
+    pub team: TeamId,
+    pub claimant: Option<UserId>,
+    pub status: Option<ExpenseStatus>,
+    pub category: Option<Category>,
+    /// An ISO 4217 code Java knows.
+    pub currency: Option<String>,
+    /// Inclusive.
+    pub incurred_from: Option<NaiveDate>,
+    /// Inclusive.
+    pub incurred_to: Option<NaiveDate>,
+}
+
+/// What the list can be sorted by. Java: `ListExpenses.SortField`, an allowlist: nothing a client sends reaches
+/// the statement as text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SortField {
+    IncurredOn,
+    CreatedAt,
+    /// Only with a currency filter: amounts in different currencies do not compare.
+    Amount,
+}
+
+impl SortField {
+    const fn column(self) -> &'static str {
+        match self {
+            Self::IncurredOn => "e.incurred_on",
+            Self::CreatedAt => "e.created_at",
+            Self::Amount => "e.amount",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Direction {
+    Ascending,
+    Descending,
+}
+
+impl Direction {
+    const fn keyword(self) -> &'static str {
+        match self {
+            Self::Ascending => "asc",
+            Self::Descending => "desc",
+        }
+    }
+}
+
+/// The order of a list: the field, then the id in the same direction as a unique tie-breaker, so that pages
+/// never overlap or skip rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Order {
+    pub field: SortField,
+    pub direction: Direction,
+}
+
+/// One page of the expenses matching `criteria`, with their rejections. Java: `findAll(Specification,
+/// Pageable)`.
+pub(crate) async fn list(
+    connection: &mut PgConnection,
+    criteria: &Criteria,
+    order: Order,
+    offset: i64,
+    limit: u32,
+) -> Result<Vec<Versioned<Expense>>, PersistenceError> {
+    let mut query = QueryBuilder::<Postgres>::new(
+        "select e.id, e.team_id, e.claimant_id, e.amount, e.currency, e.category, e.incurred_on, e.merchant, \
+                e.note, e.status, e.version, \
+                coalesce(array_agg(r.rejected_by order by r.position) filter (where r.expense_id is not null), \
+                         '{}') as rejected_by, \
+                coalesce(array_agg(r.reason order by r.position) filter (where r.expense_id is not null), \
+                         '{}') as rejection_reasons \
+           from expenses e \
+           left join expense_rejections r on r.expense_id = e.id",
+    );
+    push_criteria(&mut query, criteria);
+    let direction = order.direction.keyword();
+    query
+        .push(" group by e.id order by ")
+        .push(order.field.column())
+        .push(" ")
+        .push(direction)
+        .push(", e.id ")
+        .push(direction)
+        .push(" limit ")
+        .push_bind(i64::from(limit))
+        .push(" offset ")
+        .push_bind(offset);
+    let rows: Vec<ExpenseRow> = query.build_query_as().fetch_all(connection).await?;
+    rows.into_iter().map(Versioned::try_from).collect()
+}
+
+/// How many expenses match `criteria`.
+pub(crate) async fn count(connection: &mut PgConnection, criteria: &Criteria) -> Result<i64, PersistenceError> {
+    let mut query = QueryBuilder::<Postgres>::new("select count(*) from expenses e");
+    push_criteria(&mut query, criteria);
+    Ok(query.build_query_scalar().fetch_one(connection).await?)
+}
+
+/// The `where` clause: always the team first, then each filter that is set, every value a bound parameter.
+fn push_criteria(query: &mut QueryBuilder<Postgres>, criteria: &Criteria) {
+    query.push(" where e.team_id = ").push_bind(criteria.team.as_uuid());
+    if let Some(claimant) = criteria.claimant {
+        query.push(" and e.claimant_id = ").push_bind(claimant.as_uuid());
+    }
+    if let Some(status) = criteria.status {
+        query.push(" and e.status = ").push_bind(status.as_str());
+    }
+    if let Some(category) = criteria.category {
+        query.push(" and e.category = ").push_bind(category.as_str());
+    }
+    if let Some(currency) = &criteria.currency {
+        query.push(" and e.currency = ").push_bind(currency.clone());
+    }
+    if let Some(from) = criteria.incurred_from {
+        query.push(" and e.incurred_on >= ").push_bind(from);
+    }
+    if let Some(to) = criteria.incurred_to {
+        query.push(" and e.incurred_on <= ").push_bind(to);
+    }
 }
 
 /// Inserts a new expense at version 0, with `created_at` and `updated_at` both `now`.
@@ -200,7 +324,8 @@ async fn insert_rejections(
     Ok(())
 }
 
-/// One row of `expenses` with its rejections, as [`find`] selects it.
+/// One row of `expenses` with its rejections, as [`find`] and [`list`] select it.
+#[derive(sqlx::FromRow)]
 struct ExpenseRow {
     id: Uuid,
     team_id: Uuid,

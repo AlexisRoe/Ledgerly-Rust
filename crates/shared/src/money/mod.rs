@@ -7,7 +7,7 @@
 
 mod currencies;
 mod currency;
-mod decimal_text;
+pub(crate) mod decimal_text;
 mod unicode_digits;
 
 use std::cmp::Ordering;
