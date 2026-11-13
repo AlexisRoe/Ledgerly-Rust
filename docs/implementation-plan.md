@@ -146,7 +146,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: the multi-stage build from ADR 0012 (cargo-chef, `cargo auditable build --release`, distroless `cc-debian12:nonroot`, all images pinned by digest). Hardening is finished in M11.
   - Accept: `just image` builds. `docker run … id` is impossible (no shell). The image config's `User` is `65532` or `nonroot`.
 
-- [ ] **M1.7 Supply chain and hooks**
+- [x] **M1.7 Supply chain and hooks**
   - Do:
     - `deny.toml`: advisories deny; a licence allowlist (MIT, Apache-2.0, BSD-2/3-Clause, ISC, Unicode-3.0, Zlib; extend only with a reason); sources limited to crates.io; ban duplicate major versions (warn).
     - `.pre-commit-config.yaml`: gitleaks, `cargo fmt`, Prettier and Redocly, with versions pinned as in Java.

@@ -6,7 +6,7 @@ default:
     @just --list
 
 # Everything CI checks, in order. Grows with the milestones (docs/local-setup.md §4).
-verify: vendor-check fmt-check clippy test
+verify: vendor-check fmt-check clippy deny test config-check openapi-lint
 
 # Fail if a file vendored from Ledgerly-Java was changed, removed or added (ADR 0007). Works offline.
 vendor-check:
@@ -24,10 +24,26 @@ fmt:
 clippy:
     cargo clippy --workspace --all-targets --locked -- -D warnings
 
+# Advisories, licences, bans and sources of every dependency (deny.toml).
+deny:
+    cargo deny check
+
 # Unit and integration tests with nextest, then doc-tests (nextest does not run those).
 test:
     cargo nextest run --workspace --locked
     cargo test --workspace --locked --doc
+
+# Fail if a YAML or JSON file of ours is not formatted (the vendored ones are in .prettierignore).
+config-check:
+    npx --yes prettier@3.9.10 --check "**/*.{yml,yaml,json}"
+
+# Format our YAML and JSON files.
+config-format:
+    npx --yes prettier@3.9.10 --write "**/*.{yml,yaml,json}"
+
+# Lint the vendored OpenAPI file with the vendored rules (redocly.yaml), as Ledgerly-Java does.
+openapi-lint:
+    npx --yes @redocly/cli@2.76.0 lint api/openapi.yaml
 
 # Regenerate the currency table from OpenJDK's ISO 4217 data (needs network). Must produce no diff.
 gen-currencies:

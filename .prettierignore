@@ -1,0 +1,12 @@
+# Generated
+target/
+node_modules/
+.sqlx/
+crates/api/
+# Vendored from Ledgerly-Java, byte for byte (ADR 0007). Formatting them would fail the drift check.
+api/
+redocly.yaml
+bruno/
+vendor/
+# Markdown is prose and hand-aligned tables: not reformatted
+*.md

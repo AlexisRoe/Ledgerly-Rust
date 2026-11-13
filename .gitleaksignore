@@ -1,0 +1,6 @@
+# Known false positives. Each entry is commit:file:rule:line, so only these exact findings are ignored.
+# A made-up signing key ("private-7c1d") in the configuration tests, which check that Debug output hides it.
+70d207f97b30441016d1ba2d7ef8355f7922313b:crates/app/src/config.rs:generic-api-key:494
+# The same line in the current file (working-tree and pre-commit scans have no commit). If the line moves, the
+# finding comes back: check it is still the fake value, then update the number.
+crates/app/src/config.rs:generic-api-key:494
