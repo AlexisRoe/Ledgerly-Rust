@@ -49,13 +49,13 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Accept: editing any vendored byte (including in `api/openapi.yaml` or a Bruno request), or adding a file under `vendor/ledgerly-java/`, `api/` or `bruno/`, makes `just verify` fail with the file's name.
 
 - [x] **M0.3 Typed ids**
-  - Do: newtypes `UserId`, `TeamId`, `ExpenseId`, `RejectionId`, `ReceiptId`, `InvitationId`, `ImportId`, `EventId` over `uuid::Uuid`, with `new_v7()` where Java uses v7 and `new_v4()` where Java uses random v4. Java uses v4 for the refresh-token family, the import id, the storage-key suffix and the JWT `jti` (port spec §3.1). Each newtype has `Display`/`FromStr` and serde as a plain UUID string.
+  - Do: newtypes `UserId`, `TeamId`, `ExpenseId`, `ReceiptId`, `InvitationId`, `ImportId`, `EventId` over `uuid::Uuid`, with `new_v7()` where Java uses v7 and `new_v4()` where Java uses random v4. Java uses v4 for the refresh-token family, the import id, the storage-key suffix and the JWT `jti` (port spec §3.1). Each newtype has `Display`/`FromStr` and serde as a plain UUID string, and parses only the canonical hyphenated form (decided after M1). No `RejectionId`: rejections have no id in Java or in the schema (decided after M1).
   - Files: `crates/shared/src/id.rs`.
   - Accept: v7 ids created in sequence sort in creation order. A `TeamId` can't be passed where an `ExpenseId` is expected (doc-test with `compile_fail`).
   - Java: `J/shared/id/`.
 
 - [x] **M0.4 Currency table**
-  - Do: generate `currencies.rs` from OpenJDK 25's ISO 4217 data (`make/data/currency/currency.properties` at the `jdk-25` tag; the source URL and tag go in the file header). It maps each code to its default fraction digits exactly as `java.util.Currency.getDefaultFractionDigits()` returns them, including codes Java still accepts that have been withdrawn. Codes with `-1` (XAU, XTS, XXX, …) are present and marked as rejected.
+  - Do: generate `currencies.rs` from OpenJDK 25's ISO 4217 data (`src/java.base/share/data/currency/CurrencyData.properties` at the `jdk-25-ga` tag, the reference also for later 25.0.x releases (decided after M1); the source URL and tag go in the file header). It maps each code to its default fraction digits exactly as `java.util.Currency.getDefaultFractionDigits()` returns them, including codes Java still accepts that have been withdrawn. Codes with `-1` (XAU, XTS, XXX, …) are present and marked as rejected.
   - Files: `crates/shared/src/money/currencies.rs`, `scripts/gen-currencies.sh`.
   - Accept: EUR 2, JPY 0, KWD 3, CLF 4; XAU and XTS are rejected; the generator is reproducible (`just gen-currencies` produces no diff).
   - Java: `J/shared/money/Money.java`; Java learning log M0.
@@ -436,6 +436,8 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - Errors go to `import_row_errors` (`on conflict do nothing`, message truncated to 500 characters) and increment the metric.
     - `imported_rows` grows chunk by chunk, so progress is visible.
     - Status goes `QUEUED → RUNNING → COMPLETED | FAILED`. On success, delete the CSV and publish `ImportCompleted`.
+
+    **Amounts beyond `numeric(19,4)` (decided after M1):** `Money` rejects them as `TooLarge`, a check Java's `Money` lacks. Find out what Java answers for such an import row (presumably a database failure) and make Rust's answer the same; drop or keep `TooLarge` accordingly. Rows with non-ASCII decimal digits import like in Java (`١٢` is 12).
 
     **Resume after failure (decided 2026-11-12):** on restart of a FAILED job, re-read the CSV and re-validate chunk by chunk **without writing**, until the cumulative imported and skipped counts equal what's stored. Continue with the next chunk. `BATCH_*` tables are not used.
   - Accept: 10,000 rows with 37 bad ones report exactly those 37 line numbers. A crash-injection test (kill the task after chunk k, restart) ends with every valid row imported exactly once.
