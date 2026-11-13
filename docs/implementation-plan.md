@@ -155,7 +155,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - `renovate.json` modelled on Java's (digest pinning, a 3-day minimum release age, Cargo, Docker, GitHub Actions).
   - Accept: `just verify` runs `cargo deny check`. A fake AWS key committed outside `vendor/` is caught by the hook.
 
-- [ ] **M1.8 CI**
+- [x] **M1.8 CI**
   - Do:
     - `.github/workflows/ci.yml` runs on push to any branch and on pull requests.
     - Jobs: `verify`, `openapi-lint` (vendored spec), `format-config`, `gitleaks` (full history), `deny` and `vendor-drift`.
