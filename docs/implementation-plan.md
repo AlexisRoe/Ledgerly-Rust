@@ -194,7 +194,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: create the pool from config. At startup, compare `flyway_schema_history` with the vendored migrations (versions and Flyway checksums). On any difference, exit with a message naming the version.
   - Accept: the app refuses a database missing V10, and one with a tampered checksum. It starts on a freshly migrated one.
 
-- [ ] **M2.2 Test database harness**
+- [x] **M2.2 Test database harness**
   - Do: a shared test helper (`shared` crate, `testing` feature) that starts `postgres:17` with testcontainers, runs the pinned Flyway image against it, and hands each test its own transaction or schema state.
   - Accept: two integration tests in parallel don't see each other's rows.
 
