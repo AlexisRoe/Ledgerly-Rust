@@ -1,12 +1,14 @@
-//! The use cases: register, verify an email, log in (and from M5.6 refresh and log out).
+//! The use cases: register, verify an email, log in, refresh and log out.
 //!
 //! Java counterpart: `identity/internal/application/`.
 
 mod login;
+mod refresh;
 mod register;
 mod verify_email;
 
 pub(crate) use login::{Login, Session};
+pub(crate) use refresh::{Logout, Refresh};
 pub(crate) use register::Register;
 pub(crate) use verify_email::VerifyEmail;
 

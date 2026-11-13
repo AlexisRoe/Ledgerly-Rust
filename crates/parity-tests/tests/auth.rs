@@ -371,7 +371,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.refreshRotatesTheTokenAndIssuesANewAccessToken`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn refresh_rotates_the_token_and_issues_a_new_access_token() {
         let world = World::start().await;
         let login = logged_in(&world).await;
@@ -392,7 +391,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.replayingARotatedTokenRevokesTheWholeFamily`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn replaying_a_rotated_token_revokes_the_whole_family() {
         let world = World::start().await;
         let login = logged_in(&world).await;
@@ -408,7 +406,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.refreshTokensAreStoredOnlyAsHashes`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn refresh_tokens_are_stored_only_as_hashes() {
         let world = World::start().await;
         let login = logged_in(&world).await;
@@ -424,7 +421,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.refreshNeedsTheCustomHeaderAndTheCookie`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn refresh_needs_the_custom_header_and_the_cookie() {
         let world = World::start().await;
         let login = logged_in(&world).await;
@@ -461,7 +457,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.unknownRefreshTokenGets401`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn unknown_refresh_token_gets_401() {
         let world = World::start().await;
 
@@ -470,7 +465,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.logoutRevokesTheFamilyAndClearsTheCookie`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn logout_revokes_the_family_and_clears_the_cookie() {
         let world = World::start().await;
         let login = logged_in(&world).await;
@@ -489,7 +483,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.logoutIsIdempotentButStillNeedsTheCustomHeader`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn logout_is_idempotent_but_still_needs_the_custom_header() {
         let world = World::start().await;
         let logout = format!("{V1}/auth/logout");
@@ -510,7 +503,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.logsNeverContainPasswordsOrTokens`. The log is the stdout of the app's container.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn logs_never_contain_passwords_or_tokens() {
         let world = World::start().await;
         let user = registered(&world).await;

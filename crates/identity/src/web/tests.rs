@@ -108,6 +108,50 @@ impl World {
         Reply { status, headers, body }
     }
 
+    /// `POST path` without a body, with optional `X-Requested-With` values and a `Cookie` header.
+    async fn cookie_post(&self, path: &str, requested_with: &[&str], cookie: Option<&str>) -> Reply {
+        let mut request = Request::post(path);
+        for value in requested_with {
+            request = request.header("x-requested-with", *value);
+        }
+        if let Some(cookie) = cookie {
+            request = request.header("cookie", format!("refresh_token={cookie}"));
+        }
+        let response = self
+            .router
+            .clone()
+            .oneshot(request.body(HttpBody::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 16).await.unwrap();
+        let body = if bytes.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes).unwrap()
+        };
+        Reply { status, headers, body }
+    }
+
+    async fn refresh(&self, cookie: &str) -> Reply {
+        self.cookie_post("/api/v1/auth/refresh", &["ledgerly"], Some(cookie))
+            .await
+    }
+
+    async fn logout(&self, cookie: &str) -> Reply {
+        self.cookie_post("/api/v1/auth/logout", &["ledgerly"], Some(cookie))
+            .await
+    }
+
+    /// A registered user's refresh cookie after logging in.
+    async fn session(&self) -> String {
+        let email = self.registered().await;
+        let reply = self.login(&email, PASSWORD).await;
+        assert_eq!(reply.status, StatusCode::OK);
+        reply.cookie()
+    }
+
     async fn register(&self, email: &str, password: &str) -> Reply {
         self.post("/api/v1/auth/register", &json!({"email": email, "password": password}))
             .await
@@ -522,6 +566,156 @@ async fn an_over_long_login_password_is_a_validation_error() {
     assert_eq!(
         reply.body["errors"],
         json!([{"field": "password", "message": "size must be between 1 and 128"}])
+    );
+}
+
+// --- refresh and logout ---
+
+/// Java: `AuthApiTest.refreshRotatesTheTokenAndIssuesANewAccessToken`.
+#[tokio::test]
+async fn refresh_rotates_the_token_and_issues_a_new_access_token() {
+    let world = World::new().await;
+    let first = world.session().await;
+
+    let refreshed = world.refresh(&first).await;
+
+    assert_eq!(refreshed.status, StatusCode::OK);
+    assert_ne!(refreshed.cookie(), first);
+    assert_eq!(refreshed.headers["cache-control"], "no-store");
+    let tokens = world.identity.access_tokens().unwrap();
+    assert!(tokens.verify(refreshed.body["accessToken"].as_str().unwrap()).is_ok());
+    assert_eq!(world.refresh(&refreshed.cookie()).await.status, StatusCode::OK);
+}
+
+/// Java: `AuthApiTest.replayingARotatedTokenRevokesTheWholeFamily`: also the successor dies.
+#[tokio::test]
+async fn replaying_a_rotated_token_revokes_the_whole_family() {
+    let world = World::new().await;
+    let first = world.session().await;
+    let second = world.refresh(&first).await.cookie();
+
+    let replay = world.refresh(&first).await;
+
+    assert_eq!(replay.status, StatusCode::UNAUTHORIZED);
+    assert!(replay.headers.get("set-cookie").is_none());
+    assert_eq!(world.refresh(&second).await.status, StatusCode::UNAUTHORIZED);
+    let live: i64 = sqlx::query_scalar("select count(*) from refresh_tokens where revoked_at is null")
+        .fetch_one(world.pool())
+        .await
+        .unwrap();
+    assert_eq!(live, 0);
+}
+
+/// Plan M5.6: two refreshes with one token at the same moment give exactly one success (the row lock makes the
+/// second see a replaced token).
+#[tokio::test]
+async fn concurrent_refreshes_with_one_token_give_exactly_one_success() {
+    let world = World::new().await;
+    let token = world.session().await;
+
+    let (one, two) = tokio::join!(world.refresh(&token), world.refresh(&token));
+
+    let mut statuses = [one.status, two.status];
+    statuses.sort();
+    assert_eq!(statuses, [StatusCode::OK, StatusCode::UNAUTHORIZED]);
+}
+
+#[tokio::test]
+async fn a_session_slides_14_days_from_each_refresh() {
+    let world = World::new().await;
+    let mut token = world.session().await;
+
+    // Five refreshes 13 days apart keep the session alive for 65 days.
+    for _ in 0..5 {
+        world.clock.advance(TimeDelta::days(13));
+        let reply = world.refresh(&token).await;
+        assert_eq!(reply.status, StatusCode::OK);
+        token = reply.cookie();
+    }
+
+    world.clock.advance(TimeDelta::days(14));
+    assert_eq!(world.refresh(&token).await.status, StatusCode::UNAUTHORIZED);
+}
+
+/// Java: `AuthApiTest.refreshNeedsTheCustomHeaderAndTheCookie`, with Java's messages and checks in Spring's
+/// order.
+#[tokio::test]
+async fn refresh_needs_the_custom_header_and_the_cookie() {
+    let world = World::new().await;
+    let token = world.session().await;
+    let path = "/api/v1/auth/refresh";
+
+    let missing = world.cookie_post(path, &[], Some(&token)).await;
+    let wrong = world.cookie_post(path, &["XMLHttpRequest"], Some(&token)).await;
+    let twice = world.cookie_post(path, &["ledgerly", "ledgerly"], Some(&token)).await;
+    let long = world.cookie_post(path, &["wrong"], Some(&"a".repeat(201))).await;
+    let no_cookie = world.cookie_post(path, &["ledgerly"], None).await;
+    let blank = world.cookie_post(path, &["ledgerly"], Some("")).await;
+
+    assert_eq!(
+        missing.body["errors"],
+        json!([{"field": "X-Requested-With", "message": "header is required"}])
+    );
+    assert_eq!(
+        wrong.body["errors"],
+        json!([{"field": "X-Requested-With", "message": "must be 'ledgerly'"}])
+    );
+    assert_eq!(twice.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        long.body["errors"],
+        json!([{"field": "refreshToken", "message": "size must be between 0 and 200"}])
+    );
+    assert_eq!(
+        (no_cookie.status, blank.status),
+        (StatusCode::UNAUTHORIZED, StatusCode::UNAUTHORIZED)
+    );
+    assert!(no_cookie.headers.get("www-authenticate").is_none());
+    // None of the refused attempts used the token up.
+    assert_eq!(world.refresh(&token).await.status, StatusCode::OK);
+}
+
+/// Java: `AuthApiTest.unknownRefreshTokenGets401`.
+#[tokio::test]
+async fn an_unknown_refresh_token_is_401() {
+    let world = World::new().await;
+
+    assert_eq!(world.refresh(&"a".repeat(43)).await.code(), "UNAUTHENTICATED");
+}
+
+/// Java: `AuthApiTest.logoutRevokesTheFamilyAndClearsTheCookie`.
+#[tokio::test]
+async fn logout_revokes_the_family_and_clears_the_cookie() {
+    let world = World::new().await;
+    let first = world.session().await;
+    let second = world.refresh(&first).await.cookie();
+
+    let out = world.logout(&second).await;
+
+    assert_eq!(out.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        out.headers["set-cookie"],
+        "refresh_token=; Path=/api/v1/auth; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; HttpOnly; \
+         SameSite=Strict"
+    );
+    assert_eq!(world.refresh(&second).await.status, StatusCode::UNAUTHORIZED);
+}
+
+/// Java: `AuthApiTest.logoutIsIdempotentButStillNeedsTheCustomHeader`.
+#[tokio::test]
+async fn logout_is_idempotent_but_still_needs_the_custom_header() {
+    let world = World::new().await;
+
+    assert_eq!(
+        world
+            .cookie_post("/api/v1/auth/logout", &["ledgerly"], None)
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(world.logout(&"a".repeat(43)).await.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        world.cookie_post("/api/v1/auth/logout", &[], None).await.status,
+        StatusCode::BAD_REQUEST
     );
 }
 

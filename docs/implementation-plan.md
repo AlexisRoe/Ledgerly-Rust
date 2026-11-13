@@ -322,7 +322,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: deny by default; the public allowlist (CONCEPT §4); the 401 problem body. Layer order reproduces Java's precedence: 413 before 401, 401 before routing, and so on (inventory §4.2).
   - Accept: the precedence parity tests tagged M5 pass.
 
-- [ ] **M5.6 Refresh and logout**
+- [x] **M5.6 Refresh and logout**
   - Do: rotation; reuse revokes the whole family, publishes `RefreshTokenReuseDetected` and logs at warn; a sliding 14-day lifetime; the exact cookie attributes and `Cache-Control: no-store`; `X-Requested-With: ledgerly` required (Java ADR 0004). Logout revokes the family, always answers 204 and clears the cookie.
   - Accept: a replayed refresh token revokes the family. Concurrent refreshes with one token give exactly one success (row lock).
 

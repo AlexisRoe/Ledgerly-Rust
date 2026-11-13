@@ -21,7 +21,6 @@ mod m5 {
 
     /// Java: `Api2BrokenAuthenticationTest.aReplayedRefreshTokenRevokesTheWholeSessionFamily`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn a_replayed_refresh_token_revokes_the_whole_session_family() {
         let world = World::start().await;
         let user = world.register_and_verify(PASSWORD).await;

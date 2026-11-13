@@ -134,7 +134,6 @@ pub(crate) async fn mark_verification_used(
 }
 
 /// One link in a session's chain of refresh tokens. Java: `RefreshToken`.
-#[expect(dead_code, reason = "refresh and logout use it from M5.6")]
 #[derive(Debug, Clone)]
 pub(crate) struct RefreshToken {
     pub id: Uuid,
@@ -147,7 +146,6 @@ pub(crate) struct RefreshToken {
 
 impl RefreshToken {
     /// Expired once `expires_at` is not in the future. Java: `isExpired`.
-    #[expect(dead_code, reason = "refresh and logout use it from M5.6")]
     pub(crate) fn is_expired(&self, now: DateTime<Utc>) -> bool {
         self.expires_at <= now
     }
@@ -180,7 +178,6 @@ pub(crate) async fn insert_refresh_token(
 
 /// The refresh token with this hash, locked so that two refreshes with it are serialised and the second sees it
 /// as replaced. Java: `RefreshTokenRepository.findByTokenHash`.
-#[expect(dead_code, reason = "refresh and logout use it from M5.6")]
 pub(crate) async fn find_refresh_token_for_update(
     connection: &mut PgConnection,
     token: &TokenHash,
@@ -203,7 +200,6 @@ pub(crate) async fn find_refresh_token_for_update(
 }
 
 /// Records that `token` was exchanged for `successor`. Java: `RefreshToken.replaceWith`.
-#[expect(dead_code, reason = "refresh and logout use it from M5.6")]
 pub(crate) async fn mark_replaced(connection: &mut PgConnection, token: Uuid, successor: Uuid) -> sqlx::Result<()> {
     sqlx::query!(
         "update refresh_tokens set replaced_by = $2 where id = $1",
@@ -216,7 +212,6 @@ pub(crate) async fn mark_replaced(connection: &mut PgConnection, token: Uuid, su
 }
 
 /// Revokes every still-valid token of the session. Java: `RefreshTokenRepository.revokeFamily`.
-#[expect(dead_code, reason = "refresh and logout use it from M5.6")]
 pub(crate) async fn revoke_family(
     connection: &mut PgConnection,
     family: Uuid,

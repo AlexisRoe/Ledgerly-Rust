@@ -23,7 +23,7 @@ use ledgerly_shared::web::Routes;
 use sqlx::PgPool;
 
 pub use crate::access_token::{AccessTokens, InvalidToken, KeyError, SigningKeys};
-use crate::application::{Login, Register, VerifyEmail};
+use crate::application::{Login, Logout, Refresh, Register, VerifyEmail};
 use crate::web::AuthApi;
 
 /// Why the identity module cannot start.
@@ -85,6 +85,13 @@ impl Identity {
                 failures,
                 lifetime(auth.refresh_token_ttl),
             ),
+            refresh: Refresh::new(
+                pool.clone(),
+                clock.clone(),
+                tokens.clone(),
+                lifetime(auth.refresh_token_ttl),
+            ),
+            logout: Logout::new(pool.clone(), clock.clone()),
             tokens,
         };
         Ok(Self { own: Some(api) })

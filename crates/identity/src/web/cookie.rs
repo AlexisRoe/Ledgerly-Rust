@@ -36,7 +36,6 @@ pub(crate) fn set_cookie(value: &SecretString, max_age: TimeDelta) -> Option<Hea
 
 /// The value of the first `refresh_token` cookie, as Spring's `@CookieValue` reads it with Tomcat's RFC 6265
 /// parser: cookies are split at `;`, names compared exactly, values taken as they are.
-#[cfg_attr(not(test), expect(dead_code, reason = "refresh and logout use it from M5.6"))]
 pub(crate) fn read(headers: &HeaderMap) -> Option<SecretString> {
     headers
         .get_all(axum::http::header::COOKIE)
