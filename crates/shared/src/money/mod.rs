@@ -8,6 +8,7 @@
 mod currencies;
 mod currency;
 mod decimal_text;
+mod unicode_digits;
 
 use std::cmp::Ordering;
 
@@ -321,11 +322,24 @@ mod tests {
         }
     }
 
-    /// A known difference, kept visible here: Java's `BigDecimal` reads any Unicode decimal digit, so Java accepts
-    /// this amount as 12.
+    /// Java's `BigDecimal` reads any decimal digit of the Basic Multilingual Plane: Arabic-Indic `١٢` is 12,
+    /// fullwidth `１２.５` is 12.5, and they may be mixed with ASCII digits and appear in the exponent.
     #[test]
-    fn non_ascii_digits_are_not_accepted_although_java_accepts_them() {
-        assert_eq!(error("١٢", "EUR"), MoneyError::NotADecimal);
+    fn non_ascii_decimal_digits_are_read_like_javas() {
+        assert_eq!(money("١٢", "EUR"), money("12", "EUR"));
+        assert_eq!(money("１２.５", "EUR"), money("12.5", "EUR"));
+        assert_eq!(money("1٢.5", "EUR"), money("12.5", "EUR"));
+        assert_eq!(money("1E٢", "EUR"), money("100", "EUR"));
+        assert_eq!(money("१०.००", "INR"), money("10", "INR"));
+        // The message prints the number as `BigDecimal.toString()` does: in ASCII digits.
+        assert_eq!(error("٠", "EUR").to_string(), "Amount must be positive: 0");
+    }
+
+    /// A digit outside the Basic Multilingual Plane is two UTF-16 units in Java, and neither is a digit.
+    #[test]
+    fn supplementary_digits_are_not_digits_in_java() {
+        assert_eq!(error("\u{1D7CF}", "EUR"), MoneyError::NotADecimal);
+        assert_eq!(error("1\u{104A1}", "EUR"), MoneyError::NotADecimal);
     }
 
     #[test]

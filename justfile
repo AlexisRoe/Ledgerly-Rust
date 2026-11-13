@@ -47,6 +47,11 @@ config-format:
 openapi-lint:
     npx --yes @redocly/cli@2.76.0 lint api/openapi.yaml
 
+# Regenerate the table of Unicode decimal digits Java's BigDecimal accepts (needs network). Must produce no diff.
+gen-unicode-digits:
+    scripts/gen-unicode-digits.sh
+    cargo fmt --all
+
 # Regenerate the currency table from OpenJDK's ISO 4217 data (needs network). Must produce no diff.
 gen-currencies:
     scripts/gen-currencies.sh

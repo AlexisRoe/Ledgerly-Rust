@@ -9,6 +9,8 @@ use std::fmt;
 
 use rust_decimal::Decimal;
 
+use super::unicode_digits::ZEROS;
+
 /// `unscaled value × 10^-scale`, like a `BigDecimal`: any number of digits, and a scale that may be negative.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct JavaDecimal {
@@ -23,8 +25,11 @@ impl JavaDecimal {
     /// Parses what `new BigDecimal(String)` parses: an optional sign, digits with at most one decimal point, and an
     /// optional exponent (`12.50`, `+.5`, `5.`, `1E+2`, `125e-1`). `None` is Java's `NumberFormatException`.
     ///
-    /// One known gap: Java also accepts non-ASCII decimal digits such as `١٢`; this accepts only `0`–`9`.
+    /// Like Java, every decimal digit of the Basic Multilingual Plane counts as a digit (`١٢` is 12), in the
+    /// mantissa and in the exponent.
     pub(super) fn parse(text: &str) -> Option<Self> {
+        let ascii: String = text.chars().map(to_ascii_digit).collect();
+        let text = ascii.as_str();
         let (negative, unsigned) = match text.strip_prefix('-') {
             Some(rest) => (true, rest),
             None => (false, text.strip_prefix('+').unwrap_or(text)),
@@ -119,6 +124,21 @@ impl JavaDecimal {
     }
 }
 
+/// The ASCII digit with the value of `c` if `c` is a decimal digit for Java's `Character.isDigit(char)`, else `c`.
+fn to_ascii_digit(c: char) -> char {
+    let Ok(unit) = u16::try_from(u32::from(c)) else {
+        // Outside the BMP: two surrogates in Java, neither of them a digit.
+        return c;
+    };
+    let run = ZEROS.partition_point(|zero| *zero <= unit).checked_sub(1);
+    let value = run
+        .and_then(|index| ZEROS.get(index))
+        .and_then(|zero| unit.checked_sub(*zero))
+        .filter(|value| *value < 10)
+        .and_then(|value| u8::try_from(value).ok());
+    value.map_or(c, |value| char::from(b'0'.saturating_add(value)))
+}
+
 /// The exponent after `e`/`E`: an optional sign and at least one digit, within Java's `int` range.
 fn parse_exponent(text: &str) -> Option<i64> {
     let (negative, digits) = match text.strip_prefix('-') {
@@ -195,6 +215,27 @@ mod tests {
     }
 
     /// Input and the `new BigDecimal(input).toString()` Java gives for it.
+    #[test]
+    fn every_digit_of_every_run_maps_to_its_ascii_digit() {
+        for zero in ZEROS {
+            for value in 0..10_u16 {
+                let c = char::from_u32(u32::from(zero + value)).unwrap();
+                assert_eq!(
+                    to_ascii_digit(c),
+                    char::from(b'0' + u8::try_from(value).unwrap()),
+                    "{c:?}"
+                );
+            }
+        }
+        assert_eq!(to_ascii_digit('a'), 'a');
+        assert_eq!(to_ascii_digit('.'), '.');
+        assert_eq!(to_ascii_digit('\u{1D7CE}'), '\u{1D7CE}');
+        assert!(
+            ZEROS.windows(2).all(|pair| pair[0] + 10 <= pair[1]),
+            "sorted runs that do not overlap"
+        );
+    }
+
     #[test]
     fn prints_like_big_decimal_to_string() {
         let cases = [
