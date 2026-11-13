@@ -1296,6 +1296,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "reqwest",
+ "rust_decimal",
  "secrecy",
  "serde-saphyr",
  "serde_json",
@@ -1306,6 +1307,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

@@ -329,7 +329,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 - [x] **M5.7 Current user from the token**
   - Do: `CurrentUser` from the verified JWT, with `userId` on the request span. Events are defined now and published through a `shared::events::Publisher` trait whose implementation does nothing until M9.
 
-- [ ] **M5.8 Demo data**
+- [x] **M5.8 Demo data**
   - Do: under `local` and not `test` (and not `keycloak`), a seeder fills an empty database with exactly the data in [`reference/demo-data.md`](reference/demo-data.md), using SQL into the existing tables in one transaction. It skips if the demo team already exists.
   - Accept: `just up` followed by Bruno `00-auth` passes, except the `/me` requests (M6).
 

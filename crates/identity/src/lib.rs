@@ -22,6 +22,7 @@ use ledgerly_shared::config::{AuthConfig, Profiles};
 use ledgerly_shared::events::Publisher;
 use ledgerly_shared::ratelimit::{InvalidRateLimit, RateLimit, RateLimiter};
 use ledgerly_shared::web::Routes;
+use secrecy::SecretString;
 use sqlx::PgPool;
 
 pub use crate::access_token::{AccessTokens, InvalidToken, KeyError, SigningKeys};
@@ -36,6 +37,14 @@ pub enum IdentityError {
     /// `ledgerly.auth.lock-duration` is zero. Java fails the first login instead.
     #[error("ledgerly.auth.lock-duration must be longer than zero")]
     LockDuration(#[from] InvalidRateLimit),
+}
+
+/// A stored password hash for `password`, as registration writes it: Java's `PasswordEncoder` bean, which its
+/// demo-data seeder borrows. `None` only if the operating system's random number generator fails. Blocks for
+/// tens of milliseconds.
+#[must_use]
+pub fn password_hash(password: &SecretString) -> Option<String> {
+    password::hash(password).ok().map(|hash| hash.as_str().to_owned())
 }
 
 /// The identity module as the app wires it.

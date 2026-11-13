@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use ledgerly_app::config::{Config, ProcessEnvironment};
 use ledgerly_app::telemetry::Telemetry;
-use ledgerly_app::{App, StartupError, logging, stop_signal};
+use ledgerly_app::{App, StartupError, logging, seed, stop_signal};
 use ledgerly_shared::database;
 
 fn main() -> ExitCode {
@@ -48,6 +48,8 @@ async fn run(config: Config, telemetry: Telemetry) -> Result<(), StartupError> {
     let pool = database::connect(&config.database).await?;
     // Before the ports open: a schema this build was not made for is never served (ADR 0006).
     database::verify(&pool).await?;
+    // Java's `DevDataSeeder` (`local` without `test`): an empty database gets the demo team.
+    seed::demo_data(config.profiles, &pool, chrono::Utc::now()).await?;
     let app = App::bind(config, telemetry, pool.clone()).await?;
     app.serve(stop).await?;
     // Closed after the last request has finished.

@@ -9,6 +9,7 @@ pub mod config;
 mod docs;
 pub mod logging;
 mod management;
+pub mod seed;
 mod server;
 pub mod telemetry;
 #[cfg(test)]
@@ -50,6 +51,8 @@ pub enum StartupError {
     Schema(#[from] SchemaError),
     #[error("{0}")]
     Identity(#[from] IdentityError),
+    #[error("{0}")]
+    Seed(#[from] seed::SeedError),
 }
 
 /// The modules that keep state between requests, built once at startup.
