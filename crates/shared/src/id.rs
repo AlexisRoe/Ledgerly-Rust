@@ -27,8 +27,32 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
+
+/// The text is not an id in the canonical form `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (36 characters, hex digits
+/// in either case, hyphens at positions 9, 14, 19 and 24).
+///
+/// Only the canonical form is accepted, by decision of the reviewer after M1. The `uuid` crate also accepts
+/// forms without hyphens, in braces or as `urn:uuid:`; Java's `UUID.fromString` rejects those but accepts
+/// shortened groups such as `1-1-1-1-1`. Neither set of odd forms is taken over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("not a UUID in the form xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")]
+pub struct InvalidId;
+
+/// Parses the canonical hyphenated form and nothing else.
+fn parse_canonical(text: &str) -> Result<Uuid, InvalidId> {
+    let bytes = text.as_bytes();
+    let canonical = bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => *byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        });
+    if !canonical {
+        return Err(InvalidId);
+    }
+    Uuid::try_parse(text).map_err(|_| InvalidId)
+}
 
 /// Defines an id newtype over [`Uuid`].
 ///
@@ -61,9 +85,17 @@ macro_rules! typed_id {
     };
     (@common $(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
         #[serde(transparent)]
         pub struct $name(Uuid);
+
+        /// Only the canonical form, as [`FromStr`] (see [`InvalidId`]).
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let text = <std::borrow::Cow<'de, str>>::deserialize(deserializer)?;
+                text.parse().map_err(serde::de::Error::custom)
+            }
+        }
 
         impl $name {
             /// Wraps a UUID that already identifies one of these, such as a column value or a path parameter.
@@ -86,11 +118,12 @@ macro_rules! typed_id {
             }
         }
 
+        /// Only the canonical hyphenated form; see [`InvalidId`].
         impl FromStr for $name {
-            type Err = uuid::Error;
+            type Err = InvalidId;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                Uuid::parse_str(s).map(Self)
+                parse_canonical(s).map(Self)
             }
         }
     };
@@ -180,6 +213,27 @@ mod tests {
         assert!("".parse::<UserId>().is_err());
         assert!("not-a-uuid".parse::<UserId>().is_err());
         assert!("00000000-0000-7000-8000-00000000a00".parse::<UserId>().is_err());
+    }
+
+    #[test]
+    fn only_the_canonical_form_is_accepted() {
+        let canonical = "0192f0c1-2b3c-7d4e-8f50-123456789abc";
+        assert!(canonical.parse::<UserId>().is_ok());
+        assert!(canonical.to_uppercase().parse::<UserId>().is_ok());
+        for odd in [
+            "0192f0c12b3c7d4e8f50123456789abc",
+            "{0192f0c1-2b3c-7d4e-8f50-123456789abc}",
+            "urn:uuid:0192f0c1-2b3c-7d4e-8f50-123456789abc",
+            "1-1-1-1-1",
+            "0192f0c1-2b3c-7d4e-8f50-123456789ab",
+            "0192f0c1-2b3c-7d4e-8f50-123456789abcd",
+            "0192f0c1+2b3c-7d4e-8f50-123456789abc",
+            "0192f0c1-2b3c-7d4e-8f50-123456789abg",
+            " 0192f0c1-2b3c-7d4e-8f50-123456789ab",
+        ] {
+            assert_eq!(odd.parse::<UserId>(), Err(InvalidId), "{odd}");
+            assert!(serde_json::from_str::<UserId>(&format!("\"{odd}\"")).is_err(), "{odd}");
+        }
     }
 
     #[test]
