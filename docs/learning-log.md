@@ -177,12 +177,12 @@ One section per milestone, written by the implementing agent when the milestone 
   - The plan's `delete(team, id)` is `delete(team, id, version)` (see Parity traps).
   - `crc` (already in the tree through sqlx) for Flyway's CRC-32.
 - **Open questions:**
-  1. **Migrations from the future.** Java leaves Flyway's defaults, which ignore applied migrations it does not know (`ignoreMigrationPatterns=*:future`): Java starts on a database a newer Java migrated to V11. Rust refuses, as ADR 0006 says ("exactly the vendored migrations"). That also means rolling the Rust image back after a newer Java ran is impossible. Keep the strict check?
-  2. **TLS to Postgres.** sqlx is built without a TLS backend, so `sslmode=require`/`verify-*` is refused at startup. pgjdbc supports them, and a managed database often demands them. Add `tls-rustls` (rustls + webpki roots) now or in M11?
-  3. **Database health.** Spring Boot's `/actuator/health` includes the `db` indicator, so Java reports `DOWN` (503) when Postgres is unreachable. Rust's health stays `UP`. Which milestone should add it (M10 hardening)?
-  4. **No-op updates.** Hibernate writes nothing, and keeps the version and `updated_at`, when a loaded entity did not change (dirty checking). Rust's `update` always increments. It matters from M3: a PATCH with identical values gives Java's old ETag back. Replicate by comparing before writing?
-  5. **Timestamps.** Hibernate takes `created_at`/`updated_at` from the JVM clock, not the injected `Clock`. Rust uses the `Clock`. Same values in production; differs only under a fixed test clock. Fine?
-  6. **CONCEPT §2 names `testcontainers`.** I did not edit CONCEPT; should the Tests row say "Postgres in Docker via the CLI (`TestDatabase`)"?
+  1. *Decided: stay strict (ADR 0006); plan M2.1 says so.* **Migrations from the future.** Java leaves Flyway's defaults, which ignore applied migrations it does not know (`ignoreMigrationPatterns=*:future`): Java starts on a database a newer Java migrated to V11. Rust refuses, as ADR 0006 says ("exactly the vendored migrations"). That also means rolling the Rust image back after a newer Java ran is impossible. Keep the strict check?
+  2. *Decided: add it in M11 (plan M11.4).* **TLS to Postgres.** sqlx is built without a TLS backend, so `sslmode=require`/`verify-*` is refused at startup. pgjdbc supports them, and a managed database often demands them. Add `tls-rustls` (rustls + webpki roots) now or in M11?
+  3. *Decided: M10 (plan M10.6).* **Database health.** Spring Boot's `/actuator/health` includes the `db` indicator, so Java reports `DOWN` (503) when Postgres is unreachable. Rust's health stays `UP`. Which milestone should add it (M10 hardening)?
+  4. *Decided: replicate in the use case, M3.4.* **No-op updates.** Hibernate writes nothing, and keeps the version and `updated_at`, when a loaded entity did not change (dirty checking). Rust's `update` always increments. It matters from M3: a PATCH with identical values gives Java's old ETag back. Replicate by comparing before writing?
+  5. *Decided: keep the `Clock`.* **Timestamps.** Hibernate takes `created_at`/`updated_at` from the JVM clock, not the injected `Clock`. Rust uses the `Clock`. Same values in production; differs only under a fixed test clock. Fine?
+  6. *Decided: CONCEPT §2 and §6 updated.* **CONCEPT §2 named `testcontainers`.** I did not edit CONCEPT; should the Tests row say "Postgres in Docker via the CLI (`TestDatabase`)"?
 
 ## M3 · Contract, validation, errors
 

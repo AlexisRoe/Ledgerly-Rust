@@ -191,11 +191,11 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Rust you meet:** sqlx macros and offline mode, executors and transactions (lifetimes in practice), `TryFrom` for row mapping, error conversion with `?`.
 
 - [x] **M2.1 Pool and schema check**
-  - Do: create the pool from config. At startup, compare `flyway_schema_history` with the vendored migrations (versions and Flyway checksums). On any difference, exit with a message naming the version.
+  - Do: create the pool from config. At startup, compare `flyway_schema_history` with the vendored migrations (versions and Flyway checksums). On any difference, exit with a message naming the version. This includes versions newer than the vendored ones, which Java's Flyway would ignore (decided after M2: stay strict, ADR 0006).
   - Accept: the app refuses a database missing V10, and one with a tampered checksum. It starts on a freshly migrated one.
 
 - [x] **M2.2 Test database harness**
-  - Do: a shared test helper (`shared` crate, `testing` feature) that starts `postgres:17` with testcontainers, runs the pinned Flyway image against it, and hands each test its own transaction or schema state.
+  - Do: a shared test helper (`shared` crate, `testing` feature) that starts `postgres:17` in Docker (through the `docker` CLI; `testcontainers` is refused by `cargo deny`, decided after M2), runs the pinned Flyway image against it, and hands each test its own transaction or schema state.
   - Accept: two integration tests in parallel don't see each other's rows.
 
 - [x] **M2.3 Expense persistence**
@@ -251,6 +251,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - PATCH and DELETE: `If-Match` required (428 if missing, 412 if stale, `W/"n"` accepted).
     - The six `:action` transitions.
     - Requests are converted into domain types at the edge; `status` and `claimantId` can't be set.
+    - A PATCH that changes nothing writes nothing: version (ETag) and `updated_at` stay, as with Hibernate's dirty checking. The use case compares before and after and skips the `update` (decided after M2).
   - Accept: in-process tests (axum `oneshot`) for every status code in the spec for these paths, plus the M3 abuse tests from Java's plan (PATCH with `status` rejected, MEMBER `:approve` 403, self-approval 409, EUR `12.345` 400, future date 400).
 
 - [ ] **M3.5 Idempotency**
@@ -375,7 +376,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 
 - [ ] **M7.1 Object storage**
   - Do: an `ObjectStorage` trait in `shared` (put, open, delete, move, presign GET), implemented with `aws-sdk-s3` (path-style for SeaweedFS). Ensure the bucket exists at startup. Metric/span `ledgerly.s3{operation}`.
-  - Accept: integration test against SeaweedFS in testcontainers.
+  - Accept: integration test against SeaweedFS in Docker, started like `TestDatabase` does Postgres.
 
 - [ ] **M7.2 Upload**
   - Do: check the claimant and that the expense is a Draft (via the `ExpensesFacade`) **before** reading the body. Then:
@@ -500,7 +501,11 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: `just parity` captures the app container's logs for the whole run and asserts that no email, password, token, cookie, `Bearer`, merchant/note value, `password_hash` or `$argon2id` appears (inventory: `LogHygieneTest`).
   - Accept: passes. Logging an email on purpose makes it fail.
 
-- [ ] **M10.6 Profiling session**
+- [ ] **M10.6 Database health**
+  - Do: `/actuator/health` includes Spring Boot's `db` indicator: with Postgres unreachable it answers `DOWN` with 503. Liveness and readiness don't include it, as in Spring (decided after M2).
+  - Accept: a parity test that stops Postgres sees `/actuator/health` turn 503 `DOWN` while liveness stays `UP`, and `UP` again after Postgres is back.
+
+- [ ] **M10.7 Profiling session**
   - Do: profile a 10,000-row import and a 100-item batch. Record the findings (allocations, lock contention, the slowest query) in the learning log. Fix only what's clearly wrong.
 
 **Done when:** every OWASP parity file is green and only M11 tests remain ignored.
@@ -527,14 +532,18 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - JIT provisioning and linking by `external_subject`, or by verified email, exactly as port spec §4 says.
   - Accept: against the composed Keycloak with the vendored realm, alice logs in through Keycloak and reads her team. A token for another client → 401. Nothing outside `identity` and `app` changed (`git diff --stat`).
 
-- [ ] **M11.4 Production fail-fast review**
+- [ ] **M11.4 TLS to Postgres**
+  - Do: build sqlx with `tls-rustls` (ring, webpki roots) and accept `sslmode=require`, `verify-ca` and `verify-full` in `SPRING_DATASOURCE_URL`, plus `sslrootcert`, with pgjdbc's meanings. Until then these modes stop the start with a clear message (decided after M2).
+  - Accept: the app connects to a TLS-only Postgres with `verify-full`, and refuses one whose certificate doesn't match the host.
+
+- [ ] **M11.5 Production fail-fast review**
   - Do: re-check the `prod` startup refusal against Java's list of required variables, including the `keycloak` combination.
   - Accept: one test per required variable.
 
-- [ ] **M11.5 Dependency-upgrade drill**
+- [ ] **M11.6 Dependency-upgrade drill**
   - Do: the counterpart of Java's Boot 4.2 upgrade. Run `cargo update`, take one major-version bump of a core crate (whichever Renovate proposes first), and record what broke in the learning log.
 
-- [ ] **M11.6 Full parity**
+- [ ] **M11.7 Full parity**
   - Do: un-ignore everything that's left. `NOT_PARITY.md` lists only rows covered by in-process tests, each linked to its test.
   - Accept: `just parity` reports 0 ignored and 0 failed, and `just api-test` passes the whole Bruno collection.
 

@@ -48,7 +48,7 @@ Everything *inside* that boundary is designed afresh in idiomatic Rust: types, e
 | Rate limiting | `governor` (GCRA), in memory, per user and per IP | Bucket4j | `Retry-After` must match Java's semantics (see plan M10) |
 | Logging and telemetry | `tracing`, an ECS JSON formatter, `opentelemetry-otlp`, Prometheus metrics on 8081 | Logback ECS, Micrometer | Same log fields, same metric names |
 | Config | Environment variables under Java's names, parsed into typed structs at startup | `@ConfigurationProperties` | — |
-| Tests | `cargo-nextest`, `testcontainers`, `reqwest` for the parity suite, `jsonschema` for response validation | JUnit, Testcontainers, `RestTestClient` | — |
+| Tests | `cargo-nextest`, Postgres in Docker driven through the `docker` CLI (`TestDatabase`), `reqwest` for the parity suite, `jsonschema` for response validation | JUnit, Testcontainers, `RestTestClient` | `testcontainers` was the plan; its `astral-tokio-tar` dependency is unmaintained (RUSTSEC-2026-0440) and refused by `cargo deny` (decided after M2) |
 | Quality and supply chain | rustfmt, clippy (`-D warnings`, no `unwrap`/`expect`/`panic` outside tests), `cargo-deny`, `cargo-auditable`, CycloneDX SBOM, Trivy, gitleaks, Renovate | Spotless, NullAway, enforcer, Trivy, gitleaks, Renovate | — |
 
 These crates are the plan's defaults. Replacing one is fine if the commit says why, `cargo deny` passes, and the learning log records it. A choice with ADR status (axum, sqlx, generated traits, Flyway) needs a new ADR.
@@ -162,7 +162,7 @@ Wire behaviour is exactly Java's ([Java concept §6](vendor/ledgerly-java/CONCEP
 | Layer | Where | What it proves |
 | --- | --- | --- |
 | Unit | `#[cfg(test)]` in each crate, mostly `domain/` | Invariants and the state machine, without I/O. Property tests (`proptest`) for `Money` and the transition table |
-| Integration | `crates/<module>/tests/`, testcontainers Postgres migrated by the Flyway container | SQL, transactions, locking, outbox, team scoping |
+| Integration | `crates/<module>/tests/`, or inside the crate where the layer is `pub(crate)`; a database per test from `TestDatabase`, copied from a template the Flyway container migrated | SQL, transactions, locking, outbox, team scoping |
 | Parity (acceptance) | `crates/parity-tests/` + the vendored Bruno collection ([ADR 0011](docs/adr/0011-black-box-parity-suite.md)) | Black-box behaviour equals Java's: every endpoint, error, header and OWASP row. State is set up with SQL fixtures in the shared schema and environment variables, never with test endpoints. Responses are validated against `openapi.yaml` |
 | Time and fault behaviour | `crates/<module>/tests/` with an injected `Clock` | Expiry, lockout, daily limits, the unexpected-error 500, scanner outages: Java tests that moved a clock or injected a fault, ported in-process |
 | Architecture | `crates/app/tests/architecture.rs` | Crate dependency graph matches §3; only infrastructure modules use network crates |

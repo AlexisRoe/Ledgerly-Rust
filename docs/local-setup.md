@@ -8,7 +8,7 @@ How to get from a fresh Mac to a running Ledgerly-Rust and a green `just verify`
 
 | Tool | Why | How |
 | --- | --- | --- |
-| [OrbStack](https://orbstack.dev) or Docker Desktop | Runs Postgres, SeaweedFS, ClamAV, Keycloak, Grafana, Flyway, openapi-generator, testcontainers and the app image | Download from the vendor's site |
+| [OrbStack](https://orbstack.dev) or Docker Desktop | Runs Postgres, SeaweedFS, ClamAV, Keycloak, Grafana, Flyway, openapi-generator, the integration tests' Postgres and the app image | Download from the vendor's site |
 | [mise](https://mise.jdx.dev) | Installs and pins every other tool per project | `brew install mise`, then add `eval "$(mise activate zsh)"` to `~/.zshrc` |
 | Git | — | Ships with the Xcode command line tools |
 
