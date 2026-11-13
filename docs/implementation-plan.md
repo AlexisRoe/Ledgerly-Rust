@@ -209,7 +209,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - Team A's expense is not found with team B's id.
     - No public function takes an `ExpenseId` without a `TeamId`.
 
-- [ ] **M2.4 First use cases**
+- [x] **M2.4 First use cases**
   - Do: the `CreateExpense` and `GetExpense` application services, each in one transaction, with no web layer yet.
   - Accept: integration tests for both, including validation errors coming out of the M0 constructors.
 

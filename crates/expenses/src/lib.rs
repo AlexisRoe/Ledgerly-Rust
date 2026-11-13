@@ -5,6 +5,13 @@
 
 #![forbid(unsafe_code)]
 
+// The use cases are served by the web layer from M3 on. `expect` instead of `allow`, so that this attribute stops
+// compiling, and has to go, once that is no longer true.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the use cases have no caller outside the tests until M3")
+)]
+mod application;
 mod domain;
 // Used by the application services from M2.4 on; `update` and `delete` only once the web layer arrives (M3).
 // `expect` instead of `allow`, so that this attribute stops compiling, and has to go, once that is no longer true.
