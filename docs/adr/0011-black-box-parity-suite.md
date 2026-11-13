@@ -1,6 +1,6 @@
 # Black-box parity suite against either implementation
 
-Acceptance is proven by tests that talk only HTTP and can be pointed at any base URL: the vendored Bruno collection, the OWASP API Top 10 tests rewritten as Rust HTTP tests, and response validation against `openapi.yaml`. The suite is written so that it could also run against Ledgerly-Java, but CI only runs it against Rust. Pointing it at Java is an optional manual check (`just parity <base-url>`), for when a test's correctness is in doubt. Java's JUnit tests can't be reused, and rewriting them white-box against Rust internals would prove nothing about parity. Rust keeps its own unit tests and its testcontainers-based integration tests in addition to this suite.
+Acceptance is proven by tests that talk only HTTP and can be pointed at any base URL: the vendored Bruno collection, the OWASP API Top 10 tests rewritten as Rust HTTP tests, and response validation against `openapi.yaml`. The suite is written so that it could also run against Ledgerly-Java, but CI only runs it against Rust. Pointing it at Java is an optional manual check (`just parity <base-url>`), for when a test's correctness is in doubt. Java's JUnit tests can't be reused, and rewriting them white-box against Rust internals would prove nothing about parity. Rust keeps its own unit tests and its integration tests against Postgres in Docker (`TestDatabase`) in addition to this suite.
 
 ## Setting up state without hooks
 

@@ -9,7 +9,7 @@ Learn backend development in Rust on a system whose behaviour is already pinned 
 - Ledgerly-Rust is a working drop-in replacement: the parity suite passes, and swapping the Java image for the Rust image on an existing database changes nothing for clients.
 - For any file here, you can explain what each line does and why Rust needs it that way (ownership, lifetimes, traits, `async`, error handling).
 - You can point at the Java file that matches any Rust file, and say what the Rust type system now guarantees that Java checked at runtime or in tests.
-- You can add a field or an endpoint end to end (contract upstream, migration upstream, generated trait, handler, domain, SQL, tests) and keep `just verify` green.
+- You can add a field or an endpoint end to end (contract upstream, migration upstream, route, handler, domain, SQL, tests) and keep `just verify` green.
 
 ## How the work is split
 

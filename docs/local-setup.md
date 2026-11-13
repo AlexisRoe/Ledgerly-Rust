@@ -54,7 +54,6 @@ just up        # build the image, start the dependencies, run Flyway, start the 
 | Everything CI checks | `just verify` |
 | Run the black-box parity suite | `just parity` (against the running app) or `just parity http://host:port` |
 | Run the Bruno collection | `just api-test` |
-| Regenerate server traits from `openapi.yaml` | `just generate` (needs Docker) |
 | Refresh `.sqlx/` after changing a query | `just sqlx-prepare` (needs `just deps`) |
 | Start everything in Docker, the app included | `just up` |
 | Stop everything, the app included, and keep the data | `just down` (or `just stop`) |
@@ -66,10 +65,9 @@ just up        # build the image, start the dependencies, run Flyway, start the 
 2. `cargo fmt --check`;
 3. `clippy -D warnings`;
 4. `cargo deny check`;
-5. a check that `just generate` produces no diff;
-6. `cargo nextest run`, with unit tests and integration tests against Postgres in Docker;
-7. Prettier and Redocly lint;
-8. the parity suite against a freshly started app.
+5. `cargo nextest run`, with unit tests and integration tests against Postgres in Docker;
+6. Prettier and Redocly lint;
+7. the parity suite against a freshly started app.
 
 It needs Docker running.
 

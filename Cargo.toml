@@ -25,7 +25,6 @@ todo = "deny"
 unimplemented = "deny"
 
 [workspace.dependencies]
-ledgerly-api = { path = "crates/api" }
 ledgerly-audit = { path = "crates/audit" }
 ledgerly-expenses = { path = "crates/expenses" }
 ledgerly-identity = { path = "crates/identity" }

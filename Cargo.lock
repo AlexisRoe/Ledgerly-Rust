@@ -1280,16 +1280,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
-name = "ledgerly-api"
-version = "0.1.0"
-
-[[package]]
 name = "ledgerly-app"
 version = "0.1.0"
 dependencies = [
  "axum",
  "chrono",
- "ledgerly-api",
  "ledgerly-audit",
  "ledgerly-expenses",
  "ledgerly-identity",
@@ -1382,6 +1377,7 @@ dependencies = [
 name = "ledgerly-shared"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "chrono",
  "crc",
  "ledgerly-shared",
@@ -1393,6 +1389,7 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
+ "tower",
  "uuid",
 ]
 

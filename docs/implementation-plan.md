@@ -219,15 +219,15 @@ Two reference maps save reading time. They're extracts; where they disagree with
 
 ## M3 · Contract, validation, errors
 
-**Goal:** every expense endpoint except list, batch and export is served through the generated trait, and every error is a Problem Details body identical to Java's.
-**Rust you meet:** implementing generated traits, `IntoResponse`, error enums with exhaustive mapping, serde attributes (`deny_unknown_fields`), middleware ordering.
+**Goal:** every expense endpoint except list, batch and export is served, and every error is a Problem Details body identical to Java's.
+**Rust you meet:** extractors (`FromRequestParts`, `FromRequest`), `IntoResponse`, error enums with exhaustive mapping, serde attributes (`deny_unknown_fields`), middleware ordering.
 
-- [ ] **M3.1 Generate the server code**
+- [x] **M3.1 The HTTP layer**
   - Do:
-    - `just generate` runs the pinned `openapitools/openapi-generator-cli` image with the `rust-axum` generator on the vendored spec, writing to `crates/api`. The generated code is committed.
-    - `just verify` regenerates into a temp dir and fails on any diff.
-    - Spend at most one step's effort evaluating the output. If it can't express the spec (multipart, `:action` paths, problem responses, cookies), **stop** and report it per ADR 0009.
-  - Accept: `crates/api` compiles, with lints relaxed for generated code only.
+    - First, as planned, evaluate openapi-generator's `rust-axum` output on the vendored spec (at most one step's effort). *Done: its router cannot serve the `:action` paths, so the reviewer chose a hand-written layer ([ADR 0014](adr/0014-hand-written-http-layer-checked-against-the-contract.md), superseding ADR 0009; learning log M3).*
+    - Remove the placeholder `crates/api`.
+    - In `shared`, a route table that matches paths the way Spring's path patterns do, including a literal suffix after a parameter (`{expenseId}:approve`) and the most specific pattern winning, and answers 404 for no match and 405 with `Allow` for a wrong method. The API router is built from it, so the M3.6 inventory test can compare the table with the spec.
+  - Accept: unit tests for matching (suffixes, specificity, 404, 405 with `Allow`, decoded parameters).
 
 - [ ] **M3.2 Problem Details and the error catalogue**
   - Do:
@@ -259,7 +259,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Accept: tests for replay, mismatch, concurrency (two tasks with the same key create exactly one expense) and expiry with `FixedClock`.
 
 - [ ] **M3.6 Inventory check**
-  - Do: a test asserts that the set of routes the router serves equals the spec's paths and methods (API9). Swagger UI at `/docs` (static, vendored spec) in `local` only.
+  - Do: a test asserts that the route table the router is built from equals the spec's paths and methods (API9). Swagger UI at `/docs` (static, vendored spec) in `local` only.
   - Accept: adding an undocumented route fails the test. In `prod`, `/docs` gets 401 like any other path.
 
 **Done when:** all M3-tagged parity tests that don't need authentication pass in-process. The ones that need real users are tagged M5/M6.

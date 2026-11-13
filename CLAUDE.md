@@ -58,5 +58,5 @@ Do not write lessons. A separate agent writes them after M11.
 ## When you are stuck
 
 - If a step is unclear or contradicts an ADR, stop and ask; don't guess.
-- If the generated server code (`crates/api`) can't express part of the spec, record the gap in the learning log and stop. Per [ADR 0009](docs/adr/0009-server-traits-generated-from-openapi.md), switching any part to hand-written handlers needs a new ADR, which the reviewer decides.
+- If the hand-written HTTP layer cannot reproduce something Java does on the wire, record the gap in the learning log and stop ([ADR 0014](docs/adr/0014-hand-written-http-layer-checked-against-the-contract.md)).
 - If a test needs Docker and Docker isn't available, say so; don't skip the test.

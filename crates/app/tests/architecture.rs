@@ -23,21 +23,15 @@ const REQUIRED: &[(&str, &[&str])] = &[
         "audit",
         &["shared", "identity", "teams", "expenses", "receipts", "imports"],
     ),
-    // Generated from the OpenAPI file; knows nothing about the modules.
-    ("api", &[]),
     (
         "app",
         &[
-            "shared", "identity", "teams", "expenses", "receipts", "imports", "audit", "api",
+            "shared", "identity", "teams", "expenses", "receipts", "imports", "audit",
         ],
     ),
     // Black box: it may only talk HTTP and SQL (ADR 0011).
     ("parity-tests", &[]),
 ];
-
-/// Crates that may additionally depend on `api`, because their `web` layer implements the generated traits.
-/// The arrow is allowed, not required: a module gets it in the milestone that gives it endpoints.
-const MAY_USE_API: &[&str] = &["identity", "teams", "expenses", "receipts", "imports", "audit"];
 
 /// The edges between workspace crates as `cargo metadata` reports them, including dev- and build-dependencies.
 fn workspace_graph() -> BTreeMap<String, BTreeSet<String>> {
@@ -90,9 +84,7 @@ fn violations(graph: &BTreeMap<String, BTreeSet<String>>) -> Vec<String> {
             continue;
         };
         for dependency in actual {
-            let allowed =
-                wanted.contains(dependency.as_str()) || (dependency == "api" && MAY_USE_API.contains(&name.as_str()));
-            if !allowed {
+            if !wanted.contains(dependency.as_str()) {
                 found.push(format!(
                     "`{name}` depends on `{dependency}`, which CONCEPT §3 does not allow; \
                      invert the call with a trait the lower crate owns"
@@ -170,19 +162,5 @@ fn a_missing_arrow_and_an_unknown_crate_are_reported() {
             "crate `billing` is not in the module diagram; add it to CONCEPT §3 and to this test",
             "`imports` does not depend on `teams`, but CONCEPT §3 has that arrow",
         ]
-    );
-}
-
-#[test]
-fn modules_may_depend_on_the_generated_api_but_shared_may_not() {
-    let mut edges = REQUIRED.to_vec();
-    edges.retain(|(name, _)| !["expenses", "shared"].contains(name));
-    edges.push(("expenses", &["shared", "teams", "api"]));
-    edges.push(("shared", &["api"]));
-
-    assert_eq!(
-        violations(&graph(&edges)),
-        ["`shared` depends on `api`, which CONCEPT §3 does not allow; \
-          invert the call with a trait the lower crate owns"]
     );
 }

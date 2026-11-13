@@ -15,6 +15,7 @@ use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 
 use axum::Router;
+use ledgerly_shared::web::Routes;
 use tokio::net::TcpListener;
 
 use crate::config::Config;
@@ -24,15 +25,24 @@ use crate::telemetry::Telemetry;
 
 /// The API router: everything served on the public port.
 ///
-/// Tests and the binary build it with this one function, so that both run the same routes and layers. It has
-/// no routes yet; an unknown path is a bare 404 until M3 gives it Java's problem body.
+/// Tests and the binary build it with this one function, so that both run the same routes and layers. The
+/// routes come from one table ([`Routes`]), which the inventory test compares with the spec. It is still empty;
+/// the expense endpoints arrive in M3.4.
 ///
 /// Every request runs in a span that carries its `traceId` and `spanId`.
 pub fn router(_config: &Config, telemetry: &Telemetry) -> Router {
-    Router::new().layer(axum::middleware::from_fn_with_state(
-        telemetry.tracer(),
-        telemetry::trace_request,
-    ))
+    Router::new()
+        .fallback_service(routes().into_service())
+        .layer(axum::middleware::from_fn_with_state(
+            telemetry.tracer(),
+            telemetry::trace_request,
+        ))
+}
+
+/// Every endpoint the API serves.
+#[must_use]
+pub fn routes() -> Routes {
+    Routes::new()
 }
 
 /// The service with both listeners bound, ready to serve.

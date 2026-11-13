@@ -14,3 +14,4 @@ pub mod money;
 pub mod role;
 pub mod text;
 pub mod version;
+pub mod web;

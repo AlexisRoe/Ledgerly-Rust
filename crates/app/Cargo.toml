@@ -12,7 +12,6 @@ workspace = true
 [dependencies]
 axum.workspace = true
 chrono.workspace = true
-ledgerly-api.workspace = true
 ledgerly-audit.workspace = true
 ledgerly-expenses.workspace = true
 ledgerly-identity.workspace = true
