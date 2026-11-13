@@ -31,10 +31,13 @@ clippy:
 deny:
     cargo deny check
 
-# Unit and integration tests with nextest, then doc-tests (nextest does not run those). The parity tests under
-# crates/parity-tests/tests need a running app and have their own task, `just parity`; only the inventory
-# check among them runs here.
+# The parity tests under crates/parity-tests/tests need a running app and have their own task, `just parity`;
+# only the inventory check among them runs here. The integration tests' Postgres is removed when the run ends.
+# Unit and integration tests with nextest, then doc-tests (nextest does not run those).
 test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'just test-db-down' EXIT
     cargo nextest run --workspace --locked -E 'not (package(ledgerly-parity-tests) & kind(test) & not binary(=inventory))'
     cargo test --workspace --locked --doc
 
@@ -65,10 +68,11 @@ sqlx-prepare:
     DATABASE_URL="postgres://ledgerly:ledgerly@localhost:5432/ledgerly" \
     cargo sqlx prepare --workspace -- --all-targets --all-features
 
-# Remove the Postgres container the integration tests share (it is kept between runs to save start-up time).
+# `just test` does this at the end of every run; after a bare `cargo nextest run` the container removes itself
+# 30 s after the last test disconnected.
+# Remove the Postgres container the integration tests share.
 test-db-down:
-    docker ps --all --quiet --filter "label=org.ledgerly.purpose=integration-tests" | xargs -r docker rm --force --volumes
-    docker network rm ledgerly-test 2>/dev/null || true
+    docker ps --all --quiet --filter "label=org.ledgerly.purpose=integration-tests" | xargs -r docker rm --force --volumes >/dev/null
 
 # --- run and stop ---
 
@@ -101,13 +105,21 @@ up: image
     docker compose --profile app up -d postgres seaweedfs clamav lgtm app
     scripts/wait-until-ready.sh http://127.0.0.1:8081/actuator/health/readiness
 
-# Stop everything and keep the data.
-down:
-    docker compose --profile app down
+# Containers left by tests (integration-test Postgres, parity app containers) are removed completely.
+# Stop the dev environment, the app included; its data stays for the next `just up` or `just deps`.
+down: remove-test-containers
+    docker compose --profile app stop
 
-# Stop everything and delete the data.
-reset:
-    docker compose --profile app down -v
+alias stop := down
+
+# Remove every container of the project and all their data, dev environment included.
+reset: remove-test-containers
+    docker compose --profile app down --volumes --remove-orphans
+
+# Remove the containers tests start, with their volumes. Normally the tests do this themselves.
+[private]
+remove-test-containers: test-db-down
+    docker ps --all --quiet --filter "name=^ledgerly-parity-" | xargs -r docker rm --force --volumes >/dev/null
 
 # Follow the application's container logs.
 logs:
@@ -119,13 +131,12 @@ ps:
 
 # --- acceptance ---
 
-# Run the black-box parity suite and print passed / ignored / failed per milestone (ADR 0011). Without an
-# argument it builds the image and starts the app once per run group; with a base URL it runs the default group
-# against that deployment, e.g. `just parity http://127.0.0.1:8080` (set PARITY_DATABASE_URL if it is not the
-# Compose database).
+# Without an argument it builds the image and starts the app once per run group; with a base URL it runs the
+# default group against that deployment, e.g. `just parity http://127.0.0.1:8080` (set PARITY_DATABASE_URL if it
+# is not the Compose database). Every container the run starts is removed at the end; ones that ran before stay.
+# Run the black-box parity suite and print passed / ignored / failed per milestone (ADR 0011).
 parity url="":
-    {{ if url == "" { "just image" } else { "true" } }}
-    cargo run --locked --quiet -p ledgerly-parity-tests --bin parity -- {{ url }}
+    scripts/parity.sh {{ quote(url) }}
 
 # Run the vendored Bruno collection against a running `local` app (`just up` first).
 api-test:

@@ -56,8 +56,10 @@ just up        # build the image, start the dependencies, run Flyway, start the 
 | Run the Bruno collection | `just api-test` |
 | Regenerate server traits from `openapi.yaml` | `just generate` (needs Docker) |
 | Refresh `.sqlx/` after changing a query | `just sqlx-prepare` (needs `just deps`) |
-| Stop, keep data / stop, delete data | `just down` / `just reset` |
-| Remove the Postgres container the integration tests share | `just test-db-down` |
+| Start everything in Docker, the app included | `just up` |
+| Stop everything, the app included, and keep the data | `just down` (or `just stop`) |
+| Remove every container and all data | `just reset` |
+| Remove a left-over integration-test Postgres | `just test-db-down` (normally not needed) |
 
 `just verify` runs, in order:
 1. the vendor drift check;
@@ -73,7 +75,11 @@ It needs Docker running.
 
 Builds do not need a database: `SQLX_OFFLINE=true` is the default (`.cargo/config.toml`) and the query metadata in `.sqlx/` is committed.
 
-Integration tests get a database each from `ledgerly_shared::database::TestDatabase`. They share one Postgres container (`ledgerly-test-postgres-<digest>`, port on `127.0.0.1` only), which stays up between runs so that the next run starts in a fraction of a second. Flyway migrates a template database there once per set of migrations; every test gets a copy of it. `just test-db-down` removes the container.
+Integration tests get a database each from `ledgerly_shared::database::TestDatabase`. They share one Postgres container per run (`ledgerly-test-postgres-<digest>`, port on `127.0.0.1` only, data on a tmpfs). Flyway migrates a template database there once; every test gets a copy of it.
+
+No test leaves a container behind:
+- `just test` removes the integration-test Postgres when it ends, however it ends. After a bare `cargo nextest run` the container removes itself 30 s after the last test disconnected.
+- `just parity` removes every container it created, also on failure or Ctrl-C, volumes included. Containers that existed before (a dev environment from `just up` or `just deps`) are left as they were, running or stopped.
 
 ## 5. Hardening checklist (yours to do)
 

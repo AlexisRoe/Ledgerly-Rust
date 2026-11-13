@@ -4,15 +4,17 @@
 //! Starting Postgres and Flyway's JVM for every test would take seconds each, and nextest runs every test in
 //! its own process. So the expensive parts are shared and the cheap part is per test:
 //!
-//! - **One server.** A Postgres container named after its image digest, kept running between test runs
-//!   `just test-db-down` removes it.
+//! - **One server.** A Postgres container named after its image digest, shared by every test process of a run.
+//!   It removes itself 30 s after the last client disconnected (`--rm`, data on a tmpfs), and `just test`
+//!   removes it as soon as the run ends.
 //! - **One migrated template per set of migrations.** Flyway migrates a database once; it is then renamed to
 //!   `ledgerly_template_<hash of the checksums>`. Re-vendored migrations get a new template.
 //! - **One database per test.** `CREATE DATABASE … TEMPLATE …` copies the template in a few milliseconds. Tests
 //!   therefore never see each other's rows, and may commit, lock and run concurrent transactions like the app.
 //!
 //! Who creates the template and the copies is serialised with a Postgres advisory lock, because many test
-//! processes start at once. Databases of earlier runs are dropped after an hour.
+//! processes start at once. If one run follows another within 30 s, it reuses the container; databases older
+//! than an hour are dropped.
 //!
 //! Docker is driven through its command line, like the parity runner does, not through `testcontainers`: that
 //! crate depends on `astral-tokio-tar`, which is unmaintained (RUSTSEC-2026-0440) and so refused by
@@ -34,7 +36,8 @@ use crate::config::{DatabaseConfig, DatabaseUrl};
 /// The development credentials of `compose.yaml`; the container is reachable only from this machine's Docker.
 const USER: &str = "ledgerly";
 const PASSWORD: &str = "ledgerly";
-const NETWORK: &str = "ledgerly-test";
+/// Every container the tests start carries it; `just test-db-down` removes them by it.
+const LABEL: &str = "org.ledgerly.purpose=integration-tests";
 /// Any constant works, as long as nothing else in the test server takes the same advisory lock.
 const LOCK: i64 = 0x6c65_6467_6572_6c79; // "ledgerly"
 const STALE_AFTER: Duration = Duration::from_secs(60 * 60);
@@ -126,8 +129,8 @@ impl TestDatabase {
     pub const PASSWORD: &str = PASSWORD;
 }
 
-/// The shared Postgres container, reached from the host on a published port and from Flyway's container by
-/// name on the `ledgerly-test` network.
+/// The shared Postgres container, reached from the host on a published port and from Flyway's container
+/// through Postgres' own network namespace (`--network container:<name>`), so no Docker network is needed.
 struct Server {
     name: String,
     host: String,
@@ -136,52 +139,45 @@ struct Server {
 
 impl Server {
     /// Starts the shared container unless it runs already, and finds the port Docker published it on.
+    ///
+    /// The container removes itself (see [`WATCHDOG`]), so a test may find it shutting down; then it waits for
+    /// it to be gone and starts a new one.
     async fn start() -> Result<Self, TestDatabaseError> {
         let image = image_of("postgres")?;
         let digest = image.rsplit_once(':').map_or(image, |(_, digest)| digest);
         let name = format!("ledgerly-test-postgres-{}", digest.get(..12).unwrap_or(digest));
 
-        // Each step tolerates having been done already, by an earlier run or by a test process starting at the
-        // same moment: whoever loses the race to create the network or the container uses the winner's.
-        if docker(&["network", "inspect", NETWORK]).is_err() {
-            let _ = docker(&["network", "create", NETWORK]);
-        }
-        if docker(&["container", "inspect", &name]).is_err() {
-            let created = docker(&[
-                "run",
-                "--detach",
-                "--name",
-                &name,
-                "--network",
-                NETWORK,
-                // On 127.0.0.1 only: with the well-known password, every interface would open it to the network.
-                "--publish",
-                "127.0.0.1::5432",
-                "--env",
-                &format!("POSTGRES_USER={USER}"),
-                "--env",
-                &format!("POSTGRES_PASSWORD={PASSWORD}"),
-                "--env",
-                &format!("POSTGRES_DB={USER}"),
-                "--label",
-                "org.ledgerly.purpose=integration-tests",
-                image,
-            ]);
-            if created.is_err() {
-                docker(&["container", "inspect", &name])?;
+        let mut last_error = None;
+        for _ in 0..60 {
+            match running(&name) {
+                // Whoever loses the race to create it uses the winner's, on the next round.
+                None => {
+                    if let Err(error) = create(&name, image) {
+                        last_error = Some(error);
+                    }
+                }
+                Some(true) => match Self::attach(&name).await {
+                    Ok(server) => return Ok(server),
+                    Err(error) => last_error = Some(error),
+                },
+                // Shutting down or being removed.
+                Some(false) => {}
             }
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        docker(&["start", &name])?;
+        Err(last_error.unwrap_or_else(|| TestDatabaseError::Setup(format!("{name} never came up"))))
+    }
+
+    async fn attach(name: &str) -> Result<Self, TestDatabaseError> {
         // `127.0.0.1:55000`
-        let published = docker(&["port", &name, "5432/tcp"])?;
+        let published = docker(&["port", name, "5432/tcp"])?;
         let port = published
             .lines()
             .find_map(|line| line.strip_prefix("127.0.0.1:"))
             .and_then(|port| port.trim().parse().ok())
             .ok_or_else(|| TestDatabaseError::Setup(format!("no port published for {name}: {published}")))?;
-
         let server = Self {
-            name,
+            name: name.to_owned(),
             host: "127.0.0.1".to_owned(),
             port,
         };
@@ -191,7 +187,7 @@ impl Server {
 
     /// A container just created, or one reused while it still starts, refuses connections for a moment.
     async fn wait_until_accepting(&self) -> Result<(), TestDatabaseError> {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
         loop {
             match self.connect("postgres").await {
                 Ok(connection) => return Ok(connection.close().await?),
@@ -256,11 +252,11 @@ impl Server {
             "run",
             "--rm",
             "--network",
-            NETWORK,
+            &format!("container:{}", self.name),
             "--volume",
             &format!("{migrations}:/flyway/sql:ro"),
             "--env",
-            &format!("FLYWAY_URL=jdbc:postgresql://{}:5432/{database}", self.name),
+            &format!("FLYWAY_URL=jdbc:postgresql://localhost:5432/{database}"),
             "--env",
             &format!("FLYWAY_USER={USER}"),
             "--env",
@@ -272,6 +268,65 @@ impl Server {
         ])
         .map(|_| ())
     }
+}
+
+/// Inside the container: runs Postgres, and stops it once no client has been connected for 30 s (2 minutes
+/// before the first test migrated the template). With `--rm` and the data on a tmpfs, the container then disappears without a trace,
+/// whether the tests ran through `just test` or a bare `cargo nextest run`.
+const WATCHDOG: &str = r#"
+docker-entrypoint.sh postgres & server=$!
+trap 'kill -INT "$server"' TERM INT
+idle=0
+while kill -0 "$server" 2>/dev/null; do
+  sleep 2
+  state=$(psql -U "$POSTGRES_USER" -d postgres -Atc \
+    "select (select count(*) from pg_stat_activity where backend_type = 'client backend' and pid <> pg_backend_pid())
+         || ' ' || (select count(*) from pg_database where datname like 'ledgerly\_template\_%')" \
+    2>/dev/null) || continue
+  read -r clients used <<< "$state"
+  # Used once the migrated template exists; until then a test is still on its way.
+  if [ "$used" -gt 0 ]; then limit=30; else limit=120; fi
+  if [ "$clients" -gt 0 ]; then idle=0; else idle=$((idle + 2)); fi
+  if [ "$idle" -ge "$limit" ]; then kill -INT "$server"; fi
+done
+wait "$server"
+"#;
+
+/// The container's state: `None` if there is none, otherwise whether it runs.
+fn running(name: &str) -> Option<bool> {
+    docker(&["container", "inspect", "--format", "{{.State.Running}}", name])
+        .ok()
+        .map(|state| state.trim() == "true")
+}
+
+fn create(name: &str, image: &str) -> Result<(), TestDatabaseError> {
+    docker(&[
+        "run",
+        "--detach",
+        "--rm",
+        "--name",
+        name,
+        // On 127.0.0.1 only: with the well-known password, every interface would open it to the network.
+        "--publish",
+        "127.0.0.1::5432",
+        // Nothing is written to disk, and nothing is left behind.
+        "--tmpfs",
+        "/var/lib/postgresql/data",
+        "--env",
+        &format!("POSTGRES_USER={USER}"),
+        "--env",
+        &format!("POSTGRES_PASSWORD={PASSWORD}"),
+        "--env",
+        &format!("POSTGRES_DB={USER}"),
+        "--label",
+        LABEL,
+        "--entrypoint",
+        "bash",
+        image,
+        "-c",
+        WATCHDOG,
+    ])
+    .map(|_| ())
 }
 
 /// Runs `docker` with `args` and returns its standard output.
