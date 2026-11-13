@@ -53,7 +53,6 @@ mod m5 {
 
     /// Java: `SwaggerUiProfileTest.LocalDocsShortcut.onlyReadingIsOpen`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn only_reading_is_open() {
         let world = World::start().await;
 

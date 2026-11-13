@@ -4,12 +4,23 @@
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use ledgerly_shared::config::TracingConfig;
+use ledgerly_shared::id::UserId;
 use ledgerly_shared::web::{Body as Consumes, Routes};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use super::*;
 use crate::logging::testing::Captured;
+
+/// Accepts the token `test`.
+#[derive(Debug)]
+struct TestTokens;
+
+impl TokenVerifier for TestTokens {
+    fn verify(&self, token: &str) -> Option<UserId> {
+        (token == "test").then(UserId::new_v7)
+    }
+}
 
 /// The real layers around a table with a JSON endpoint and a handler that panics.
 fn app() -> Router {
@@ -34,10 +45,22 @@ fn app() -> Router {
             },
             (),
         );
-    layered(routes, &telemetry)
+    layered(
+        routes,
+        Authentication::new(Some(Arc::new(TestTokens)), false),
+        &telemetry,
+    )
 }
 
-async fn send(request: Request<Body>) -> (StatusCode, axum::http::HeaderMap, Value) {
+/// Sends `request` as a signed-in caller.
+async fn send(mut request: Request<Body>) -> (StatusCode, axum::http::HeaderMap, Value) {
+    request
+        .headers_mut()
+        .insert("authorization", axum::http::HeaderValue::from_static("Bearer test"));
+    send_anonymously(request).await
+}
+
+async fn send_anonymously(request: Request<Body>) -> (StatusCode, axum::http::HeaderMap, Value) {
     let response = app().oneshot(request).await.unwrap();
     let status = response.status();
     let headers = response.headers().clone();
@@ -49,6 +72,35 @@ fn is_trace_id(value: &Value) -> bool {
     value
         .as_str()
         .is_some_and(|id| id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// Java: `AuthApiTest.unauthenticatedResponsesAreProblemDetails`: the 401 of the authentication layer is a
+/// catalogued problem with the challenge, the path and the trace id.
+#[tokio::test]
+async fn without_a_token_the_answer_is_a_401_problem_with_instance_and_trace_id() {
+    let (status, headers, body) =
+        send_anonymously(Request::get("/api/v1/teams/x/expenses").body(Body::empty()).unwrap()).await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(headers["www-authenticate"], "Bearer");
+    assert_eq!(headers["content-type"], "application/problem+json");
+    assert_eq!(body["code"], "UNAUTHENTICATED");
+    assert_eq!(body["detail"], "Authentication required");
+    assert_eq!(body["instance"], "/api/v1/teams/x/expenses");
+    assert!(is_trace_id(&body["traceId"]), "{body}");
+}
+
+/// Inventory §4.2 "Authentication before routing": an unknown path or a wrong method is 401 without a token,
+/// and only a signed-in caller learns that it is 404 or 405.
+#[tokio::test]
+async fn authentication_comes_before_routing() {
+    for request in [
+        || Request::get("/api/v1/nope").body(Body::empty()).unwrap(),
+        || Request::put("/api/v1/boom").body(Body::empty()).unwrap(),
+    ] {
+        assert_eq!(send_anonymously(request()).await.0, StatusCode::UNAUTHORIZED);
+        assert_ne!(send(request()).await.0, StatusCode::UNAUTHORIZED);
+    }
 }
 
 /// Java: `ExpensesApiTest.unknownPathIsAProblemToo`, and the body Spring's `NoResourceFoundException` gets

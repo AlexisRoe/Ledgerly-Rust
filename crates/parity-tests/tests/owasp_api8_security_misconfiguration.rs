@@ -26,7 +26,6 @@ mod m5 {
 
     /// Java: `Api8SecurityMisconfigurationTest.actuatorIsNotReachableOnThePublicPort`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn the_actuator_is_not_reachable_on_the_public_port() {
         let world = World::start().await;
         let user = world.user().await;
@@ -43,7 +42,6 @@ mod m5 {
 
     /// Java: `Api8SecurityMisconfigurationTest.swaggerUiIsNotServedOutsideLocalDevelopment`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn swagger_ui_is_not_served_outside_local_development() {
         let world = World::start().await;
         let user = world.user().await;
@@ -64,7 +62,6 @@ mod m5 {
 
     /// Java: `Api8SecurityMisconfigurationTest.notFoundAndBadMethodsAreProblemsNotWhitelabelPages`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn not_found_and_bad_methods_are_problems_not_whitelabel_pages() {
         let world = World::start().await;
         let user = world.as_user(&world.user().await);

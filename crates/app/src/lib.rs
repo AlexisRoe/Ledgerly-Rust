@@ -26,7 +26,7 @@ use ledgerly_shared::clock::{Clock, SystemClock};
 use ledgerly_shared::config::Limits;
 use ledgerly_shared::database::SchemaError;
 use ledgerly_shared::ratelimit::RateLimiter;
-use ledgerly_shared::web::{self, Problem, Routes};
+use ledgerly_shared::web::{self, Authentication, Problem, Routes, TokenVerifier};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use tower_http::catch_panic::CatchPanicLayer;
@@ -78,14 +78,20 @@ impl Modules {
 /// Tests and the binary build it with this one function, so that both run the same routes and layers. The
 /// routes come from one table ([`routes`]), which the inventory test compares with the spec.
 ///
-/// In the `local` profile it also serves Swagger UI at `/docs` and `/swagger-ui/…`.
+/// In the `local` profile it also serves Swagger UI at `/docs` and `/swagger-ui/…`, and those paths are public
+/// for `GET`.
 pub fn router(config: &Config, modules: &Modules, telemetry: &Telemetry, pool: &PgPool) -> Router {
     let extra = if config.profiles.local {
         docs::routes()
     } else {
         Router::new()
     };
-    layered_with(extra, routes(&config.limits, modules, pool), telemetry)
+    let verifier = modules
+        .identity
+        .access_tokens()
+        .map(|tokens| Arc::new(tokens.clone()) as Arc<dyn TokenVerifier>);
+    let authentication = Authentication::new(verifier, config.profiles.local);
+    layered_with(extra, routes(&config.limits, modules, pool), authentication, telemetry)
 }
 
 /// Every endpoint the API serves, with the configured limits.
@@ -100,19 +106,22 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
 ///
 /// 1. tracing: a span with `traceId` and `spanId` for the request and its log lines;
 /// 2. problem rendering: every problem body gets `instance` and `traceId`;
-/// 3. panic catching: a handler that panics is answered with a 500 `INTERNAL_ERROR` problem that carries only
+/// 3. authentication: the caller from the bearer token, or 401 for anything that is not public. Before
+///    routing, as in Spring Security, so that only an authenticated caller learns which paths exist;
+/// 4. panic catching: a handler that panics is answered with a 500 `INTERNAL_ERROR` problem that carries only
 ///    the `traceId`, and logged as Java logs an unhandled exception.
 ///
 /// Public so that tests can put a route of their own behind exactly these layers.
-pub fn layered(routes: Routes, telemetry: &Telemetry) -> Router {
-    layered_with(Router::new(), routes, telemetry)
+pub fn layered(routes: Routes, authentication: Authentication, telemetry: &Telemetry) -> Router {
+    layered_with(Router::new(), routes, authentication, telemetry)
 }
 
 /// [`layered`], with routes that are not part of the API (Swagger UI) tried first.
-fn layered_with(extra: Router, routes: Routes, telemetry: &Telemetry) -> Router {
+fn layered_with(extra: Router, routes: Routes, authentication: Authentication, telemetry: &Telemetry) -> Router {
     extra
         .fallback_service(routes.into_service())
         .layer(CatchPanicLayer::custom(unhandled_panic))
+        .layer(axum::middleware::from_fn_with_state(authentication, web::authenticate))
         .layer(axum::middleware::from_fn(web::render))
         .layer(axum::middleware::from_fn_with_state(
             telemetry.tracer(),

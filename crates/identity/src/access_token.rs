@@ -25,6 +25,7 @@ use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig, URL_
 use chrono::{DateTime, TimeDelta, Utc};
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::id::UserId;
+use ledgerly_shared::web::TokenVerifier;
 use p256::ecdsa::signature::{Signer, Verifier};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use p256::pkcs8::{DecodePrivateKey, DecodePublicKey};
@@ -382,6 +383,13 @@ impl AccessTokens {
             return Err(InvalidToken);
         }
         Ok(())
+    }
+}
+
+/// The authentication layer's view of [`AccessTokens::verify`].
+impl TokenVerifier for AccessTokens {
+    fn verify(&self, token: &str) -> Option<UserId> {
+        Self::verify(self, token).ok()
     }
 }
 

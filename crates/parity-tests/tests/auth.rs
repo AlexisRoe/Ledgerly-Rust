@@ -279,7 +279,6 @@ mod m5 {
     /// Java: `AuthApiTest.aValidTokenIsAcceptedAndNoTokenIsNot`, the half without a token. The other half is
     /// in `m6`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn no_token_is_not_accepted() {
         let world = World::start().await;
 
@@ -294,7 +293,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.unauthenticatedResponsesAreProblemDetails`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn unauthenticated_responses_are_problem_details() {
         let world = World::start().await;
 
@@ -316,7 +314,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.tamperedTokenGets401`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn tampered_token_gets_401() {
         let world = World::start().await;
         let token = access_token(&logged_in(&world).await);
@@ -329,7 +326,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.algNoneTokenGets401`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn alg_none_token_gets_401() {
         let world = World::start().await;
         let now = chrono::Utc::now().timestamp();
@@ -340,7 +336,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.tokenSignedWithAnotherKeyGets401`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn token_signed_with_another_key_gets_401() {
         let world = World::start().await;
 
@@ -351,7 +346,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.algorithmConfusionWithAnHmacTokenGets401`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn algorithm_confusion_with_an_hmac_token_gets_401() {
         let world = World::start().await;
         // The classic attack: sign with HS256 using the (public) key bytes as the secret.
@@ -365,7 +359,6 @@ mod m5 {
 
     /// Java: `AuthApiTest.garbageBearerValuesGet401`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn garbage_bearer_values_get_401() {
         let world = World::start().await;
 

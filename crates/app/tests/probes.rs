@@ -152,12 +152,15 @@ async fn probes_only_answer_get() {
     assert_eq!(response.status(), 405);
 }
 
+/// On the API port the actuator paths are unknown, and like every unknown path they are 401 without a token
+/// (Java: `Api8SecurityMisconfigurationTest.actuatorIsNotReachableOnThePublicPort`; the 404 with a token is in
+/// the parity suite).
 #[tokio::test]
 async fn the_actuator_is_not_served_on_the_api_port_and_the_api_not_on_the_management_port() {
     let app = start().await;
 
     for path in ["/actuator/health", "/actuator/info", "/actuator/health/liveness"] {
-        assert_eq!(get(app.api, path).await.0, 404, "{path}");
+        assert_eq!(get(app.api, path).await.0, 401, "{path}");
     }
     assert_ne!(app.api.port(), app.management.port());
 }

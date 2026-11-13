@@ -180,7 +180,6 @@ mod m5 {
 
     /// §4.1: the problem bodies of the authentication layer are catalogued like every other.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn a_401_is_a_catalogued_problem_with_a_trace_id() {
         let world = World::start().await;
 
@@ -193,7 +192,6 @@ mod m5 {
     /// §4.2 "Authentication before routing": without a token any non-public path is 401, even one that does
     /// not exist; with a token the same path is 404.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn authentication_comes_before_routing() {
         let world = World::start().await;
         let user = world.user().await;

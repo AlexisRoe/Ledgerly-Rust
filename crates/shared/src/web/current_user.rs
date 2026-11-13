@@ -1,11 +1,10 @@
 //! Who is calling.
 //!
 //! Java counterpart: the `CurrentUser` interface (`shared/security/CurrentUser.java`) and its one implementation,
-//! `JwtCurrentUser`, which reads Spring Security's context. Here the authentication layer (M5) puts a
-//! [`CurrentUser`] into the request's extensions once it has checked the token, and handlers take it as an
-//! extractor. Until then nothing puts it there, so every endpoint that needs a caller answers 401: there is no
-//! debug header or other way to claim an identity (ADR 0011). In-process tests insert it into the request they
-//! build.
+//! `JwtCurrentUser`, which reads Spring Security's context. Here the authentication layer
+//! ([`super::authenticate`]) puts a [`CurrentUser`] into the request's extensions once it has checked the bearer
+//! token, and handlers take it as an extractor. There is no debug header or other way to claim an identity
+//! (ADR 0011). In-process tests insert it into the request they build.
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;

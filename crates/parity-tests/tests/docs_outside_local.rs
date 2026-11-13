@@ -13,7 +13,6 @@ mod m5 {
 
     /// Java: `SwaggerUiProfileTest.NotLocal.isDeniedByDefault`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn is_denied_by_default() {
         let world = World::start().await;
 
@@ -30,7 +29,6 @@ mod m5 {
 
     /// Java: `SwaggerUiProfileTest.NotLocal.docsIsDeniedToo`.
     #[tokio::test]
-    #[ignore = "M5"]
     async fn docs_is_denied_too() {
         let world = World::start().await;
 

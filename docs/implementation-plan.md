@@ -318,7 +318,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - Verification: ES256 only, 30 s skew, no issuer or audience check.
   - Accept: tampered, expired, `alg: none`, HS256 and wrong-key tokens → 401. For a fixed key pair, the `kid` equals the thumbprint computed independently in the test.
 
-- [ ] **M5.5 Authentication layer and check order**
+- [x] **M5.5 Authentication layer and check order**
   - Do: deny by default; the public allowlist (CONCEPT §4); the 401 problem body. Layer order reproduces Java's precedence: 413 before 401, 401 before routing, and so on (inventory §4.2).
   - Accept: the precedence parity tests tagged M5 pass.
 

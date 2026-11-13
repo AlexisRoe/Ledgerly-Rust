@@ -31,6 +31,7 @@ sqlx = { workspace = true, features = ["macros"] }
 thiserror.workspace = true
 tokio = { workspace = true, optional = true }
 tower.workspace = true
+tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
