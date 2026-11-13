@@ -284,7 +284,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: `Cursor { t: Instant, id: Uuid }` encoded as unpadded Base64url JSON with keys in Java's order (port spec §3.6); junk → 400. A keyset query helper (`(created_at, id) < ($1, $2) … LIMIT n+1`), tested against `expenses`.
   - Accept: inserting rows while paging produces no duplicates. A cursor Java produced decodes (test vector built from the format spec).
 
-**Done when:** M4-tagged parity tests pass, including Bruno `02-reading` list requests (run with fixtures until the M5 seeder exists).
+**Done when:** every case of Java's `ExpensesListApiTest` passes in-process (`crates/expenses/src/web/list_tests.rs`), and the cursor and keyset tests pass against Postgres. The black-box list tests (`expenses_list.rs`) and the Bruno `02-reading` list requests need signed-in teammates, so they are M6's (decided after M4).
 
 ---
 
@@ -365,7 +365,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: served by `teams`: the user, roles per team, and pending invitations matched by verified email.
   - Accept: Bruno `00-auth` `/me` requests and `04-teams` pass.
 
-**Done when:** M6-tagged parity tests pass, along with Bruno `01-expenses`, `04-teams` and all of `00-auth`. The removed-claimant edge case is tested and noted in the learning log.
+**Done when:** M6-tagged parity tests pass (including the list tests moved from M4), along with Bruno `01-expenses`, the `02-reading` list requests, `04-teams` and all of `00-auth`. The removed-claimant edge case is tested and noted in the learning log.
 
 ---
 
