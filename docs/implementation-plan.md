@@ -326,7 +326,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: rotation; reuse revokes the whole family, publishes `RefreshTokenReuseDetected` and logs at warn; a sliding 14-day lifetime; the exact cookie attributes and `Cache-Control: no-store`; `X-Requested-With: ledgerly` required (Java ADR 0004). Logout revokes the family, always answers 204 and clears the cookie.
   - Accept: a replayed refresh token revokes the family. Concurrent refreshes with one token give exactly one success (row lock).
 
-- [ ] **M5.7 Current user from the token**
+- [x] **M5.7 Current user from the token**
   - Do: `CurrentUser` from the verified JWT, with `userId` on the request span. Events are defined now and published through a `shared::events::Publisher` trait whose implementation does nothing until M9.
 
 - [ ] **M5.8 Demo data**

@@ -3,10 +3,12 @@
 use std::sync::Arc;
 
 use ledgerly_shared::clock::Clock;
+use ledgerly_shared::events::Publisher;
 use secrecy::SecretString;
 use sqlx::PgPool;
 
 use super::UseCaseError;
+use crate::events::IdentityEvent;
 use crate::opaque_token::TokenHash;
 use crate::persistence;
 
@@ -15,11 +17,12 @@ use crate::persistence;
 pub(crate) struct VerifyEmail {
     pool: PgPool,
     clock: Arc<dyn Clock>,
+    events: Arc<dyn Publisher>,
 }
 
 impl VerifyEmail {
-    pub(crate) const fn new(pool: PgPool, clock: Arc<dyn Clock>) -> Self {
-        Self { pool, clock }
+    pub(crate) const fn new(pool: PgPool, clock: Arc<dyn Clock>, events: Arc<dyn Publisher>) -> Self {
+        Self { pool, clock, events }
     }
 
     /// Unknown, used and expired tokens are all the same 400 on the field `token`.
@@ -35,6 +38,9 @@ impl VerifyEmail {
             })?;
         persistence::mark_verification_used(&mut transaction, verification.id, now).await?;
         persistence::mark_verified(&mut transaction, verification.user).await?;
+        self.events
+            .publish(&mut transaction, &IdentityEvent::user_verified(verification.user, now))
+            .await?;
         transaction.commit().await?;
         Ok(())
     }

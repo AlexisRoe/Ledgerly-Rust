@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 use chrono::TimeDelta;
 use ledgerly_shared::clock::Clock;
+use ledgerly_shared::events::Publisher;
 use ledgerly_shared::id::UserId;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
 
 use super::{UseCaseError, hash_password, normalise_email};
+use crate::events::IdentityEvent;
 use crate::opaque_token::{self, TokenHash};
 use crate::persistence;
 
@@ -17,6 +19,7 @@ use crate::persistence;
 pub(crate) struct Register {
     pool: PgPool,
     clock: Arc<dyn Clock>,
+    events: Arc<dyn Publisher>,
     verification_ttl: TimeDelta,
     /// The `local` profile without `test`: the verification link is logged, as Java's
     /// `LocalVerificationLogger` does in place of an email service.
@@ -27,12 +30,14 @@ impl Register {
     pub(crate) const fn new(
         pool: PgPool,
         clock: Arc<dyn Clock>,
+        events: Arc<dyn Publisher>,
         verification_ttl: TimeDelta,
         log_verification_links: bool,
     ) -> Self {
         Self {
             pool,
             clock,
+            events,
             verification_ttl,
             log_verification_links,
         }
@@ -63,6 +68,9 @@ impl Register {
             .checked_add_signed(self.verification_ttl)
             .ok_or(UseCaseError::Crypto("verification lifetime out of range"))?;
         persistence::insert_verification(&mut transaction, user, &TokenHash::of(&token), expires_at).await?;
+        self.events
+            .publish(&mut transaction, &IdentityEvent::user_registered(user, now))
+            .await?;
         transaction.commit().await?;
         if self.log_verification_links {
             tracing::info!(

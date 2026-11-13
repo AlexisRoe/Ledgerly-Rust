@@ -7,6 +7,7 @@
 
 mod access_token;
 mod application;
+pub mod events;
 mod opaque_token;
 mod password;
 mod persistence;
@@ -18,6 +19,7 @@ use std::sync::Arc;
 use chrono::TimeDelta;
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::config::{AuthConfig, Profiles};
+use ledgerly_shared::events::Publisher;
 use ledgerly_shared::ratelimit::{InvalidRateLimit, RateLimit, RateLimiter};
 use ledgerly_shared::web::Routes;
 use sqlx::PgPool;
@@ -56,6 +58,7 @@ impl Identity {
         profiles: Profiles,
         pool: &PgPool,
         clock: &Arc<dyn Clock>,
+        events: &Arc<dyn Publisher>,
         limiter: &RateLimiter,
     ) -> Result<Self, IdentityError> {
         if profiles.keycloak {
@@ -73,10 +76,11 @@ impl Identity {
             register: Register::new(
                 pool.clone(),
                 clock.clone(),
+                events.clone(),
                 lifetime(auth.verification_ttl),
                 profiles.local && !profiles.test,
             ),
-            verify: VerifyEmail::new(pool.clone(), clock.clone()),
+            verify: VerifyEmail::new(pool.clone(), clock.clone(), events.clone()),
             login: Login::new(
                 pool.clone(),
                 clock.clone(),
@@ -88,6 +92,7 @@ impl Identity {
             refresh: Refresh::new(
                 pool.clone(),
                 clock.clone(),
+                events.clone(),
                 tokens.clone(),
                 lifetime(auth.refresh_token_ttl),
             ),

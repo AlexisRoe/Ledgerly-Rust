@@ -5,12 +5,14 @@ use std::sync::Arc;
 
 use chrono::TimeDelta;
 use ledgerly_shared::clock::Clock;
+use ledgerly_shared::events::Publisher;
 use ledgerly_shared::text::is_blank;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
 
 use super::{Session, UseCaseError};
 use crate::access_token::AccessTokens;
+use crate::events::IdentityEvent;
 use crate::opaque_token::{self, TokenHash};
 use crate::persistence;
 
@@ -19,15 +21,23 @@ use crate::persistence;
 pub(crate) struct Refresh {
     pool: PgPool,
     clock: Arc<dyn Clock>,
+    events: Arc<dyn Publisher>,
     tokens: AccessTokens,
     refresh_ttl: TimeDelta,
 }
 
 impl Refresh {
-    pub(crate) const fn new(pool: PgPool, clock: Arc<dyn Clock>, tokens: AccessTokens, refresh_ttl: TimeDelta) -> Self {
+    pub(crate) const fn new(
+        pool: PgPool,
+        clock: Arc<dyn Clock>,
+        events: Arc<dyn Publisher>,
+        tokens: AccessTokens,
+        refresh_ttl: TimeDelta,
+    ) -> Self {
         Self {
             pool,
             clock,
+            events,
             tokens,
             refresh_ttl,
         }
@@ -51,6 +61,8 @@ impl Refresh {
             .ok_or(UseCaseError::Unauthenticated)?;
         if current.replaced_by.is_some() {
             persistence::revoke_family(&mut transaction, current.family, now).await?;
+            let event = IdentityEvent::refresh_token_reuse_detected(current.user, current.family, now);
+            self.events.publish(&mut transaction, &event).await?;
             transaction.commit().await?;
             tracing::warn!(
                 "Refresh token reuse detected; session family {} revoked",

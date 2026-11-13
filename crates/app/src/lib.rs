@@ -25,6 +25,7 @@ use ledgerly_identity::{Identity, IdentityError};
 use ledgerly_shared::clock::{Clock, SystemClock};
 use ledgerly_shared::config::Limits;
 use ledgerly_shared::database::SchemaError;
+use ledgerly_shared::events::{Discard, Publisher};
 use ledgerly_shared::ratelimit::RateLimiter;
 use ledgerly_shared::web::{self, Authentication, Problem, Routes, TokenVerifier};
 use sqlx::PgPool;
@@ -68,7 +69,9 @@ impl Modules {
     pub fn new(config: &Config, pool: &PgPool) -> Result<Self, IdentityError> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let limiter = RateLimiter::new(clock.clone());
-        let identity = Identity::new(&config.auth, config.profiles, pool, &clock, &limiter)?;
+        // Until the outbox (M9.1), events are dropped where Java publishes them.
+        let events: Arc<dyn Publisher> = Arc::new(Discard);
+        let identity = Identity::new(&config.auth, config.profiles, pool, &clock, &events, &limiter)?;
         Ok(Self { clock, identity })
     }
 }

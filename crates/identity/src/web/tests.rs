@@ -3,7 +3,8 @@
 //! Java: `AuthApiTest`, including the cases that need a clock and so are not in the black-box parity suite:
 //! the verification token expiring after 24 hours and the login lock ending after 15 minutes.
 
-use std::sync::Arc;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::Router;
@@ -13,6 +14,7 @@ use chrono::{TimeDelta, TimeZone, Utc};
 use ledgerly_shared::clock::{Clock, FixedClock};
 use ledgerly_shared::config::{AuthConfig, Profiles};
 use ledgerly_shared::database::TestDatabase;
+use ledgerly_shared::events::{Event, Publisher};
 use ledgerly_shared::ratelimit::RateLimiter;
 use ledgerly_shared::web::render;
 use serde_json::{Value, json};
@@ -21,15 +23,34 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use crate::Identity;
+use crate::events::IdentityEvent;
 use crate::opaque_token::TokenHash;
 
 const PASSWORD: &str = "S3cret-Passw0rd-xyz";
+
+/// Keeps the type and the actor of every event, in order. It sees an event when the use case publishes it,
+/// before its transaction commits.
+#[derive(Debug, Default)]
+struct Recorded(Mutex<Vec<(&'static str, String)>>);
+
+impl Publisher for Recorded {
+    fn publish<'a>(
+        &'a self,
+        _connection: &'a mut sqlx::PgConnection,
+        event: &'a dyn Event,
+    ) -> Pin<Box<dyn Future<Output = sqlx::Result<()>> + Send + 'a>> {
+        let actor = format!("{event:?}");
+        self.0.lock().unwrap().push((event.event_type(), actor));
+        Box::pin(std::future::ready(Ok(())))
+    }
+}
 
 struct World {
     database: TestDatabase,
     clock: Arc<FixedClock>,
     router: Router,
     identity: Identity,
+    events: Arc<Recorded>,
 }
 
 struct Reply {
@@ -75,7 +96,9 @@ impl World {
             test: true,
             ..Profiles::default()
         };
-        let identity = Identity::new(&auth(), profiles, database.pool(), &shared, &limiter).unwrap();
+        let events = Arc::new(Recorded::default());
+        let publisher: Arc<dyn Publisher> = events.clone();
+        let identity = Identity::new(&auth(), profiles, database.pool(), &shared, &publisher, &limiter).unwrap();
         let router = Router::new()
             .fallback_service(identity.routes().into_service())
             .layer(axum::middleware::from_fn(render));
@@ -84,6 +107,7 @@ impl World {
             clock,
             router,
             identity,
+            events,
         }
     }
 
@@ -717,6 +741,52 @@ async fn logout_is_idempotent_but_still_needs_the_custom_header() {
         world.cookie_post("/api/v1/auth/logout", &[], None).await.status,
         StatusCode::BAD_REQUEST
     );
+}
+
+// --- events ---
+
+impl World {
+    fn event_types(&self) -> Vec<&'static str> {
+        self.events.0.lock().unwrap().iter().map(|(name, _)| *name).collect()
+    }
+}
+
+/// Java publishes `UserRegistered`, `UserVerified` and `RefreshTokenReuseDetected`, each with ids only.
+#[tokio::test]
+async fn registering_verifying_and_a_replay_publish_their_events_with_ids_only() {
+    let world = World::new().await;
+    let email = world.registered().await;
+    let user = world.user_id(&email).await;
+    let token = world.verification_token(&email, TimeDelta::hours(24)).await;
+    world.verify(&token).await;
+    let first = world.login(&email, PASSWORD).await.cookie();
+    world.refresh(&first).await;
+    world.refresh(&first).await;
+    // Neither a taken address nor a failed login publishes anything.
+    world.register(&email, PASSWORD).await;
+    world.login(&email, "wrong-password-123").await;
+
+    assert_eq!(
+        world.event_types(),
+        [
+            "ledgerly-rust:identity.UserRegistered",
+            "ledgerly-rust:identity.UserVerified",
+            "ledgerly-rust:identity.RefreshTokenReuseDetected",
+        ]
+    );
+    for (_, printed) in world.events.0.lock().unwrap().iter() {
+        assert!(printed.contains(&user.to_string()), "{printed}");
+        assert!(!printed.contains(&email) && !printed.contains(&first), "{printed}");
+    }
+}
+
+#[test]
+fn an_event_has_a_v7_id_and_names_its_actor() {
+    let actor = ledgerly_shared::id::UserId::new_v7();
+    let event = IdentityEvent::user_registered(actor, Utc::now());
+
+    assert_eq!(event.event_id().get_version_num(), 7);
+    assert_eq!(event.actor_id(), actor);
 }
 
 // --- jwks ---

@@ -10,6 +10,7 @@ pub mod clock;
 pub mod config;
 pub mod database;
 pub mod email;
+pub mod events;
 pub mod id;
 pub mod idempotency;
 pub mod iso;
