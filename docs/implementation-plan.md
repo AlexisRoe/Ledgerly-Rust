@@ -293,7 +293,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** register, verify, login, refresh with reuse detection, logout, JWT issuing and verification, all interchangeable with Java's stored data.
 **Rust you meet:** RustCrypto crates, `secrecy`/`zeroize`, constant-time comparison, tower authentication layers, cookies.
 
-- [ ] **M5.1 Passwords**
+- [x] **M5.1 Passwords**
   - Do: Argon2id with m=16384, t=2, p=1, a 16-byte salt and a 32-byte hash, as a PHC string in standard Base64 without padding (port spec §4). Login for an unknown email verifies against a dummy hash, so the time is the same; register hashes before checking whether the email exists.
   - Accept: a hash Rust produces parses as Spring's format (`$argon2id$v=19$m=16384,t=2,p=1$…`), and a PHC string built to Spring's documented encoding verifies. Password length is validated before hashing (an over-long password → 400 without hashing).
 
