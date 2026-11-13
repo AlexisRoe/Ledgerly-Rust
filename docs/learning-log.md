@@ -186,6 +186,26 @@ One section per milestone, written by the implementing agent when the milestone 
 
 ## M3 · Contract, validation, errors
 
+**Stopped at M3.1** (plan M3.1, CLAUDE.md "When you are stuck"): the generated server code cannot serve the spec's `:action` paths. Nothing of M3 is implemented; this entry records the evaluation for the reviewer's decision.
+
+- **Surprises and dead ends:**
+  - Generator: `openapitools/openapi-generator-cli:v7.27.0` (`sha256:949efd0d…46d0`, the newest release on 2026-11-13), `-g rust-axum`, on the vendored `api/openapi.yaml`. It runs without errors and the crate compiles (axum 0.8, edition 2024). It emits one trait per tag (`apis::expenses::Expenses`, …), one response enum per operation with a variant per documented status, typed path/query/header parameter structs, `#[serde(deny_unknown_fields)]` on request models, and `server::new(api_impl) -> Router`.
+  - **Blocker, `:action` paths.** The generated router registers `/api/v1/teams/{team_id}/expenses/{expense_id}:approve` and eight more paths of that form (six transitions, `{team_id}:leave`, `{invitation_id}:accept`, `{invitation_id}:decline`). axum 0.8.9, the newest release, pins `matchit = "=0.8.4"`, which refuses a parameter with anything else in the same segment: `Router::route` panics with `Invalid route ".../{expense_id}:approve": Only one parameter is allowed per path segment` (reproduced with a stand-alone axum 0.8.9 router using the generated path strings; `.approve` fails the same way). `server::new` would therefore panic at startup. matchit 0.9 lifts the restriction, but no axum release uses it. `expenses:batch` and `expenses.csv` are fine: no parameter in that segment.
+  - Further gaps found during the same evaluation, each of which would need a workaround outside the generated code:
+    - Every rejection the generated handlers produce themselves is `text/plain`, not a problem body, and several have Java's wrong status: a missing `If-Match` is 400 `Missing required header If-Match` (Java 428 `PRECONDITION_REQUIRED`); unknown or missing JSON properties are axum's `JsonRejection` 422 (Java 400 `MALFORMED_REQUEST`, or `VALIDATION_FAILED` for missing fields); a wrong `Content-Type` is a plain 415; bad path or query values are a plain 400.
+    - Java lists **every** missing field (`ExpensesApiTest`: "missing fields give 400 `VALIDATION_FAILED` with ≥2 `errors`"). The generated handler deserialises straight into the model with serde, which stops at the first missing field, before our code runs.
+    - Authentication is per handler, through `ApiAuthBasic::extract_claims_from_auth_header`, after the body extractor ran: without a token, a malformed body gives 400 before 401, and a missing token gives a bare 401 without body or `WWW-Authenticate`. Java authenticates before routing (inventory §4.2).
+    - `GET /.well-known/jwks.json` has a path-level `servers: [/]` override, which the generator ignores: it serves `/api/v1/.well-known/jwks.json`, a path that is not in the spec (API9), and not the documented one.
+    - By default every `string` property is checked with `check_xss_string` (ammonia): a merchant such as `Smith, Jones & Co` (Java's export test) or `<b>` would be refused. `disableValidator=true` turns that off, and with it the length/pattern checks, which the domain does anyway.
+    - The generated `Cargo.toml` keeps `ammonia` in the default `server` feature even with `disableValidator`; through `cssparser` and `dtoa-short` it brings MPL-2.0, which `deny.toml` does not allow. `lazy_static`, `regex`, `validator` and `frunk` (optional) come along too.
+  - What works: multipart bodies arrive as `axum::extract::Multipart` (streaming, so the 10 MB count is possible), cookies as `CookieJar`, `Set-Cookie`, `Location` and `ETag` are fields of the response variants, and the CSV export is a `ByteArray` body (whole file in memory, not streamed like Java's `LazyCsvInputStream`).
+- **Open questions:**
+  1. **How should HTTP be served, given that the generated router cannot serve `:action` paths?** Options:
+     - (a) Hand-written axum routing and handlers with our own serde request/response types (ADR 0009's named fallback). The spec stays the inventory: the M3.6 test compares the router with the spec's paths and methods, and the parity suite validates responses against it. Needs a superseding ADR.
+     - (b) Generated **models** only (`--global-property models`) for response bodies, with hand-written routing, extraction and request parsing. Keeps compile-time response shapes; request types stay ours so all missing fields can be listed. Needs a superseding ADR.
+     - (c) Keep the generated server and patch around it: a layer that rewrites `…/{id}:approve` before routing, a post-processing step for the route strings, a layer that turns the plain-text rejections into problems, our own `Cargo.toml`. Stays within ADR 0009, but the missing-fields list is still impossible.
+     - (d) Custom mustache templates for the generator (`-t`). Stays within ADR 0009; we maintain the templates.
+
 ## M4 · Paging and filtering
 
 ## M5 · Authentication
