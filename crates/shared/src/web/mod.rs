@@ -9,6 +9,6 @@ mod problem;
 mod routing;
 
 pub use current_user::CurrentUser;
-pub use extract::{Json, MAX_JSON_BODY_SIZE, Validate, Violations, header_text, uuid_parameter};
+pub use extract::{Json, MAX_JSON_BODY_SIZE, Validate, Violations, header_text, read_json, uuid_parameter};
 pub use problem::{ErrorCode, FieldViolation, Problem, TraceContext, render};
 pub use routing::{Body, PathParameters, RouteRejection, RouteService, Routes};

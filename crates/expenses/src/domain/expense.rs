@@ -105,7 +105,7 @@ pub(crate) struct StoredExpense {
 ///
 /// Java counterpart: `expenses/internal/domain/Expense.java`, without its JPA parts (version and timestamps
 /// arrive with persistence in M2).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expense {
     id: ExpenseId,
     team_id: TeamId,

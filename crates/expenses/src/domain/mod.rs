@@ -15,6 +15,7 @@ pub(crate) use error::ExpenseError;
 pub(crate) use expense::{Expense, NewExpense, Rejection, StoredExpense};
 pub(crate) use status::ExpenseStatus;
 pub(crate) use text::{Merchant, Note, RejectionReason};
-// Only tests use these until the web layer serves the transitions (M3.4).
+pub(crate) use {action::Action, actor::Actor};
+// Only tests name these; production code meets them inside `ExpenseError`.
 #[cfg(test)]
-pub(crate) use {action::Action, actor::Actor, error::Forbidden, text::InvalidInput};
+pub(crate) use {error::Forbidden, text::InvalidInput};

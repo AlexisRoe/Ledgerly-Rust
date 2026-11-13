@@ -18,9 +18,13 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use std::any::Any;
 
+use std::sync::Arc;
+
 use axum::Router;
 use axum::response::IntoResponse;
+use ledgerly_shared::clock::{Clock, SystemClock};
 use ledgerly_shared::web::{self, Problem, Routes};
+use sqlx::PgPool;
 use tokio::net::TcpListener;
 use tower_http::catch_panic::CatchPanicLayer;
 
@@ -32,16 +36,16 @@ use crate::telemetry::Telemetry;
 /// The API router: everything served on the public port.
 ///
 /// Tests and the binary build it with this one function, so that both run the same routes and layers. The
-/// routes come from one table ([`Routes`]), which the inventory test compares with the spec. It is still empty;
-/// the expense endpoints arrive in M3.4.
-pub fn router(_config: &Config, telemetry: &Telemetry) -> Router {
-    layered(routes(), telemetry)
+/// routes come from one table ([`routes`]), which the inventory test compares with the spec.
+pub fn router(_config: &Config, telemetry: &Telemetry, pool: &PgPool) -> Router {
+    layered(routes(pool), telemetry)
 }
 
 /// Every endpoint the API serves.
 #[must_use]
-pub fn routes() -> Routes {
-    Routes::new()
+pub fn routes(pool: &PgPool) -> Routes {
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    Routes::new().merge(ledgerly_expenses::routes(pool, &clock))
 }
 
 /// `routes` behind the layers every API request passes, from the outside in:
@@ -80,6 +84,7 @@ pub struct App {
     management: TcpListener,
     config: Config,
     telemetry: Telemetry,
+    pool: PgPool,
 }
 
 impl App {
@@ -88,7 +93,7 @@ impl App {
     /// # Errors
     ///
     /// Returns the I/O error if a port cannot be bound, for example because it is in use.
-    pub async fn bind(config: Config, telemetry: Telemetry) -> io::Result<Self> {
+    pub async fn bind(config: Config, telemetry: Telemetry, pool: PgPool) -> io::Result<Self> {
         let api = TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.server.api_port)).await?;
         let management = TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.server.management_port)).await?;
         Ok(Self {
@@ -96,6 +101,7 @@ impl App {
             management,
             config,
             telemetry,
+            pool,
         })
     }
 
@@ -133,7 +139,7 @@ impl App {
 
         let api = server::serve(
             self.api,
-            router(&self.config, &self.telemetry),
+            router(&self.config, &self.telemetry, &self.pool),
             api_shutdown.clone(),
             drain,
         );

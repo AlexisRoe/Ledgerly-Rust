@@ -5,25 +5,30 @@
 
 #![forbid(unsafe_code)]
 
-// The use cases are served by the web layer from M3 on. `expect` instead of `allow`, so that this attribute stops
-// compiling, and has to go, once that is no longer true.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the use cases have no caller outside the tests until M3")
-)]
 mod application;
 mod domain;
-// Used by the application services from M2.4 on; `update` and `delete` only once the web layer arrives (M3).
-// `expect` instead of `allow`, so that this attribute stops compiling, and has to go, once that is no longer true.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "update and delete have no caller outside the tests until M3")
-)]
 mod persistence;
 mod receipt_checks;
-// The routes that call it arrive in M3.4. `expect` instead of `allow`, so that this attribute stops compiling, and
-// has to go, once that is no longer true.
-#[cfg_attr(not(test), expect(dead_code, reason = "the expense routes arrive in M3.4"))]
 mod web;
 
+use std::sync::Arc;
+
+use ledgerly_shared::clock::Clock;
+use ledgerly_shared::web::Routes;
+use sqlx::PgPool;
+
 pub use receipt_checks::{ReceiptChecks, ReceiptSummary};
+
+use crate::application::{MembershipLookup, NoTeamsYet};
+use crate::receipt_checks::NoReceiptsYet;
+
+/// The expense endpoints, ready to be merged into the API's route table.
+///
+/// Until the teams module answers membership questions (M6), nobody is a teammate, so every caller gets 404;
+/// until the receipts module exists (M7), no expense has a receipt, so a submit is refused with 422.
+#[must_use]
+pub fn routes(pool: &PgPool, clock: &Arc<dyn Clock>) -> Routes {
+    let memberships: Arc<dyn MembershipLookup> = Arc::new(NoTeamsYet);
+    let receipts: Arc<dyn ReceiptChecks> = Arc::new(NoReceiptsYet);
+    web::ExpensesApi::new(pool, clock, &memberships, &receipts).routes()
+}

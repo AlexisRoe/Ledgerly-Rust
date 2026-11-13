@@ -37,7 +37,11 @@ async fn start() -> Running {
     ]);
     let config = Config::from_environment(&environment).unwrap();
     let telemetry = Telemetry::new(&config.tracing).unwrap();
-    let app = App::bind(config, telemetry).await.unwrap();
+    // The probes never touch the database: a pool that has not connected is enough.
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://ledgerly@127.0.0.1:9/ledgerly")
+        .unwrap();
+    let app = App::bind(config, telemetry, pool).await.unwrap();
     let port = |address: SocketAddr| SocketAddr::from(([127, 0, 0, 1], address.port()));
     let api = port(app.api_address().unwrap());
     let management = port(app.management_address().unwrap());

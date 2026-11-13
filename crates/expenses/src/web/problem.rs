@@ -29,6 +29,8 @@ pub(crate) fn refusal(error: &ExpenseError) -> Problem {
 /// logged and answered with a bare 500; neither the log line nor the body carries a value of the expense.
 pub(crate) fn failure(error: &UseCaseError) -> Problem {
     match error {
+        UseCaseError::NotFound => Problem::not_found(),
+        UseCaseError::Stale => Problem::precondition_failed(),
         UseCaseError::Refused(refused) => refusal(refused),
         UseCaseError::Storage(PersistenceError::Conflict { .. }) => Problem::precondition_failed(),
         UseCaseError::Storage(storage @ (PersistenceError::Corrupt { .. } | PersistenceError::Database(_))) => {

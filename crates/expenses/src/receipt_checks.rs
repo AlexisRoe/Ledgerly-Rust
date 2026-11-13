@@ -49,6 +49,16 @@ pub trait ReceiptChecks: fmt::Debug + Send + Sync {
     fn summary_for(&self, team_id: TeamId, expense_id: ExpenseId) -> ReceiptSummary;
 }
 
+/// Until the receipts module exists (M7), no expense has a receipt.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct NoReceiptsYet;
+
+impl ReceiptChecks for NoReceiptsYet {
+    fn summary_for(&self, _team_id: TeamId, _expense_id: ExpenseId) -> ReceiptSummary {
+        ReceiptSummary::new(0, 0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

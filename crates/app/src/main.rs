@@ -48,10 +48,9 @@ async fn run(config: Config, telemetry: Telemetry) -> Result<(), StartupError> {
     let pool = database::connect(&config.database).await?;
     // Before the ports open: a schema this build was not made for is never served (ADR 0006).
     database::verify(&pool).await?;
-    let app = App::bind(config, telemetry).await?;
+    let app = App::bind(config, telemetry, pool.clone()).await?;
     app.serve(stop).await?;
-    // Nothing reads or writes through the pool until the use cases are wired into the router (M3). It is opened
-    // and checked here so that a wrong database stops the start, and is closed after the last request.
+    // Closed after the last request has finished.
     pool.close().await;
     Ok(())
 }

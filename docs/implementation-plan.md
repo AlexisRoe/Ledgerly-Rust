@@ -245,7 +245,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - **Don't port Java's temporary `X-Debug-*` headers.** They were deleted in Java's M5/M6 and would be a test hook in production code (ADR 0011).
     - `MembershipLookup` port in expenses with a test double (the real one arrives in M6). `ReceiptChecks` test double.
 
-- [ ] **M3.4 Expense endpoints**
+- [x] **M3.4 Expense endpoints**
   - Do:
     - Create: 201 + `Location`. Get: `ETag: "<version>"`.
     - PATCH and DELETE: `If-Match` required (428 if missing, 412 if stale, `W/"n"` accepted).

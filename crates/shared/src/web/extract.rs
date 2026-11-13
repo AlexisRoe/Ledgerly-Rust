@@ -54,14 +54,24 @@ where
     type Rejection = Problem;
 
     async fn from_request(request: Request, _state: &S) -> Result<Self, Problem> {
-        let bytes = read_body(request, MAX_JSON_BODY_SIZE).await?;
-        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| Problem::malformed_request())?;
-        let body: T = serde_json::from_value(value).map_err(|_| Problem::malformed_request())?;
-        let mut violations = Violations::default();
-        body.validate(&mut violations);
-        violations.into_result()?;
-        Ok(Self(body))
+        read_json(request).await.map(Self)
     }
+}
+
+/// What the [`Json`] extractor does, as a function: for a handler that must check its path parameters before
+/// it reads the body, as Spring resolves them in that order.
+///
+/// # Errors
+///
+/// 413, `MALFORMED_REQUEST` or `VALIDATION_FAILED`, as described on [`Json`].
+pub async fn read_json<T: DeserializeOwned + Validate>(request: Request) -> Result<T, Problem> {
+    let bytes = read_body(request, MAX_JSON_BODY_SIZE).await?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| Problem::malformed_request())?;
+    let body: T = serde_json::from_value(value).map_err(|_| Problem::malformed_request())?;
+    let mut violations = Violations::default();
+    body.validate(&mut violations);
+    violations.into_result()?;
+    Ok(body)
 }
 
 /// The whole body, or 413 once it grows past `limit` bytes.
