@@ -303,6 +303,59 @@ One section per milestone, written by the implementing agent when the milestone 
 
 ## M5 · Authentication
 
+`J/` is Ledgerly-Java's `src/main/java/com/ledgerly/` and `JT/` its `src/test/java/com/ledgerly/`, both at the commit in `vendor/ledgerly-java/SOURCE`. Commits: `781d4f8` (M5.1), `4d57e01` (M5.2), `506e242` (M5.4, done before M5.3 because login hands out an access token), `0982f52` (M5.3), `9054f29` (M5.5), `d5d1e44` (M5.6), `a375f16` (M5.7), `24e9ef0` (M5.8), `c02bb2a` (two M3 parity tests now send a token, as Java's do).
+
+- **Java → Rust:**
+  - `Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8()` (Spring Security + Bouncy Castle) → `crates/identity/src/password.rs`: the `argon2` crate's raw `hash_password_into`, with Spring's `Argon2EncodingUtils` format written and parsed by hand (type, optional `v=`, `m,t,p`, Java's lenient Base64). The `password-hash` crate's PHC parser was not used: it would accept and refuse other strings than Spring does. Hashing runs on `tokio::task::spawn_blocking`; Java hashes on the request thread, inside the login transaction.
+  - `OpaqueTokens` (`J/identity/internal/application/OpaqueTokens.java`) → `crates/identity/src/opaque_token.rs`. The token is a `SecretString` from the moment it is made; the stored form is a `TokenHash` newtype whose `PartialEq` is constant-time (`subtle`) and whose `Debug` prints `TokenHash(***)`.
+  - `JwtKeys` + Nimbus `JwtEncoder`/`JwtDecoder` (`J/identity/internal/infrastructure/`) → `crates/identity/src/access_token.rs`, a hand-written compact JWS over `p256`. No JWT crate: the checks Nimbus and Spring make in effect are listed on `AccessTokens::verify` and each has a test (`access_token/tests.rs`). `alg` must be exactly `ES256`, so `none` and the HS256-with-the-public-key attack are refused before any key is touched.
+  - Spring Security's filter chain (`J/identity/internal/web/SecurityConfig.java`, `BearerTokenAuthenticationFilter`, `DefaultBearerTokenResolver`, `ProblemSecurityHandler`, `MdcUserFilter`) → one axum middleware, `shared::web::authenticate` (`crates/shared/src/web/authentication.rs`), placed between problem rendering and the routes (`crates/app/src/lib.rs`). The token check is a `TokenVerifier` trait owned by `shared` and implemented by identity's `AccessTokens`, so `shared` does not depend on identity (the M11 Keycloak verifier plugs into the same place).
+  - `@AuthenticationPrincipal`-style `CurrentUser` → unchanged extractor; the layer now inserts it. A handler that takes `CurrentUser` cannot run without an authenticated caller, whatever the allowlist says.
+  - Bucket4j + Caffeine (`J/shared/ratelimit/RateLimiter.java`) → `crates/shared/src/ratelimit.rs`: Bucket4j's greedy and interval refill arithmetic (with its rounding-error carry), Caffeine's 2 h idle expiry on the monotonic clock and the 200,000-entry cap. `RateLimiterTest` is ported. Only the login lock uses it now; M10.1 adds the request limits.
+  - Hibernate Validator's `@Email` (`AbstractEmailValidator`, `DomainNameUtil`) → `crates/shared/src/email.rs` with the patterns copied into `regex`, and `idna` for the `IDN.toASCII` length step.
+  - `ApplicationEventPublisher` → `shared::events::Publisher`, which takes the use case's open transaction (`&mut PgConnection`), so M9's outbox can write in it. `Discard` drops events until then. Identity's sealed `IdentityEvent` → an enum in `crates/identity/src/events.rs`.
+  - `Session.toString()` returning `Session[***]` → a manual `Debug`; passwords and tokens in request bodies deserialize straight into `SecretString` (`crates/identity/src/web/dto.rs`).
+  - `DevDataSeeder` (`J/shared/seed/DevDataSeeder.java`) → `crates/app/src/seed.rs`, the same SQL, in one transaction.
+- **Rust features that carried the weight:**
+  - `secrecy::SecretString` and `zeroize::Zeroizing`: secrets cannot be printed by accident, and are wiped on drop (`password.rs`, `opaque_token.rs`, `web/dto.rs`).
+  - Trait objects at module seams: `Arc<dyn TokenVerifier>`, `Arc<dyn Publisher>` (the latter returning `Pin<Box<dyn Future + Send + 'a>>`, because an `async fn` in a trait is not object-safe).
+  - A `serde::de::Visitor` (`crates/identity/src/strict_json.rs`) to refuse duplicate JSON members, which `serde_json::Value` silently merges.
+  - `#[expect(dead_code, reason = …)]` while steps landed out of order: unlike `allow`, it fails the build once the code is used, so none survived.
+  - `spawn_blocking` for CPU-bound Argon2 inside async handlers.
+- **Surprises and dead ends:**
+  - Login needs the access token, so M5.4 went before M5.3.
+  - An app unit test (`telemetry::tests::a_log_line_inside_a_request_carries_the_requests_ids`) fails about one run in three under plain `cargo test`, never under nextest (`just test`), which runs each test in its own process. Tracing's per-callsite interest cache races between test threads; `rebuild_interest_cache()` did not help. Left as it is.
+  - Two M3 parity tests sent no token, because M3 had no authentication. With the layer they got 401; they now sign in, as Java's tests do (`c02bb2a`).
+  - The fixed test key pair in `access_token/tests.rs` is a gitleaks finding; it is listed in `.gitleaksignore` by fingerprint (working tree and commit).
+  - `docs/deployment.md` claimed the PEM keys could be "written as `\n`". Neither Java's `JwtKeys.decode` nor Rust unescapes that; corrected.
+  - sqlx's `Display` for a database error can quote a value (a unique-violation message shows the email). Identity logs database failures by kind only.
+- **Parity traps:**
+  - Argon2: Spring stores salt and hash in *standard* Base64 without padding, but decodes with Java's lenient decoder (padding optional). The password bytes are UTF-8 (Bouncy Castle's default converter). A hash without `v=` is version 0x10.
+  - JWT header order `{"kid","alg"}` and claims order `sub, exp, iat, jti`: Nimbus' `JSONObjectUtils` builds `HashMap`s, and Java's `String.hashCode` decides the order. JWKS members come out as `kty, crv, kid, x, y` the same way.
+  - Spring's `JwtTimestampValidator` treats `exp` and `nbf` as optional; 30 s skew on the application clock, `now - 30s > exp` is expired (so exactly 630 s after issue is still valid).
+  - Nimbus's key selector: a `kid` that is not ours, `crit`, `x5t#S256` or a `typ` other than `JWT`/`JOSE` find no key, so the token is refused, even if signed correctly. Gson refuses duplicate members.
+  - `DefaultBearerTokenResolver`: a header starting with `bearer` (any case) must match `^Bearer [A-Za-z0-9-._~+/]+=*$`, or it is 401 even on a public path; any other scheme is no token. A bad token is 401 on `/auth/login` too.
+  - Security runs before routing: without a token any non-public path, also an unknown one or a wrong method, is 401; Swagger's paths are public for `GET` only (Spring's method matcher), so `HEAD /docs` is 401.
+  - The two 401s differ: the security layer's carries `WWW-Authenticate: Bearer`, the login's and refresh's (Java's `Unauthenticated` through `ProblemExceptionHandler`) do not. Both say "Authentication required".
+  - Lockout is a Bucket4j *interval* refill: the 15 minutes count from the bucket's creation (the first login attempt for that email), not from the fifth failure. A successful login resets the tokens but keeps the schedule. Failures count for unknown emails too, so an address registered later starts locked.
+  - `Set-Cookie` is Spring's `ResponseCookie.toString()`: `Path; Max-Age; Expires; Secure; HttpOnly; SameSite`, `Expires` from the system time, `Thu, 01 Jan 1970 00:00:00 GMT` for the logout cookie.
+  - Refresh/logout checks, in Spring's order: header present ("header is required"), cookie length (method validation, `refreshToken`), then `ledgerly` exactly ("must be 'ledgerly'"). Several `X-Requested-With` headers are joined with commas.
+  - Bean Validation counts lengths in UTF-16 units (12 emoji are a 24-character password).
+- **Decisions:**
+  - Rust refuses to start when `lock-duration` is zero; Java builds the `RateLimit` per login and fails each login with a 500.
+  - A concurrent registration of the same email ends in 202 (`on conflict do nothing`). In Java the caught `DataIntegrityViolationException` leaves the transaction rollback-only, so the loser most likely gets a 500 (not tried).
+  - An account without a password (Keycloak-linked) costs a dummy Argon2 run on login, like an unknown email; Java answers it at once, which tells a timing observer that the account is external.
+  - Nimbus' own expiry check (system time, 60 s skew) is not repeated; only Spring's (application clock, 30 s), which is the stricter one whenever both clocks agree.
+  - `idna` (UTS 46) stands in for `java.net.IDN` (IDNA 2003) in `@Email`'s domain step; they can disagree on exotic characters.
+  - Paths are matched against the allowlist per percent-decoded segment, like `PathPattern`. Spring's `StrictHttpFirewall` (400 for `//`, `/../`, encoded slashes) is not reproduced; such paths match no route and are 401 or 404.
+  - Under `keycloak` identity registers no routes and the layer has no verifier, so every token is refused until M11.3.
+  - Events are published inside the use case's transaction; Java's `LocalVerificationLogger` logs inside it too, Rust logs the link after commit.
+- **Parity tests:** M5: 45 passed, 0 ignored. The suite: 57 passed, 211 ignored, 0 failed. `just check`: 532 tests passed, including the in-process clock tests for lock and verification expiry and the concurrent-refresh test (`crates/identity/src/web/tests.rs`), and the demo-data tests (`crates/app/tests/demo_data.rs`). Bruno `00-auth` against the app in `local`: 8 of 10 pass; the two `/me` requests are M6.
+- **Open questions:**
+  1. **`""` is a valid email.** Hibernate's `@Email` accepts the empty string and `@Size` allows 0, so `POST /auth/register {"email": "", "password": "…12 chars…"}` creates an account with an empty email in Java, and in Rust too (implemented as Java does). Bug to fix in Ledgerly-Java's spec (`minLength: 3`?), or keep?
+  2. **The two configured JWT keys are not checked against each other.** Java starts with a private and a public key that do not belong together, and then every token it issues fails verification (401 everywhere). Rust does the same. Refuse to start instead?
+  3. **Is the 200-character limit on the `refresh_token` cookie enforced in Java?** The spec says `maxLength: 200`; I assumed openapi-generator puts `@Size(max = 200)` on the `@CookieValue` parameter, which makes a longer cookie 400 `VALIDATION_FAILED` on `refreshToken` before the header value is checked. I did not see the generated code. If Java does not check it, Rust should drop the check (a longer cookie would then just be an unknown token: 401).
+
 ## M6 · Teams and authorization
 
 ## M7 · Receipts
