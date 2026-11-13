@@ -137,6 +137,53 @@ One section per milestone, written by the implementing agent when the milestone 
 
 ## M2 · Persist expenses
 
+`J/` is Ledgerly-Java's `src/main/java/com/ledgerly/`, `R/` its `src/main/resources/` (vendored under `vendor/ledgerly-java/`).
+
+- **Java → Rust:**
+  - Flyway running inside Spring Boot at startup (migrate, then `validate`) → `ledgerly_shared::database::verify` (`crates/shared/src/database/schema.rs`), which only reads `flyway_schema_history` and refuses to start on any missing, failed, changed or unknown version, naming each one. The migrations are embedded in the binary by `crates/shared/build.rs`, which lists `R/db/migration/` at build time, so a re-vendored V11 is demanded by the next build without anyone editing a list. Flyway's checksum is reimplemented (`migrations.rs`, `flyway_checksum`): CRC-32 over each line's UTF-8 bytes without the line break, BOM removed, read as a signed `int`. The test pins the ten values Flyway 12 wrote.
+  - HikariCP via Spring Boot's `DataSource` auto-configuration → `sqlx::PgPool` (`crates/shared/src/database/mod.rs`) with Hikari's defaults (10 connections, 30 s acquire, 10 min idle, 30 min lifetime). Hikari's `initializationFailTimeout=1` (one attempt, fail at once) is copied by trying one plain `PgConnection` before creating a lazy pool; `PgPoolOptions::connect_with` alone retried for 30 s.
+  - `ExpenseRepository extends Repository` (no inherited `findById`) and the JPA mapping on `Expense` (`J/expenses/internal/infrastructure/ExpenseRepository.java`, `J/expenses/internal/domain/Expense.java`) → free `pub(crate)` functions in `crates/expenses/src/persistence/mod.rs`. Java keeps the unscoped lookup out by choosing a base interface; Rust keeps the whole module out of the crate's public API, so nothing outside `expenses` can call any of it, and inside it every read takes a `TeamId`.
+  - `@Version long version` inside the entity → `ledgerly_shared::version::{Version, Versioned<T>}`. The aggregate stays free of persistence fields; `find` returns `Versioned<Expense>` and `update`/`delete` take the expected `Version` explicitly. Java's optimistic lock is implicit (Hibernate adds `and version=?` at flush); here it is one visible `where … and version = $n` and a `Conflict` when no row matches.
+  - Hibernate filling fields through the protected no-arg constructor → `TryFrom<ExpenseRow> for Versioned<Expense>`, which sends every column through the domain's own constructors (`Money::new`, `Merchant::new`, `Category::from_str`, …) and then `Expense::restore(StoredExpense)` (`pub(crate)`). A row the domain could not have written becomes `PersistenceError::Corrupt` naming the column, never a half-valid aggregate.
+  - `@ElementCollection` + `@OrderColumn(name = "position")` for rejections → one `array_agg(… order by position)` in the same statement as the expense (one snapshot, no lazy loading), and appending rows from the stored count on `update`.
+  - `@Transactional` on the use case + `ObjectOptimisticLockingFailureException` → `pool.begin()` … `commit()` in `crates/expenses/src/application/`, with persistence functions taking `&mut PgConnection` so the caller decides the transaction. A `Transaction` that is dropped without `commit` rolls back: the "rollback on exception" rule of `@Transactional` falls out of `?` and `Drop`.
+  - `@Transactional(readOnly = true)` on `GetExpense` → `set transaction read only` as the first statement.
+  - `@CreationTimestamp`/`@UpdateTimestamp` → `now` passed into `insert`/`update` by the use case, from the injected `Clock`.
+  - Testcontainers' `@ServiceConnection` Postgres in Java's tests → `TestDatabase` (`crates/shared/src/database/testing.rs`, feature `testing`): one Postgres container shared by all test processes and runs, a template database migrated once by the pinned Flyway image, and `CREATE DATABASE … TEMPLATE` per test (≈ 0.3 s warm). Images are read from `compose.yaml`, so Renovate updates tests and dev loop together.
+- **Rust features that carried the weight:**
+  - Build scripts and `include!`/`include_str!`: `crates/shared/build.rs` turns a directory into a `&'static [VendoredMigration]`.
+  - sqlx's compile-time-checked macros and offline mode: `query_as!` into `ExpenseRow` checks column types and nullability against the real schema while compiling; `.sqlx/` plus `SQLX_OFFLINE=true` in `.cargo/config.toml` lets CI and the image build without a database.
+  - `TryFrom` for row mapping, and `Option::transpose`/`Result` collection (`collect::<Result<Vec<_>, _>>()`) to fail the whole row on the first bad column.
+  - Deref coercion: a `Transaction<'_, Postgres>` passed as `&mut PgConnection` (`&mut transaction`), so one set of persistence functions serves pooled connections and transactions.
+  - `#[from]` and a hand-written `From<sqlx::Error>` so `?` lifts database, persistence and domain errors into one `UseCaseError`.
+  - `#[cfg_attr(not(test), expect(dead_code, reason = …))]` on modules that only tests call until M3: when M3 adds the callers, the expectations stop being fulfilled and the compiler insists they be removed.
+- **Surprises and dead ends:**
+  - The plan names `testcontainers`. 0.28 depends on `astral-tokio-tar`, declared unmaintained on 2026-11-03 (RUSTSEC-2026-0440, no fixed version), and `cargo deny` refuses it. The harness calls the `docker` CLI instead, as the parity runner already does; the commands are `network create`, `run`, `port`, and a one-shot `run --rm` for Flyway. (4fb8f2a)
+  - testcontainers would also have published Postgres on `0.0.0.0` with the well-known password; the CLI version publishes on `127.0.0.1` only.
+  - sqlx 0.9 takes SQL as `impl SqlSafeStr`, implemented for `&'static str` only. `CREATE DATABASE "<name>"` cannot bind identifiers, so the harness builds it with `format!` and wraps it in `AssertSqlSafe`; the names are generated, never input.
+  - Postgres' `CREATE DATABASE` cannot run inside a transaction and needs the template to have no connections, so the harness renames the template into place only after Flyway exited successfully; an interrupted run leaves `…_building`, never a broken template.
+  - Test-database setup could not wait for M2.2: M2.1's acceptance ("refuses a database missing V10") needs real databases. The harness landed in M2.1; M2.2 added the isolation tests.
+  - `#[expect(dead_code)]` on `mod domain` became unfulfilled as soon as `persistence` (itself still dead outside tests) used the domain, and had to go.
+  - `PgConnectOptions::new()` reads `PGHOST`, `PGPASSWORD` and `~/.pgpass`. `new_without_pgpass()` plus explicit fields keeps ADR 0013's "only Java's names".
+- **Parity traps:**
+  - Hibernate's `@OrderColumn` counts from 0.
+  - `@Version` starts at 0; Hibernate's `delete` of a loaded entity is version-checked too, so `delete` takes the version.
+  - `numeric(19,4)` returns `12.5000` for `12.50 EUR`; `Money::new` brings it back to the currency's scale.
+  - Startup with an unreachable database must fail immediately, as Hikari does.
+- **Decisions:**
+  - `SPRING_DATASOURCE_URL` accepts only the parameters `ApplicationName` and `sslmode` (`disable`, `allow`, `prefer`); anything else stops the start, naming the parameter but not its value. Ignoring `ssl=true` would mean an unencrypted connection nobody asked for. There is no TLS to Postgres yet (open question 2).
+  - Use cases return `Versioned<Expense>` instead of a separate `ExpenseView`. Java copies the entity because a managed entity leaks lazy loading and dirty checking; a Rust `Expense` returned by value is a plain owned value, and the web layer is inside the crate.
+  - Persistence and application tests live inside the crate (`src/persistence/tests.rs`, `src/application/tests.rs`), not in `tests/`, because both layers are `pub(crate)` (ADR 0010). They run against real Postgres all the same.
+  - The plan's `delete(team, id)` is `delete(team, id, version)` (see Parity traps).
+  - `crc` (already in the tree through sqlx) for Flyway's CRC-32.
+- **Open questions:**
+  1. **Migrations from the future.** Java leaves Flyway's defaults, which ignore applied migrations it does not know (`ignoreMigrationPatterns=*:future`): Java starts on a database a newer Java migrated to V11. Rust refuses, as ADR 0006 says ("exactly the vendored migrations"). That also means rolling the Rust image back after a newer Java ran is impossible. Keep the strict check?
+  2. **TLS to Postgres.** sqlx is built without a TLS backend, so `sslmode=require`/`verify-*` is refused at startup. pgjdbc supports them, and a managed database often demands them. Add `tls-rustls` (rustls + webpki roots) now or in M11?
+  3. **Database health.** Spring Boot's `/actuator/health` includes the `db` indicator, so Java reports `DOWN` (503) when Postgres is unreachable. Rust's health stays `UP`. Which milestone should add it (M10 hardening)?
+  4. **No-op updates.** Hibernate writes nothing, and keeps the version and `updated_at`, when a loaded entity did not change (dirty checking). Rust's `update` always increments. It matters from M3: a PATCH with identical values gives Java's old ETag back. Replicate by comparing before writing?
+  5. **Timestamps.** Hibernate takes `created_at`/`updated_at` from the JVM clock, not the injected `Clock`. Rust uses the `Clock`. Same values in production; differs only under a fixed test clock. Fine?
+  6. **CONCEPT §2 names `testcontainers`.** I did not edit CONCEPT; should the Tests row say "Postgres in Docker via the CLI (`TestDatabase`)"?
+
 ## M3 · Contract, validation, errors
 
 ## M4 · Paging and filtering
