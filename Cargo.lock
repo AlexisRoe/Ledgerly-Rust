@@ -1302,6 +1302,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tower",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1322,12 +1323,14 @@ dependencies = [
 name = "ledgerly-expenses"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "chrono",
  "ledgerly-shared",
  "ledgerly-teams",
  "sqlx",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1380,6 +1383,7 @@ dependencies = [
  "axum",
  "chrono",
  "crc",
+ "http-body-util",
  "ledgerly-shared",
  "proptest",
  "rust_decimal",
@@ -2829,10 +2833,12 @@ dependencies = [
  "futures-util",
  "http",
  "http-body",
+ "http-body-util",
  "pin-project-lite",
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
  "url",
 ]
 

@@ -229,7 +229,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - In `shared`, a route table that matches paths the way Spring's path patterns do, including a literal suffix after a parameter (`{expenseId}:approve`) and the most specific pattern winning, and answers 404 for no match and 405 with `Allow` for a wrong method. The API router is built from it, so the M3.6 inventory test can compare the table with the spec.
   - Accept: unit tests for matching (suffixes, specificity, 404, 405 with `Allow`, decoded parameters).
 
-- [ ] **M3.2 Problem Details and the error catalogue**
+- [x] **M3.2 Problem Details and the error catalogue**
   - Do:
     - In `shared`, the `ProblemDetail` type and all catalogue entries (port spec §3.3: code, status, type slug, title).
     - One exhaustive mapping from each module's error enum.

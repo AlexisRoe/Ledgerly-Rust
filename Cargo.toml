@@ -36,6 +36,7 @@ ledgerly-teams = { path = "crates/teams" }
 argon2 = "0.6.0"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 crc = "3.4.0"
+http-body-util = "0.1.5"
 chrono = { version = "0.4.45", default-features = false, features = ["now", "std"] }
 jsonschema = { version = "0.61.2", default-features = false }
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
@@ -53,6 +54,7 @@ sha2 = "0.11.1"
 sqlx = { version = "0.9.0", default-features = false, features = ["chrono", "postgres", "runtime-tokio", "rust_decimal", "uuid"] }
 thiserror = "2.0.21"
 tower = { version = "0.5.3", default-features = false, features = ["util"] }
+tower-http = { version = "0.6.11", default-features = false, features = ["catch-panic"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "fmt", "registry", "std"] }
 tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }

@@ -10,13 +10,19 @@ pub mod logging;
 mod management;
 mod server;
 pub mod telemetry;
+#[cfg(test)]
+mod tests;
 
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 
+use std::any::Any;
+
 use axum::Router;
-use ledgerly_shared::web::Routes;
+use axum::response::IntoResponse;
+use ledgerly_shared::web::{self, Problem, Routes};
 use tokio::net::TcpListener;
+use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::config::Config;
 pub use crate::management::BuildInfo;
@@ -28,21 +34,40 @@ use crate::telemetry::Telemetry;
 /// Tests and the binary build it with this one function, so that both run the same routes and layers. The
 /// routes come from one table ([`Routes`]), which the inventory test compares with the spec. It is still empty;
 /// the expense endpoints arrive in M3.4.
-///
-/// Every request runs in a span that carries its `traceId` and `spanId`.
 pub fn router(_config: &Config, telemetry: &Telemetry) -> Router {
-    Router::new()
-        .fallback_service(routes().into_service())
-        .layer(axum::middleware::from_fn_with_state(
-            telemetry.tracer(),
-            telemetry::trace_request,
-        ))
+    layered(routes(), telemetry)
 }
 
 /// Every endpoint the API serves.
 #[must_use]
 pub fn routes() -> Routes {
     Routes::new()
+}
+
+/// `routes` behind the layers every API request passes, from the outside in:
+///
+/// 1. tracing: a span with `traceId` and `spanId` for the request and its log lines;
+/// 2. problem rendering: every problem body gets `instance` and `traceId`;
+/// 3. panic catching: a handler that panics is answered with a 500 `INTERNAL_ERROR` problem that carries only
+///    the `traceId`, and logged as Java logs an unhandled exception.
+///
+/// Public so that tests can put a route of their own behind exactly these layers.
+pub fn layered(routes: Routes, telemetry: &Telemetry) -> Router {
+    Router::new()
+        .fallback_service(routes.into_service())
+        .layer(CatchPanicLayer::custom(unhandled_panic))
+        .layer(axum::middleware::from_fn(web::render))
+        .layer(axum::middleware::from_fn_with_state(
+            telemetry.tracer(),
+            telemetry::trace_request,
+        ))
+}
+
+/// The answer to a handler that panicked. What it panicked with is not logged: a panic message may quote any
+/// value, and Java's log line names only the exception class. The trace id finds the request.
+fn unhandled_panic(_panic: Box<dyn Any + Send + 'static>) -> axum::response::Response {
+    tracing::error!("Unhandled exception");
+    Problem::internal_error().into_response()
 }
 
 /// The service with both listeners bound, ready to serve.

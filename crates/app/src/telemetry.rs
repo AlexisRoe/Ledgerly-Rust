@@ -8,6 +8,7 @@ use axum::http::HeaderMap;
 use axum::middleware::Next;
 use axum::response::Response;
 use ledgerly_shared::config::TracingConfig;
+pub use ledgerly_shared::web::TraceContext;
 use opentelemetry::KeyValue;
 use opentelemetry::propagation::{Extractor, TextMapPropagator};
 use opentelemetry::trace::{Span, SpanKind, Tracer, TracerProvider};
@@ -16,28 +17,6 @@ use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{SdkTracer, SdkTracerProvider};
 use tracing::Instrument;
-
-/// The ids of the request being handled, as lower-case hex: 32 characters and 16 characters.
-///
-/// Stored in the request's extensions, so that whatever writes the response (a problem body, from M3) reports
-/// the same `traceId` the log lines carry.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TraceContext {
-    trace_id: String,
-    span_id: String,
-}
-
-impl TraceContext {
-    #[must_use]
-    pub fn trace_id(&self) -> &str {
-        &self.trace_id
-    }
-
-    #[must_use]
-    pub fn span_id(&self) -> &str {
-        &self.span_id
-    }
-}
 
 /// Creates the spans and, if configured, exports them.
 #[derive(Debug, Clone)]
@@ -111,15 +90,15 @@ pub(crate) async fn trace_request(State(tracer): State<SdkTracer>, mut request: 
             request.method().as_str().to_owned(),
         )])
         .start_with_context(&tracer, &parent);
-    let context = TraceContext {
-        trace_id: span.span_context().trace_id().to_string(),
-        span_id: span.span_context().span_id().to_string(),
-    };
+    let context = TraceContext::new(
+        span.span_context().trace_id().to_string(),
+        span.span_context().span_id().to_string(),
+    );
     // Java's MDC keys. `userId` and `teamId` are filled in by the layers that learn them (M5, M6).
     let log_span = tracing::info_span!(
         "request",
-        traceId = context.trace_id,
-        spanId = context.span_id,
+        traceId = context.trace_id(),
+        spanId = context.span_id(),
         userId = tracing::field::Empty,
         teamId = tracing::field::Empty,
     );

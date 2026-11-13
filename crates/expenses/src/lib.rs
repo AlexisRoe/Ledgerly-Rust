@@ -21,5 +21,9 @@ mod domain;
 )]
 mod persistence;
 mod receipt_checks;
+// The routes that call it arrive in M3.4. `expect` instead of `allow`, so that this attribute stops compiling, and
+// has to go, once that is no longer true.
+#[cfg_attr(not(test), expect(dead_code, reason = "the expense routes arrive in M3.4"))]
+mod web;
 
 pub use receipt_checks::{ReceiptChecks, ReceiptSummary};

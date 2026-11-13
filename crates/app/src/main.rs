@@ -17,6 +17,13 @@ fn main() -> ExitCode {
     if let Err(error) = logging::init(config.profiles) {
         return failed_to_start(&error);
     }
+    // Rust's default hook prints the panic message to stderr, outside the log format, and a message may quote any
+    // value. This one logs where it happened, which is enough to find the bug; a panic in a request also gets
+    // the API's "Unhandled exception" line with the trace id.
+    std::panic::set_hook(Box::new(|panic| {
+        let location = panic.location().map(ToString::to_string).unwrap_or_default();
+        tracing::error!(location, "Thread panicked");
+    }));
     // Before the runtime exists: the exporter's HTTP client is a blocking one.
     let telemetry = match Telemetry::new(&config.tracing) {
         Ok(telemetry) => telemetry,

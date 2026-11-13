@@ -20,10 +20,12 @@ use std::task::{Context, Poll};
 use axum::extract::{FromRequestParts, Request};
 use axum::handler::Handler;
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, Method, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use tower::util::BoxCloneSyncService;
 use tower::{Service, ServiceExt};
+
+use super::problem::Problem;
 
 /// Every endpoint of the API, built up by the modules and turned into one service by the app.
 #[derive(Clone, Default)]
@@ -161,21 +163,33 @@ pub enum RouteRejection {
     UnsupportedMediaType { content_type: String },
 }
 
-/// Until the problem bodies arrive (M3.2): the status and the headers Spring sends with it.
+/// The problem bodies Spring writes for these, with `code: REQUEST_REJECTED` (`ProblemFactory.enrich`).
 impl IntoResponse for RouteRejection {
     fn into_response(self) -> Response {
-        match self {
-            Self::NotFound { .. } => axum::http::StatusCode::NOT_FOUND.into_response(),
-            Self::MethodNotAllowed { allowed, .. } => {
+        let problem = match self {
+            // Spring's static-resource handler names the path without its leading slash.
+            Self::NotFound { path } => Problem::rejected(
+                StatusCode::NOT_FOUND,
+                format!("No static resource {}.", path.trim_start_matches('/')),
+            ),
+            Self::MethodNotAllowed { method, allowed } => {
                 let allow = allowed.iter().map(Method::as_str).collect::<Vec<_>>().join(",");
-                (axum::http::StatusCode::METHOD_NOT_ALLOWED, [(header::ALLOW, allow)]).into_response()
+                let problem = Problem::rejected(
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    format!("Method '{method}' is not supported."),
+                );
+                match HeaderValue::from_str(&allow) {
+                    Ok(allow) => problem.with_header(header::ALLOW, allow),
+                    Err(_) => problem,
+                }
             }
-            Self::UnsupportedMediaType { .. } => (
-                axum::http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                [(header::ACCEPT, "application/json")],
+            Self::UnsupportedMediaType { content_type } => Problem::rejected(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                format!("Content-Type '{content_type}' is not supported."),
             )
-                .into_response(),
-        }
+            .with_header(header::ACCEPT, HeaderValue::from_static("application/json")),
+        };
+        problem.into_response()
     }
 }
 
@@ -254,6 +268,11 @@ impl PathParameters {
             .iter()
             .find(|(known, _)| *known == name)
             .map(|(_, value)| value.as_str())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_tests(pairs: &[(&'static str, &str)]) -> Self {
+        Self(pairs.iter().map(|(name, value)| (*name, (*value).to_owned())).collect())
     }
 }
 
@@ -374,7 +393,6 @@ const fn hex(digit: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use axum::body::Body as HttpBody;
-    use axum::http::StatusCode;
 
     use super::*;
 
