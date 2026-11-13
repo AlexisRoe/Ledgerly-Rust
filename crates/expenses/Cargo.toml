@@ -13,7 +13,9 @@ workspace = true
 chrono.workspace = true
 ledgerly-shared.workspace = true
 ledgerly-teams.workspace = true
+sqlx = { workspace = true, features = ["macros"] }
 thiserror.workspace = true
 
 [dev-dependencies]
 ledgerly-shared = { workspace = true, features = ["testing"] }
+tokio.workspace = true

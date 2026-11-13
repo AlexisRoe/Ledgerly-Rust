@@ -198,7 +198,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: a shared test helper (`shared` crate, `testing` feature) that starts `postgres:17` with testcontainers, runs the pinned Flyway image against it, and hands each test its own transaction or schema state.
   - Accept: two integration tests in parallel don't see each other's rows.
 
-- [ ] **M2.3 Expense persistence**
+- [x] **M2.3 Expense persistence**
   - Do:
     - `crates/expenses/src/persistence/` with **team-scoped functions only**: `find(team, id)`, `insert`, `update` (with `where version = $n`, `Conflict` when 0 rows are affected), `delete(team, id)`.
     - Map `Money` ↔ `numeric(19,4)` + `char(3)`. Rejections live in `expense_rejections`.

@@ -62,6 +62,12 @@ pub struct Rejection {
 }
 
 impl Rejection {
+    /// A rejection read back from storage. Only persistence calls this; the domain creates rejections in
+    /// [`Expense::reject`].
+    pub(crate) const fn restore(rejected_by: UserId, reason: RejectionReason) -> Self {
+        Self { rejected_by, reason }
+    }
+
     #[must_use]
     pub const fn rejected_by(&self) -> UserId {
         self.rejected_by
@@ -71,6 +77,24 @@ impl Rejection {
     pub const fn reason(&self) -> &RejectionReason {
         &self.reason
     }
+}
+
+/// Every field of an expense as it was stored, for [`Expense::restore`].
+///
+/// The text fields are already the checked types, so a row that breaks a rule cannot be restored; persistence
+/// reports such a row as corrupt instead.
+#[derive(Debug, Clone)]
+pub(crate) struct StoredExpense {
+    pub id: ExpenseId,
+    pub team_id: TeamId,
+    pub claimant_id: UserId,
+    pub money: Money,
+    pub category: Category,
+    pub incurred_on: NaiveDate,
+    pub merchant: Merchant,
+    pub note: Option<Note>,
+    pub status: ExpenseStatus,
+    pub rejections: Vec<Rejection>,
 }
 
 /// A single amount spent on behalf of a team, claimed by one claimant, moving through the approval workflow.
@@ -120,6 +144,36 @@ impl Expense {
             status: ExpenseStatus::Draft,
             rejections: Vec::new(),
         })
+    }
+
+    /// An expense read back from storage, as it was saved: no rule is checked again, no status changes.
+    ///
+    /// Java counterpart: Hibernate filling the fields through the protected no-argument constructor.
+    pub(crate) fn restore(stored: StoredExpense) -> Self {
+        let StoredExpense {
+            id,
+            team_id,
+            claimant_id,
+            money,
+            category,
+            incurred_on,
+            merchant,
+            note,
+            status,
+            rejections,
+        } = stored;
+        Self {
+            id,
+            team_id,
+            claimant_id,
+            money,
+            category,
+            incurred_on,
+            merchant,
+            note,
+            status,
+            rejections,
+        }
     }
 
     // --- transitions ------------------------------------------------------------------------------------------
