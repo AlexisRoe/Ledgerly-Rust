@@ -5,7 +5,10 @@
 //! the membership check through `MembershipLookup` (M3.3), the `Idempotency-Key` (M3.5) and events (M5.7, M9).
 
 mod create_expense;
+#[cfg(test)]
+pub(crate) mod doubles;
 mod get_expense;
+mod membership;
 #[cfg(test)]
 mod tests;
 
@@ -13,6 +16,7 @@ mod tests;
 pub(crate) use {
     create_expense::{CreateExpense, CreateExpenseCommand},
     get_expense::GetExpense,
+    membership::{MembershipLookup, NoTeamsYet},
 };
 
 use crate::domain::ExpenseError;

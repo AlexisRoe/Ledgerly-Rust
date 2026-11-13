@@ -239,7 +239,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Accept: one test per catalogue entry, comparing the full JSON with Java's shape. The `traceId` in the body equals the one in the log line.
   - Java: `J/shared/error/`, `J/shared/security/ProblemSecurityHandler.java`, inventory §4.1.
 
-- [ ] **M3.3 Current user (no debug headers)**
+- [x] **M3.3 Current user (no debug headers)**
   - Do:
     - A `CurrentUser` extractor trait in `shared`. Until M5 it has no HTTP implementation: in-process tests construct it directly.
     - **Don't port Java's temporary `X-Debug-*` headers.** They were deleted in Java's M5/M6 and would be a test hook in production code (ADR 0011).
