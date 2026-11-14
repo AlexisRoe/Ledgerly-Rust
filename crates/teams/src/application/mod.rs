@@ -7,6 +7,8 @@
 //! role already ([`TeamAuthorization`]), but a concurrent request may have changed it since.
 
 mod authorization;
+#[cfg(test)]
+mod concurrency_tests;
 mod create_team;
 mod get_me;
 mod guard;

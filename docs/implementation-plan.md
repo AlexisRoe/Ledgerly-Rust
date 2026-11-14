@@ -349,7 +349,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - Accepting needs a verified user, a matching email, an unexpired invitation, and a caller who isn't yet a teammate.
   - Accept: parity tests tagged M6 for these paths. Clock tests in-process.
 
-- [ ] **M6.2 Last owner under concurrency**
+- [x] **M6.2 Last owner under concurrency**
   - Do: lock the team row (`SELECT … FOR UPDATE`) in ChangeRole, Remove and Leave.
   - Accept: two OWNERs demoting each other at the same moment (two tasks with a barrier) leave exactly one OWNER.
 
