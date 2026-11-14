@@ -1431,8 +1431,19 @@ dependencies = [
 name = "ledgerly-teams"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "chrono",
+ "http-body-util",
  "ledgerly-identity",
  "ledgerly-shared",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

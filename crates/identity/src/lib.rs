@@ -14,16 +14,18 @@ mod persistence;
 mod strict_json;
 mod web;
 
+use std::fmt;
 use std::sync::Arc;
 
 use chrono::TimeDelta;
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::config::{AuthConfig, Profiles};
 use ledgerly_shared::events::Publisher;
+use ledgerly_shared::id::UserId;
 use ledgerly_shared::ratelimit::{InvalidRateLimit, RateLimit, RateLimiter};
 use ledgerly_shared::web::Routes;
 use secrecy::SecretString;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 
 pub use crate::access_token::{AccessTokens, InvalidToken, KeyError, SigningKeys};
 use crate::application::{Login, Logout, Refresh, Register, VerifyEmail};
@@ -45,6 +47,37 @@ pub enum IdentityError {
 #[must_use]
 pub fn password_hash(password: &SecretString) -> Option<String> {
     password::hash(password).ok().map(|hash| hash.as_str().to_owned())
+}
+
+/// What other modules may know about a user. Java: `identity/UserSummary.java`.
+///
+/// The email is only for matching invitations: never store or log it. `Debug` leaves it out.
+#[derive(Clone, PartialEq, Eq)]
+pub struct UserSummary {
+    pub id: UserId,
+    pub email: String,
+    /// The email address has been confirmed.
+    pub verified: bool,
+}
+
+impl fmt::Debug for UserSummary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UserSummary")
+            .field("id", &self.id)
+            .field("verified", &self.verified)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The account's id, email and verified flag, or `None` when it does not exist. Java: `IdentityFacade.find`.
+///
+/// It takes the caller's connection, so that it reads in the caller's transaction, as Java's does.
+///
+/// # Errors
+///
+/// The database error.
+pub async fn find_user(connection: &mut PgConnection, user: UserId) -> sqlx::Result<Option<UserSummary>> {
+    persistence::find_user_summary(connection, user).await
 }
 
 /// The identity module as the app wires it.

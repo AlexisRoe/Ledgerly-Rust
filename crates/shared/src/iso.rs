@@ -3,8 +3,26 @@
 //! Java counterpart: `DateTimeFormatter.ISO_LOCAL_DATE` (Jackson's `LocalDate`), `ISO_DATE` (Spring's
 //! `@DateTimeFormat(iso = DATE)` on query parameters) and the offset part of `ISO_INSTANT`. Only ASCII digits,
 //! and only four-digit years: Java writes larger years with a sign, which no Ledgerly date has.
+//!
+//! Writing: [`format_instant`], Jackson's `OffsetDateTime` in UTC.
 
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Timelike, Utc};
+
+/// `2026-11-21T10:00:00.5Z`: how Jackson writes an `OffsetDateTime` at UTC (`ISO_OFFSET_DATE_TIME`). Seconds
+/// are always written; the fraction has as many digits as it needs, none when it is zero (unlike chrono's
+/// `SecondsFormat::AutoSi`, which writes groups of three).
+#[must_use]
+pub fn format_instant(instant: DateTime<Utc>) -> String {
+    let mut text = instant.format("%Y-%m-%dT%H:%M:%S").to_string();
+    let nanos = instant.nanosecond() % 1_000_000_000;
+    if nanos != 0 {
+        let fraction = format!("{nanos:09}");
+        text.push('.');
+        text.push_str(fraction.trim_end_matches('0'));
+    }
+    text.push('Z');
+    text
+}
 
 /// `yyyy-MM-dd`, a real calendar date. Java: `LocalDate.parse` with `ISO_LOCAL_DATE`.
 #[must_use]
@@ -70,6 +88,25 @@ pub fn parse_offset(text: &str) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn instants_are_written_as_jackson_writes_an_offset_date_time() {
+        let at = |text: &str| DateTime::parse_from_rfc3339(text).unwrap().to_utc();
+        assert_eq!(format_instant(at("2026-11-21T10:00:00Z")), "2026-11-21T10:00:00Z");
+        assert_eq!(format_instant(at("2026-11-21T10:00:00.5Z")), "2026-11-21T10:00:00.5Z");
+        assert_eq!(
+            format_instant(at("2026-11-21T10:00:00.120Z")),
+            "2026-11-21T10:00:00.12Z"
+        );
+        assert_eq!(
+            format_instant(at("2026-11-21T10:00:00.123456Z")),
+            "2026-11-21T10:00:00.123456Z"
+        );
+        assert_eq!(
+            format_instant(at("2026-11-21T11:00:00.000000001+01:00")),
+            "2026-11-21T10:00:00.000000001Z"
+        );
+    }
+
     use super::*;
 
     #[test]

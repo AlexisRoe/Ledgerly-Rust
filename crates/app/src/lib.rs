@@ -29,6 +29,7 @@ use ledgerly_shared::database::SchemaError;
 use ledgerly_shared::events::{Discard, Publisher};
 use ledgerly_shared::ratelimit::RateLimiter;
 use ledgerly_shared::web::{self, Authentication, Problem, Routes, TokenVerifier};
+use ledgerly_teams::Teams;
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use tower_http::catch_panic::CatchPanicLayer;
@@ -60,6 +61,7 @@ pub enum StartupError {
 pub struct Modules {
     clock: Arc<dyn Clock>,
     identity: Identity,
+    teams: Teams,
 }
 
 impl Modules {
@@ -75,7 +77,8 @@ impl Modules {
         // Until the outbox (M9.1), events are dropped where Java publishes them.
         let events: Arc<dyn Publisher> = Arc::new(Discard);
         let identity = Identity::new(&config.auth, config.profiles, pool, &clock, &events, &limiter)?;
-        Ok(Self { clock, identity })
+        let teams = Teams::new(pool, &clock);
+        Ok(Self { clock, identity, teams })
     }
 }
 
@@ -105,6 +108,7 @@ pub fn router(config: &Config, modules: &Modules, telemetry: &Telemetry, pool: &
 pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
     Routes::new()
         .merge(modules.identity.routes())
+        .merge(modules.teams.routes())
         .merge(ledgerly_expenses::routes(pool, &modules.clock, limits))
 }
 

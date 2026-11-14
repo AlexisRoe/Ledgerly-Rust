@@ -584,7 +584,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.meNeedsAToken`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn me_needs_a_token() {
         let world = World::start().await;
 

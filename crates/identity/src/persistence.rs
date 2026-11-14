@@ -59,6 +59,21 @@ pub(crate) async fn insert_user(
     Ok(inserted.rows_affected() == 1)
 }
 
+/// The account's id, email and verified flag. Java: `IdentityFacadeImpl.find` over `UserRepository.findById`.
+pub(crate) async fn find_user_summary(
+    connection: &mut PgConnection,
+    user: UserId,
+) -> sqlx::Result<Option<crate::UserSummary>> {
+    let row = sqlx::query!("select id, email, verified from users where id = $1", user.as_uuid())
+        .fetch_optional(connection)
+        .await?;
+    Ok(row.map(|row| crate::UserSummary {
+        id: UserId::from_uuid(row.id),
+        email: row.email,
+        verified: row.verified,
+    }))
+}
+
 /// Marks the account's email as confirmed. Java: `User.markVerified`.
 pub(crate) async fn mark_verified(connection: &mut PgConnection, user: UserId) -> sqlx::Result<()> {
     sqlx::query!("update users set verified = true where id = $1", user.as_uuid())
