@@ -74,7 +74,6 @@ mod m6 {
 
     /// Java: `Api6UnrestrictedAccessToSensitiveBusinessFlowsTest.invitingARegisteredAndAnUnknownEmailLooksTheSame`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn inviting_a_registered_and_an_unknown_email_looks_the_same() {
         let world = World::start().await;
         let team = world.team().await;

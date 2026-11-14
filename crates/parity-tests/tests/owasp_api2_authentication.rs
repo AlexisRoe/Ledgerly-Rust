@@ -105,7 +105,6 @@ mod m6 {
 
     /// Java: `Api2BrokenAuthenticationTest.anUnverifiedAccountCannotAcceptAnInvitation`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn an_unverified_account_cannot_accept_an_invitation() {
         let world = World::start().await;
         let team = world.team().await;

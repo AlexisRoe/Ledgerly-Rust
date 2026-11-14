@@ -107,7 +107,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.creatorBecomesOwnerAndGetsALocation`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn creator_becomes_owner_and_gets_a_location() {
         let world = World::start().await;
         let user = world.user().await;
@@ -136,7 +135,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.teamNameIsValidated`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn team_name_is_validated() {
         let world = World::start().await;
         let user = world.as_user(&world.user().await);
@@ -168,7 +166,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.invitingARegisteredAndAnUnknownEmailLooksIdentical`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn inviting_a_registered_and_an_unknown_email_looks_identical() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -191,7 +188,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.invitingAnExistingTeammateLooksIdentical`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn inviting_an_existing_teammate_looks_identical() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -212,7 +208,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.invitationInputIsValidated`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn invitation_input_is_validated() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -223,7 +218,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.reInvitingReplacesThePendingInvitation`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn re_inviting_replaces_the_pending_invitation() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -250,7 +244,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.verifiedInviteeAcceptsAndJoinsWithTheInvitedRole`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn verified_invitee_accepts_and_joins_with_the_invited_role() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -266,7 +259,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.emailMatchingIgnoresCase`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn email_matching_ignores_case() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -279,7 +271,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.unverifiedUserCannotAcceptAnInvitation_API2`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn unverified_user_cannot_accept_an_invitation() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -295,7 +286,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.someoneElseGets404ForAnInvitationNotAddressedToThem`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn someone_else_gets_404_for_an_invitation_not_addressed_to_them() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -310,7 +300,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.anInvitationCanBeAcceptedOnlyOnce`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn an_invitation_can_be_accepted_only_once() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -326,7 +315,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.acceptingWhileAlreadyATeammateIsRefused`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn accepting_while_already_a_teammate_is_refused() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -341,7 +329,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.declineClosesTheInvitation`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn decline_closes_the_invitation() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -355,7 +342,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.revokeClosesTheInvitation`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn revoke_closes_the_invitation() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -371,7 +357,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.anotherTeamsInvitationCannotBeRevokedThroughMyTeam_API1`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn another_teams_invitation_cannot_be_revoked_through_my_team() {
         let world = World::start().await;
         let (mine, theirs) = (new_team(&world).await, new_team(&world).await);
@@ -391,7 +376,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.ownerChangesARoleAndTheTargetMustBeATeammate`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn owner_changes_a_role_and_the_target_must_be_a_teammate() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -423,7 +407,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.theLastOwnerCannotBeDemotedRemovedOrLeave`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn the_last_owner_cannot_be_demoted_removed_or_leave() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -443,7 +426,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.withASecondOwnerTheFirstMayDemoteOrLeave`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn with_a_second_owner_the_first_may_demote_or_leave() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -485,7 +467,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.aMemberCanLeave`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn a_member_can_leave() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -522,7 +503,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.meListsRolesPerTeamAndPendingInvitationsForAVerifiedEmail`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn me_lists_roles_per_team_and_pending_invitations_for_a_verified_email() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -550,7 +530,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.meHidesInvitationsFromAnUnverifiedEmail`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn me_hides_invitations_from_an_unverified_email() {
         let world = World::start().await;
         let team = new_team(&world).await;
@@ -566,7 +545,6 @@ mod m6 {
     /// Java: `TeamsApiTest.meOmitsExpiredAndRevokedInvitations`, the revoked half. The expired half needs a
     /// clock.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn me_omits_revoked_invitations() {
         let world = World::start().await;
         let team = new_team(&world).await;

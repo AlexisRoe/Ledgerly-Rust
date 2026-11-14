@@ -26,8 +26,107 @@ fn status(text: &str) -> sqlx::Result<InvitationStatus> {
     text.parse().map_err(|error| sqlx::Error::Decode(Box::new(error)))
 }
 
+/// A new team. Java: `TeamRepository.save(new Team(name, now))`.
+pub(crate) async fn insert_team(
+    connection: &mut PgConnection,
+    id: TeamId,
+    name: &str,
+    now: DateTime<Utc>,
+) -> sqlx::Result<()> {
+    sqlx::query!(
+        "insert into teams (id, name, created_at) values ($1, $2, $3)",
+        id.as_uuid(),
+        name,
+        now,
+    )
+    .execute(connection)
+    .await?;
+    Ok(())
+}
+
 /// Takes the team row lock (`select … for update`), which serialises every change of who belongs to the team
 /// and with which role. `false` if the team does not exist. Java: `TeamRepository.lockById`
+/// (`PESSIMISTIC_WRITE`).
+pub(crate) async fn lock_team(connection: &mut PgConnection, team: TeamId) -> sqlx::Result<bool> {
+    let row = sqlx::query_scalar!("select id from teams where id = $1 for update", team.as_uuid())
+        .fetch_optional(connection)
+        .await?;
+    Ok(row.is_some())
+}
+
+/// Makes `user` a member of `team`. Java: `MembershipRepository.save(new Membership(…))`.
+pub(crate) async fn insert_membership(
+    connection: &mut PgConnection,
+    team: TeamId,
+    user: UserId,
+    role: Role,
+    now: DateTime<Utc>,
+) -> sqlx::Result<()> {
+    sqlx::query!(
+        "insert into memberships (team_id, user_id, role, joined_at) values ($1, $2, $3, $4)",
+        team.as_uuid(),
+        user.as_uuid(),
+        role.as_str(),
+        now,
+    )
+    .execute(connection)
+    .await?;
+    Ok(())
+}
+
+/// The user's role in the team, `None` when they are not a teammate. Java: `MembershipRepository.findById`.
+pub(crate) async fn role_of(connection: &mut PgConnection, team: TeamId, user: UserId) -> sqlx::Result<Option<Role>> {
+    let row = sqlx::query_scalar!(
+        "select role from memberships where team_id = $1 and user_id = $2",
+        team.as_uuid(),
+        user.as_uuid(),
+    )
+    .fetch_optional(connection)
+    .await?;
+    row.as_deref().map(role).transpose()
+}
+
+/// How many members hold the role `OWNER`. Java: `MembershipRepository.countByIdTeamIdAndRole`.
+pub(crate) async fn count_owners(connection: &mut PgConnection, team: TeamId) -> sqlx::Result<i64> {
+    let count = sqlx::query_scalar!(
+        r#"select count(*) as "count!" from memberships where team_id = $1 and role = 'OWNER'"#,
+        team.as_uuid(),
+    )
+    .fetch_one(connection)
+    .await?;
+    Ok(count)
+}
+
+/// Sets a member's role. Java: `Membership.changeRole`, flushed at commit.
+pub(crate) async fn update_role(
+    connection: &mut PgConnection,
+    team: TeamId,
+    user: UserId,
+    role: Role,
+) -> sqlx::Result<()> {
+    sqlx::query!(
+        "update memberships set role = $3 where team_id = $1 and user_id = $2",
+        team.as_uuid(),
+        user.as_uuid(),
+        role.as_str(),
+    )
+    .execute(connection)
+    .await?;
+    Ok(())
+}
+
+/// Ends a membership. Java: `MembershipRepository.delete`.
+pub(crate) async fn delete_membership(connection: &mut PgConnection, team: TeamId, user: UserId) -> sqlx::Result<()> {
+    sqlx::query!(
+        "delete from memberships where team_id = $1 and user_id = $2",
+        team.as_uuid(),
+        user.as_uuid(),
+    )
+    .execute(connection)
+    .await?;
+    Ok(())
+}
+
 /// A team the user belongs to, with its name and their role.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TeamRole {
@@ -57,7 +156,47 @@ pub(crate) async fn teams_of(connection: &mut PgConnection, user: UserId) -> sql
         .collect()
 }
 
+/// A new invitation. Java: `InvitationRepository.save(new Invitation(…))`.
+pub(crate) async fn insert_invitation(
+    connection: &mut PgConnection,
+    invitation: &Invitation,
+    invited_by: UserId,
+    now: DateTime<Utc>,
+) -> sqlx::Result<()> {
+    sqlx::query!(
+        "insert into invitations (id, team_id, email, role, status, invited_by, created_at, expires_at) \
+         values ($1, $2, $3, $4, $5, $6, $7, $8)",
+        invitation.id.as_uuid(),
+        invitation.team.as_uuid(),
+        invitation.email,
+        invitation.role.as_str(),
+        invitation.stored_status.as_str(),
+        invited_by.as_uuid(),
+        now,
+        invitation.expires_at,
+    )
+    .execute(connection)
+    .await?;
+    Ok(())
+}
+
 /// Stores a new status. Java: `Invitation.accept`/`decline`/`revoke`, flushed at commit (or at once with
+/// `saveAndFlush`).
+pub(crate) async fn set_status(
+    connection: &mut PgConnection,
+    invitation: InvitationId,
+    status: InvitationStatus,
+) -> sqlx::Result<()> {
+    sqlx::query!(
+        "update invitations set status = $2 where id = $1",
+        invitation.as_uuid(),
+        status.as_str(),
+    )
+    .execute(connection)
+    .await?;
+    Ok(())
+}
+
 struct InvitationRow {
     id: uuid::Uuid,
     team_id: uuid::Uuid,
@@ -83,9 +222,62 @@ impl TryFrom<InvitationRow> for Invitation {
 }
 
 /// The team's invitation with this id; `None` also when it belongs to another team. Java:
+/// `InvitationRepository.findByIdAndTeamId`.
+pub(crate) async fn find_invitation_in_team(
+    connection: &mut PgConnection,
+    team: TeamId,
+    id: InvitationId,
+) -> sqlx::Result<Option<Invitation>> {
+    sqlx::query_as!(
+        InvitationRow,
+        "select id, team_id, email, role, status, expires_at from invitations where id = $1 and team_id = $2",
+        id.as_uuid(),
+        team.as_uuid(),
+    )
+    .fetch_optional(connection)
+    .await?
+    .map(Invitation::try_from)
+    .transpose()
+}
+
 /// The address's stored-`PENDING` invitation to the team, expired or not; there is at most one. Java:
+/// `InvitationRepository.findByTeamIdAndEmailAndStatus(team, email, PENDING)`.
+pub(crate) async fn find_pending_in_team(
+    connection: &mut PgConnection,
+    team: TeamId,
+    email: &str,
+) -> sqlx::Result<Option<Invitation>> {
+    sqlx::query_as!(
+        InvitationRow,
+        "select id, team_id, email, role, status, expires_at from invitations \
+         where team_id = $1 and email = $2 and status = 'PENDING'",
+        team.as_uuid(),
+        email,
+    )
+    .fetch_optional(connection)
+    .await?
+    .map(Invitation::try_from)
+    .transpose()
+}
+
 /// The invitation with this id, of any team: only for its addressee, who must be checked against
 /// [`Invitation::email`] before anything is revealed. Java: `InvitationRepository.findById` in
+/// `InvitationResponses.load`.
+pub(crate) async fn find_invitation_for_addressee(
+    connection: &mut PgConnection,
+    id: InvitationId,
+) -> sqlx::Result<Option<Invitation>> {
+    sqlx::query_as!(
+        InvitationRow,
+        "select id, team_id, email, role, status, expires_at from invitations where id = $1",
+        id.as_uuid(),
+    )
+    .fetch_optional(connection)
+    .await?
+    .map(Invitation::try_from)
+    .transpose()
+}
+
 /// A stored-`PENDING` invitation to an address, with the inviting team's name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OpenInvitation {

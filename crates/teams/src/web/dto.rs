@@ -6,9 +6,120 @@
 
 use ledgerly_shared::id::{InvitationId, TeamId, UserId};
 use ledgerly_shared::iso::format_instant;
-use serde::Serialize;
+use ledgerly_shared::role::Role;
+use ledgerly_shared::web::{Validate, Violations};
+use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::application::Me;
+use crate::application::{CreatedTeam, InvitationView, Me};
+
+/// A role name. Anything else is a body Jackson could not read (the generated enum's `fromValue` throws): 400
+/// `MALFORMED_REQUEST`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RoleBody(pub Role);
+
+impl<'de> Deserialize<'de> for RoleBody {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        name.parse().map(Self).map_err(serde::de::Error::custom)
+    }
+}
+
+/// `CreateTeamRequest`: a name of 1 to 100 characters.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CreateTeamRequest {
+    pub name: Option<String>,
+}
+
+impl Validate for CreateTeamRequest {
+    fn validate(&self, violations: &mut Violations) {
+        violations.require("name", self.name.as_ref());
+        violations.size("name", self.name.as_deref(), 1, 100);
+    }
+}
+
+/// `InviteRequest`: email `format: email`, at most 254; a role.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct InviteRequest {
+    pub email: Option<String>,
+    pub role: Option<RoleBody>,
+}
+
+impl Validate for InviteRequest {
+    fn validate(&self, violations: &mut Violations) {
+        violations.require("email", self.email.as_ref());
+        violations.size("email", self.email.as_deref(), 0, 254);
+        violations.email("email", self.email.as_deref());
+        violations.require("role", self.role.as_ref());
+    }
+}
+
+/// `ChangeRoleRequest`: a role.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ChangeRoleRequest {
+    pub role: Option<RoleBody>,
+}
+
+impl Validate for ChangeRoleRequest {
+    fn validate(&self, violations: &mut Violations) {
+        violations.require("role", self.role.as_ref());
+    }
+}
+
+/// `TeamResponse`.
+#[derive(Debug, Serialize)]
+pub(crate) struct TeamResponse {
+    id: TeamId,
+    name: String,
+}
+
+impl From<CreatedTeam> for TeamResponse {
+    fn from(team: CreatedTeam) -> Self {
+        Self {
+            id: team.id,
+            name: team.name,
+        }
+    }
+}
+
+/// `InvitationResponse`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct InvitationResponse {
+    id: InvitationId,
+    role: &'static str,
+    status: &'static str,
+    expires_at: String,
+}
+
+impl From<InvitationView> for InvitationResponse {
+    fn from(view: InvitationView) -> Self {
+        Self {
+            id: view.id,
+            role: view.role.as_str(),
+            status: view.status.as_str(),
+            expires_at: format_instant(view.expires_at),
+        }
+    }
+}
+
+/// `MemberResponse`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MemberResponse {
+    pub user_id: UserId,
+    pub role: &'static str,
+}
+
+/// `MembershipResponse`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MembershipResponse {
+    pub team_id: TeamId,
+    pub role: &'static str,
+}
 
 /// `MeResponse`.
 #[derive(Debug, Serialize)]

@@ -53,7 +53,6 @@ mod m6 {
 
     /// Java: `Api3BrokenObjectPropertyLevelAuthorizationTest.roleAndIdentityFieldsCannotBeSetThroughTheTeamEndpoints`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn role_and_identity_fields_cannot_be_set_through_the_team_endpoints() {
         let world = World::start().await;
         let team = world.team().await;

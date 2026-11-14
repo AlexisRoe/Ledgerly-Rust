@@ -342,7 +342,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** teams, invitations, the role ladder and the last-owner rule; every team-scoped endpoint answers 404 or 403 exactly as Java does.
 **Rust you meet:** enums with behaviour, trait objects behind `Arc` for facades, database locking under concurrency, two-task tests.
 
-- [ ] **M6.1 Teams use cases**
+- [x] **M6.1 Teams use cases**
   - Do: CreateTeam (the creator becomes OWNER), Invite, Revoke, Accept, Decline, ChangeRole, Remove, Leave.
     - Emails are normalised, and inviting gives an identical response whether or not the email is registered.
     - Invitation expiry (7 days) is computed on read.
@@ -361,7 +361,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - `teamId` goes on the span.
   - Accept: the role × endpoint matrix (no token, non-member, MEMBER, APPROVER, OWNER) for every team-scoped endpoint so far, as one table-driven parity test.
 
-- [ ] **M6.4 `/me`**
+- [x] **M6.4 `/me`**
   - Do: served by `teams`: the user, roles per team, and pending invitations matched by verified email.
   - Accept: Bruno `00-auth` `/me` requests and `04-teams` pass.
 

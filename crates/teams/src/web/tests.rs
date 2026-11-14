@@ -3,14 +3,17 @@
 //! Java: `TeamsApiTest`, including the cases that need a clock and so are not in the black-box parity suite:
 //! an invitation expiring after 7 days, in `:accept` and in `/me`.
 
-use std::sync::Arc;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::Body as HttpBody;
 use axum::http::{Method, Request, StatusCode};
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use ledgerly_shared::clock::{Clock, FixedClock};
+use ledgerly_shared::config::TeamsConfig;
 use ledgerly_shared::database::TestDatabase;
+use ledgerly_shared::events::{Event, Publisher};
 use ledgerly_shared::id::{TeamId, UserId};
 use ledgerly_shared::web::{CurrentUser, render};
 use serde_json::{Value, json};
@@ -20,10 +23,27 @@ use uuid::Uuid;
 
 use crate::Teams;
 
+/// Keeps the type of every event, in order. It sees an event when the use case publishes it, before its
+/// transaction commits.
+#[derive(Debug, Default)]
+struct Recorded(Mutex<Vec<&'static str>>);
+
+impl Publisher for Recorded {
+    fn publish<'a>(
+        &'a self,
+        _connection: &'a mut sqlx::PgConnection,
+        event: &'a dyn Event,
+    ) -> Pin<Box<dyn Future<Output = sqlx::Result<()>> + Send + 'a>> {
+        self.0.lock().unwrap().push(event.event_type());
+        Box::pin(std::future::ready(Ok(())))
+    }
+}
+
 struct World {
     database: TestDatabase,
     clock: Arc<FixedClock>,
     router: Router,
+    events: Arc<Recorded>,
 }
 
 struct Reply {
@@ -49,7 +69,9 @@ impl World {
         let database = TestDatabase::new().await.unwrap();
         let clock = Arc::new(FixedClock::at(Utc.with_ymd_and_hms(2026, 11, 14, 12, 0, 0).unwrap()));
         let shared: Arc<dyn Clock> = clock.clone();
-        let teams = Teams::new(database.pool(), &shared);
+        let events = Arc::new(Recorded::default());
+        let publisher: Arc<dyn Publisher> = events.clone();
+        let teams = Teams::new(&TeamsConfig::default(), database.pool(), &shared, &publisher);
         let router = Router::new()
             .fallback_service(teams.routes().into_service())
             .layer(axum::middleware::from_fn(render));
@@ -57,6 +79,7 @@ impl World {
             database,
             clock,
             router,
+            events,
         }
     }
 
@@ -86,6 +109,46 @@ impl World {
             serde_json::from_slice(&bytes).unwrap()
         };
         Reply { status, body }
+    }
+
+    fn events(&self) -> Vec<&'static str> {
+        self.events.0.lock().unwrap().clone()
+    }
+
+    async fn create_team(&self, caller: &User, name: &str) -> TeamId {
+        let reply = self
+            .request(Method::POST, "/api/v1/teams", caller, Some(&json!({"name": name})))
+            .await;
+        assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.body);
+        reply.body["id"].as_str().unwrap().parse().unwrap()
+    }
+
+    async fn invite(&self, team: TeamId, caller: &User, email: &str, role: &str) -> Reply {
+        let body = json!({"email": email, "role": role});
+        self.request(
+            Method::POST,
+            &format!("/api/v1/teams/{team}/invitations"),
+            caller,
+            Some(&body),
+        )
+        .await
+    }
+
+    /// The id of a new invitation.
+    async fn invited(&self, team: TeamId, caller: &User, email: &str, role: &str) -> String {
+        let reply = self.invite(team, caller, email, role).await;
+        assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.body);
+        reply.body["id"].as_str().unwrap().to_owned()
+    }
+
+    async fn answer(&self, invitation: &str, caller: &User, answer: &str) -> Reply {
+        self.request(
+            Method::POST,
+            &format!("/api/v1/invitations/{invitation}:{answer}"),
+            caller,
+            None,
+        )
+        .await
     }
 
     async fn me(&self, caller: &User) -> Reply {
@@ -266,4 +329,267 @@ async fn me_for_an_account_that_no_longer_exists_is_401() {
 
     assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
     assert_eq!(reply.code(), "UNAUTHENTICATED");
+}
+
+// --- creating, inviting and answering ---
+
+#[tokio::test]
+async fn a_created_team_has_its_name_stripped_and_the_creator_as_owner() {
+    let world = World::new().await;
+    let user = world.user(true).await;
+
+    let reply = world
+        .request(Method::POST, "/api/v1/teams", &user, Some(&json!({"name": "  Acme  "})))
+        .await;
+
+    assert_eq!(reply.status, StatusCode::CREATED);
+    assert_eq!(reply.body["name"], "Acme");
+    let me = world.me(&user).await;
+    assert_eq!(me.body["teams"][0]["role"], "OWNER");
+    assert_eq!(world.events(), ["ledgerly-rust:teams.TeamCreated"]);
+}
+
+#[tokio::test]
+async fn an_invitation_is_pending_for_seven_days() {
+    let world = World::new().await;
+    let owner = world.user(true).await;
+    let team = world.create_team(&owner, "Acme").await;
+
+    let reply = world.invite(team, &owner, "New@Example.COM", "APPROVER").await;
+
+    assert_eq!(reply.status, StatusCode::CREATED);
+    assert_eq!(reply.body["role"], "APPROVER");
+    assert_eq!(reply.body["status"], "PENDING");
+    assert_eq!(reply.body["expiresAt"], "2026-11-21T12:00:00Z");
+    let stored: String = sqlx::query_scalar("select email from invitations where team_id = $1")
+        .bind(team.as_uuid())
+        .fetch_one(world.pool())
+        .await
+        .unwrap();
+    assert_eq!(stored, "new@example.com");
+}
+
+/// Java: `TeamsApiTest.anExpiredInvitationCannotBeAccepted`.
+#[tokio::test]
+async fn an_expired_invitation_cannot_be_accepted_declined_or_revoked() {
+    let world = World::new().await;
+    let owner = world.user(true).await;
+    let team = world.create_team(&owner, "Acme").await;
+    let invitee = world.user(true).await;
+    let invitation = world.invited(team, &owner, &invitee.email, "MEMBER").await;
+
+    world.clock.advance(TimeDelta::days(7));
+
+    let accepted = world.answer(&invitation, &invitee, "accept").await;
+    assert_eq!(accepted.status, StatusCode::CONFLICT);
+    assert_eq!(accepted.code(), "INVITATION_EXPIRED");
+    assert_eq!(accepted.body["detail"], "This invitation has expired");
+    assert_eq!(
+        world.answer(&invitation, &invitee, "decline").await.code(),
+        "INVITATION_EXPIRED"
+    );
+    let revoked = world
+        .request(
+            Method::DELETE,
+            &format!("/api/v1/teams/{team}/invitations/{invitation}"),
+            &owner,
+            None,
+        )
+        .await;
+    assert_eq!(revoked.code(), "INVITATION_NOT_PENDING");
+    assert_eq!(revoked.body["detail"], "Only a pending invitation can be revoked");
+}
+
+#[tokio::test]
+async fn an_invitation_one_microsecond_before_expiry_can_be_accepted() {
+    let world = World::new().await;
+    let owner = world.user(true).await;
+    let team = world.create_team(&owner, "Acme").await;
+    let invitee = world.user(true).await;
+    let invitation = world.invited(team, &owner, &invitee.email, "MEMBER").await;
+
+    world.clock.advance(TimeDelta::days(7) - TimeDelta::microseconds(1));
+
+    let accepted = world.answer(&invitation, &invitee, "accept").await;
+    assert_eq!(accepted.status, StatusCode::OK);
+    assert_eq!(accepted.body, json!({"teamId": team.to_string(), "role": "MEMBER"}));
+}
+
+#[tokio::test]
+async fn re_inviting_after_expiry_replaces_the_expired_invitation() {
+    let world = World::new().await;
+    let owner = world.user(true).await;
+    let team = world.create_team(&owner, "Acme").await;
+    let invitee = world.user(true).await;
+    let first = world.invited(team, &owner, &invitee.email, "MEMBER").await;
+    world.clock.advance(TimeDelta::days(8));
+
+    let second = world.invited(team, &owner, &invitee.email, "MEMBER").await;
+
+    assert_eq!(
+        world.answer(&first, &invitee, "accept").await.body["detail"],
+        "This invitation is REVOKED"
+    );
+    assert_eq!(world.answer(&second, &invitee, "accept").await.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn an_answered_invitation_names_its_status() {
+    let world = World::new().await;
+    let owner = world.user(true).await;
+    let team = world.create_team(&owner, "Acme").await;
+    let invitee = world.user(true).await;
+    let invitation = world.invited(team, &owner, &invitee.email, "MEMBER").await;
+    assert_eq!(
+        world.answer(&invitation, &invitee, "decline").await.status,
+        StatusCode::NO_CONTENT
+    );
+
+    let again = world.answer(&invitation, &invitee, "accept").await;
+
+    assert_eq!(again.status, StatusCode::CONFLICT);
+    assert_eq!(again.code(), "INVITATION_NOT_PENDING");
+    assert_eq!(again.body["detail"], "This invitation is DECLINED");
+}
+
+#[tokio::test]
+async fn an_unverified_invitee_may_decline_but_not_accept() {
+    let world = World::new().await;
+    let owner = world.user(true).await;
+    let team = world.create_team(&owner, "Acme").await;
+    let invitee = world.user(false).await;
+    let invitation = world.invited(team, &owner, &invitee.email, "MEMBER").await;
+
+    let accepted = world.answer(&invitation, &invitee, "accept").await;
+    assert_eq!(accepted.status, StatusCode::FORBIDDEN);
+    assert_eq!(accepted.code(), "EMAIL_NOT_VERIFIED");
+    assert_eq!(accepted.body["detail"], "Verify your email address before accepting");
+
+    assert_eq!(
+        world.answer(&invitation, &invitee, "decline").await.status,
+        StatusCode::NO_CONTENT
+    );
+}
+
+// --- authorization, in Spring's order ---
+
+#[tokio::test]
+async fn a_body_is_validated_before_the_role_is_checked() {
+    let world = World::new().await;
+    let owner = world.user(true).await;
+    let team = world.create_team(&owner, "Acme").await;
+    let stranger = world.user(true).await;
+
+    // Spring resolves the arguments, the body included, before `@PreAuthorize` runs.
+    assert_eq!(
+        world.invite(team, &stranger, "not-an-email", "MEMBER").await.status,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        world.invite(team, &stranger, "a@example.com", "MEMBER").await.status,
+        StatusCode::NOT_FOUND
+    );
+    let bad_team = world
+        .request(
+            Method::POST,
+            "/api/v1/teams/not-a-uuid/invitations",
+            &owner,
+            Some(&json!({})),
+        )
+        .await;
+    assert_eq!(bad_team.code(), "REQUEST_REJECTED");
+}
+
+#[tokio::test]
+async fn a_teammate_with_the_wrong_role_gets_javas_403() {
+    let world = World::new().await;
+    let owner = world.user(true).await;
+    let team = world.create_team(&owner, "Acme").await;
+    let approver = world.user(true).await;
+    world.member(team, &approver, "APPROVER").await;
+
+    let reply = world.invite(team, &approver, "a@example.com", "MEMBER").await;
+
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    assert_eq!(reply.code(), "FORBIDDEN");
+    assert_eq!(reply.body["detail"], "Role APPROVER may not do this");
+}
+
+#[tokio::test]
+async fn the_last_owner_details_are_javas() {
+    let world = World::new().await;
+    let owner = world.user(true).await;
+    let team = world.create_team(&owner, "Acme").await;
+
+    let demote = world
+        .request(
+            Method::PATCH,
+            &format!("/api/v1/teams/{team}/members/{}", owner.id),
+            &owner,
+            Some(&json!({"role": "MEMBER"})),
+        )
+        .await;
+    let leave = world
+        .request(Method::POST, &format!("/api/v1/teams/{team}:leave"), &owner, None)
+        .await;
+
+    assert_eq!(demote.body["detail"], "A team must keep at least one owner");
+    assert_eq!(
+        leave.body["detail"],
+        "The last owner cannot leave; promote someone else first"
+    );
+}
+
+#[tokio::test]
+async fn every_change_publishes_its_event() {
+    let world = World::new().await;
+    let owner = world.user(true).await;
+    let team = world.create_team(&owner, "Acme").await;
+    let invitee = world.user(true).await;
+    let revoked = world.invited(team, &owner, "gone@example.com", "MEMBER").await;
+    world
+        .request(
+            Method::DELETE,
+            &format!("/api/v1/teams/{team}/invitations/{revoked}"),
+            &owner,
+            None,
+        )
+        .await;
+    let declined = world.invited(team, &owner, &invitee.email, "MEMBER").await;
+    world.answer(&declined, &invitee, "decline").await;
+    let accepted = world.invited(team, &owner, &invitee.email, "MEMBER").await;
+    world.answer(&accepted, &invitee, "accept").await;
+    let member = format!("/api/v1/teams/{team}/members/{}", invitee.id);
+    world
+        .request(Method::PATCH, &member, &owner, Some(&json!({"role": "OWNER"})))
+        .await;
+    world
+        .request(Method::POST, &format!("/api/v1/teams/{team}:leave"), &invitee, None)
+        .await;
+    let other = world.user(true).await;
+    world.member(team, &other, "MEMBER").await;
+    world
+        .request(
+            Method::DELETE,
+            &format!("/api/v1/teams/{team}/members/{}", other.id),
+            &owner,
+            None,
+        )
+        .await;
+
+    assert_eq!(
+        world.events(),
+        [
+            "ledgerly-rust:teams.TeamCreated",
+            "ledgerly-rust:teams.MemberInvited",
+            "ledgerly-rust:teams.InvitationRevoked",
+            "ledgerly-rust:teams.MemberInvited",
+            "ledgerly-rust:teams.InvitationDeclined",
+            "ledgerly-rust:teams.MemberInvited",
+            "ledgerly-rust:teams.InvitationAccepted",
+            "ledgerly-rust:teams.MemberRoleChanged",
+            "ledgerly-rust:teams.MemberLeft",
+            "ledgerly-rust:teams.MemberRemoved",
+        ]
+    );
 }

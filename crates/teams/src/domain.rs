@@ -95,6 +95,11 @@ pub(crate) fn normalise_email(email: &str) -> String {
     strip(email).to_lowercase()
 }
 
+/// The team's name as stored: stripped. Java: `new Team(name, now)`.
+pub(crate) fn team_name(name: &str) -> String {
+    strip(name).to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::TimeDelta;
@@ -154,5 +159,10 @@ mod tests {
     #[test]
     fn emails_are_trimmed_and_lower_cased() {
         assert_eq!(normalise_email("  Ann@Example.COM\t"), "ann@example.com");
+    }
+
+    #[test]
+    fn team_names_are_stripped() {
+        assert_eq!(team_name("  Acme \n"), "Acme");
     }
 }

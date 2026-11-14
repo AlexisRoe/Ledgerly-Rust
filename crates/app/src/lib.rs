@@ -77,7 +77,7 @@ impl Modules {
         // Until the outbox (M9.1), events are dropped where Java publishes them.
         let events: Arc<dyn Publisher> = Arc::new(Discard);
         let identity = Identity::new(&config.auth, config.profiles, pool, &clock, &events, &limiter)?;
-        let teams = Teams::new(pool, &clock);
+        let teams = Teams::new(&config.teams, pool, &clock, &events);
         Ok(Self { clock, identity, teams })
     }
 }
