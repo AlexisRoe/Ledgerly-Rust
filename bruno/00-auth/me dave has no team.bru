@@ -1,0 +1,26 @@
+meta {
+  name: me dave has no team
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{host}}/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{daveToken}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.verified: eq false
+}
+
+tests {
+  test("dave is not a member", function () {
+    expect(res.body.teams).to.have.length(0);
+  });
+}

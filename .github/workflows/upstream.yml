@@ -1,0 +1,23 @@
+name: Upstream
+
+# Once a week: has Ledgerly-Java moved past the commit this repository is vendored from (vendor/ledgerly-java/SOURCE)?
+# It reports and never fails: re-vendoring is a decision, not a build error (ADR 0007).
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Compare SOURCE with Ledgerly-Java's main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/upstream-report.sh >> "$GITHUB_STEP_SUMMARY"

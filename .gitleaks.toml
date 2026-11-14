@@ -1,0 +1,10 @@
+# Used by the gitleaks pre-commit hook and the CI job: the default rules, minus the files vendored from
+# Ledgerly-Java. Those hold Java's documented development credentials and cannot be changed here (ADR 0007).
+# Nothing else is excluded. A known false positive goes into .gitleaksignore by fingerprint, so that a real
+# secret in the same file is still found.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Files vendored byte-for-byte from Ledgerly-Java"
+paths = ['''^vendor/''', '''^bruno/environments/''']

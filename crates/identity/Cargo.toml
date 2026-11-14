@@ -1,0 +1,35 @@
+[package]
+name = "ledgerly-identity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+argon2.workspace = true
+axum.workspace = true
+base64.workspace = true
+chrono.workspace = true
+getrandom.workspace = true
+ledgerly-shared.workspace = true
+p256 = { workspace = true, features = ["pkcs8"] }
+secrecy = { workspace = true, features = ["serde"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx = { workspace = true, features = ["macros"] }
+subtle.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+http-body-util.workspace = true
+ledgerly-shared = { workspace = true, features = ["testing"] }
+tower.workspace = true

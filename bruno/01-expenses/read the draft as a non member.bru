@@ -1,0 +1,20 @@
+meta {
+  name: read the draft as a non member
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{host}}/teams/{{teamId}}/expenses/{{draftId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{daveToken}}
+}
+
+assert {
+  res.status: eq 404
+  res.body.code: eq NOT_FOUND
+}

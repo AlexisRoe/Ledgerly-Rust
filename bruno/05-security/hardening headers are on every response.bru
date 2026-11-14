@@ -1,0 +1,27 @@
+meta {
+  name: hardening headers are on every response
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{host}}/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{aliceToken}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("security headers", function () {
+    expect(res.headers["x-content-type-options"]).to.equal("nosniff");
+    expect(res.headers["content-security-policy"]).to.contain("default-src 'none'");
+    expect(res.headers["x-frame-options"]).to.exist;
+  });
+}

@@ -1,0 +1,19 @@
+meta {
+  name: the owner reads the audit trail
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{host}}/teams/{{teamId}}/audit-events?limit=5
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{aliceToken}}
+}
+
+assert {
+  res.status: eq 200
+}

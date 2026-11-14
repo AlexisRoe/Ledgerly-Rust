@@ -1,0 +1,10 @@
+# Known false positives. Each entry is commit:file:rule:line, so only these exact findings are ignored.
+# A made-up signing key ("private-7c1d") in the configuration tests, which check that Debug output hides it.
+70d207f97b30441016d1ba2d7ef8355f7922313b:crates/app/src/config.rs:generic-api-key:494
+# The same line in the current file (working-tree and pre-commit scans have no commit). If the line moves, the
+# finding comes back: check it is still the fake value, then update the number.
+crates/app/src/config.rs:generic-api-key:494
+# A P-256 key pair made for the access-token tests only (crates/identity/src/access_token/tests.rs). It signs
+# nothing anywhere else; the tests need a fixed pair to check the kid against an independently computed thumbprint.
+506e24299ac4a2544efbbcff5ffeb8eb44d824e3:crates/identity/src/access_token/tests.rs:private-key:12
+crates/identity/src/access_token/tests.rs:private-key:12

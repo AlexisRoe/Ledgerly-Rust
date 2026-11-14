@@ -1,0 +1,40 @@
+[package]
+name = "ledgerly-shared"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Test helpers for other crates' tests, such as `FixedClock` and `TestDatabase`. Never enabled in the `ledgerly`
+# binary.
+testing = ["dep:tokio"]
+
+[dependencies]
+axum.workspace = true
+base64.workspace = true
+chrono.workspace = true
+crc.workspace = true
+http-body-util.workspace = true
+idna.workspace = true
+regex.workspace = true
+rust_decimal.workspace = true
+secrecy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx = { workspace = true, features = ["macros"] }
+thiserror.workspace = true
+tokio = { workspace = true, optional = true }
+tower.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+ledgerly-shared = { workspace = true, features = ["testing"] }
+proptest.workspace = true
+tokio.workspace = true

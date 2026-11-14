@@ -1,0 +1,26 @@
+[package]
+name = "ledgerly-expenses"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+chrono.workspace = true
+serde.workspace = true
+ledgerly-shared.workspace = true
+ledgerly-teams.workspace = true
+sqlx = { workspace = true, features = ["macros"] }
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+ledgerly-shared = { workspace = true, features = ["testing"] }
+tokio.workspace = true
+serde_json.workspace = true
+tower.workspace = true

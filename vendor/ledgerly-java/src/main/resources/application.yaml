@@ -1,0 +1,60 @@
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  application:
+    name: ledgerly
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  servlet:
+    multipart:
+      # The app also counts bytes itself (ledgerly.limits.max-upload-size); these cap the request at the door.
+      max-file-size: 10MB
+      max-request-size: 11MB
+  modulith:
+    events:
+      # Events whose listener had not finished when the application stopped are delivered again at start-up.
+      republish-outstanding-events-on-restart: true
+  threads:
+    virtual:
+      # @Async listeners (the Modulith ones) run on virtual threads: they mostly wait on the database.
+      enabled: true
+  batch:
+    job:
+      # Jobs are started by the application (an import upload), never at start-up.
+      enabled: false
+    jdbc:
+      # Flyway creates the Batch tables (V6__imports.sql).
+      initialize-schema: never
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+server:
+  # On SIGTERM stop taking new requests and let running ones (and an import chunk) finish.
+  shutdown: graceful
+  tomcat:
+    # After rejecting an oversized upload the server reads (and discards) up to this much so the client can
+    # still receive the 413. Anything larger just has its connection closed.
+    max-swallow-size: 16MB
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0

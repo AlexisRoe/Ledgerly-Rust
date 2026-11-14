@@ -1,0 +1,20 @@
+meta {
+  name: alice reimburses
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/expenses/{{flowId}}:reimburse
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{aliceToken}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq REIMBURSED
+}

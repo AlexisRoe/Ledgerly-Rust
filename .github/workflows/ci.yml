@@ -1,0 +1,109 @@
+name: CI
+
+# Every push to any branch and every pull request runs all of this. Make the jobs required for main:
+# Settings > Branches > main > "Require status checks to pass" (docs/local-setup.md §5).
+on:
+  push:
+  pull_request:
+
+# A new push to the same branch replaces the run that is still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Third-party actions are pinned to a commit, not a tag: a tag can be moved to different code after the fact.
+# Renovate proposes new commits (see renovate.json). Read-only token; npm install scripts are off for tools run here.
+permissions:
+  contents: read
+
+env:
+  NPM_CONFIG_IGNORE_SCRIPTS: "true"
+  # The tools `just verify` needs, at the versions in mise.toml. sqlx-cli and the hooks are left out: nothing here
+  # uses them, and sqlx-cli is compiled from source.
+  MISE_TOOLS: rust just cargo-binstall cargo:cargo-nextest cargo-deny node
+
+jobs:
+  # `just check`: drift check, fmt, clippy, deny, tests, Prettier, Redocly. Together with the `parity` job below
+  # this is `just verify` on a developer machine; the slow parity suite runs in parallel, so lint and test
+  # failures show up first.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: ${{ env.MISE_TOOLS }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: just check
+
+  # The black-box parity suite (ADR 0011): builds the image and starts it once per run group against the
+  # services of compose.yaml. The runner has Docker; ClamAV runs natively on its amd64.
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: rust just cargo-binstall cargo:cargo-nextest
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: just parity
+      - name: Stop the stack
+        if: always()
+        run: docker compose --profile app down -v
+
+  openapi-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # The vendored spec with the vendored rules (redocly.yaml), exactly as Ledgerly-Java lints it.
+      - run: npx --yes @redocly/cli@2.76.0 lint api/openapi.yaml
+
+  # Prettier for our configuration files (YAML, JSON). The vendored ones are in .prettierignore.
+  format-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: npx --yes prettier@3.9.10 --check "**/*.{yml,yaml,json}"
+
+  # The whole history, not only the pushed commits.
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Advisories, licences, bans and sources. Also part of `verify`; on its own it shows at a glance whether a red
+  # build is a new advisory or our code.
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: rust just cargo-deny
+      - run: just deny
+
+  # No vendored file was changed, removed or added (ADR 0007). Needs nothing but a shell.
+  vendor-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: scripts/vendor-check.sh

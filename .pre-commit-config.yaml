@@ -1,0 +1,27 @@
+# Runs before every commit, after `pre-commit install` (docs/local-setup.md §3). The tool versions are the ones
+# Ledgerly-Java pins, so both repositories lint the shared files the same way.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all
+        language: system
+        types: [rust]
+        pass_filenames: false
+      # .prettierignore keeps the vendored files out, also when one is named on the command line.
+      - id: prettier
+        name: prettier (yaml, json)
+        entry: npx --yes prettier@3.9.10 --write
+        language: system
+        files: \.(ya?ml|json)$
+      - id: openapi-lint
+        name: openapi lint
+        entry: npx --yes @redocly/cli@2.76.0 lint api/openapi.yaml
+        language: system
+        files: ^(api/openapi\.yaml|redocly\.yaml)$
+        pass_filenames: false

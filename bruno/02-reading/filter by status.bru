@@ -1,0 +1,25 @@
+meta {
+  name: filter by status
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{host}}/teams/{{teamId}}/expenses?status=SUBMITTED
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bobToken}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("only submitted expenses", function () {
+    res.body.content.forEach(e => expect(e.status).to.equal("SUBMITTED"));
+  });
+}

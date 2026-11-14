@@ -1,0 +1,29 @@
+meta {
+  name: an approver cannot edit a draft of someone else
+  type: http
+  seq: 11
+}
+
+patch {
+  url: {{host}}/teams/{{teamId}}/expenses/{{draftId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  If-Match: {{draftEtag}}
+}
+
+auth:bearer {
+  token: {{bobToken}}
+}
+
+body:json {
+  {
+    "merchant": "Hijacked"
+  }
+}
+
+assert {
+  res.status: eq 403
+}

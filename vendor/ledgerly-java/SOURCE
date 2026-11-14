@@ -1,0 +1,15 @@
+repository: https://github.com/AlexisRoe/Ledgerly-Java
+commit: e2a13909634808b347d30b3dec4c3ffee6741c02
+browse: https://github.com/AlexisRoe/Ledgerly-Java/tree/e2a13909634808b347d30b3dec4c3ffee6741c02
+
+Files copied byte-for-byte from that commit (ADR 0007). Each one sits at its upstream path, either here or at the
+repository root:
+  api/openapi.yaml, redocly.yaml, bruno/          -> repository root (same relative paths as upstream)
+  everything else listed in ../ledgerly-java.SHA256SUMS -> vendor/ledgerly-java/<upstream path>
+
+The Java source and tests are deliberately NOT copied. Read them at the pinned commit:
+  https://github.com/AlexisRoe/Ledgerly-Java/blob/e2a13909634808b347d30b3dec4c3ffee6741c02/src/main/java/com/ledgerly/
+  https://github.com/AlexisRoe/Ledgerly-Java/blob/e2a13909634808b347d30b3dec4c3ffee6741c02/src/test/java/com/ledgerly/
+  (or: gh api repos/AlexisRoe/Ledgerly-Java/contents/<path>?ref=e2a13909634808b347d30b3dec4c3ffee6741c02)
+
+Rule: read-only. Never edit these files here; change Ledgerly-Java first, then re-vendor.

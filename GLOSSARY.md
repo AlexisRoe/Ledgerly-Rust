@@ -1,0 +1,1 @@
+vendor/ledgerly-java/GLOSSARY.md

@@ -1,0 +1,34 @@
+meta {
+  name: login alice
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{host}}/auth/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "alice@example.com",
+    "password": "{{password}}"
+  }
+}
+
+vars:post-response {
+  aliceToken: res.body.accessToken
+}
+
+assert {
+  res.status: eq 200
+  res.body.tokenType: eq Bearer
+}
+
+tests {
+  test("alice got an access token", function () {
+    expect(res.body.accessToken).to.be.a("string");
+    expect(res.body.expiresIn).to.be.above(0);
+  });
+}

@@ -1,0 +1,163 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select e.id, e.team_id, e.claimant_id, e.amount, e.currency, e.category, e.incurred_on, e.merchant,\n               e.note, e.status, e.version,\n               coalesce(array_agg(r.rejected_by order by r.position) filter (where r.expense_id is not null),\n                        '{}') as \"rejected_by!\",\n               coalesce(array_agg(r.reason order by r.position) filter (where r.expense_id is not null),\n                        '{}') as \"rejection_reasons!\"\n          from expenses e\n          left join expense_rejections r on r.expense_id = e.id\n         where e.team_id = $1 and e.id = $2\n         group by e.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "team_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "team_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "claimant_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "claimant_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "amount",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "amount"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "currency",
+        "type_info": "Bpchar",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "currency"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "category",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "incurred_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "incurred_on"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "merchant",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "merchant"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "note",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "status",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "expenses",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "rejected_by!",
+        "type_info": "UuidArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "rejection_reasons!",
+        "type_info": "VarcharArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "b367a2ac52720b2de5d32a1db1a5017da99b2353a4687e3fb857304449cf0569"
+}

@@ -1,0 +1,28 @@
+meta {
+  name: me alice
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{host}}/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{aliceToken}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.verified: eq true
+}
+
+tests {
+  test("alice owns the demo team", function () {
+    const t = res.body.teams.find(x => x.teamId === bru.getEnvVar("teamId"));
+    expect(t).to.exist;
+    expect(t.role).to.equal("OWNER");
+  });
+}

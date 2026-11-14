@@ -1,0 +1,34 @@
+### Account and session requests. Run the app with SPRING_PROFILES_ACTIVE=local;
+### the verification token is printed in the console log (local profile only).
+
+@host = http://localhost:8080/api/v1
+
+### Register (always 202, whether or not the address is taken)
+POST {{host}}/auth/register
+Content-Type: application/json
+
+{ "email": "ann@example.com", "password": "correct-horse-battery" }
+
+### Verify (paste the token from the console log)
+POST {{host}}/auth/verify
+Content-Type: application/json
+
+{ "token": "paste-token-from-the-log" }
+
+### Log in: the response body has the access token, the refresh token comes as a cookie
+# @name login
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{ "email": "ann@example.com", "password": "correct-horse-battery" }
+
+### Refresh (needs the cookie and the custom header)
+POST {{host}}/auth/refresh
+X-Requested-With: ledgerly
+
+### Log out
+POST {{host}}/auth/logout
+X-Requested-With: ledgerly
+
+### Public signing keys
+GET http://localhost:8080/.well-known/jwks.json

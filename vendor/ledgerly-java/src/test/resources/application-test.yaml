@@ -1,0 +1,20 @@
+# Loaded on top of application.yaml in the test profile.
+ledgerly:
+  events:
+    # Tests decide themselves when an incomplete event is delivered again.
+    resubmit-enabled: false
+  limits:
+    # Generous, so ordinary tests never meet a rate limit; the tests about rate limits set their own.
+    requests-per-minute: 100000
+    auth-requests-per-minute: 100000
+  # Values for the beans that read them; the fakes in the test profile never connect.
+  storage:
+    s3:
+      endpoint: http://localhost:8333
+      bucket: test-files
+      access-key: test
+      secret-key: test-secret
+  receipts:
+    clamav:
+      host: localhost
+      port: 3310

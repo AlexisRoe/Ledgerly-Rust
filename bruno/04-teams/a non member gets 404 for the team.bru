@@ -1,0 +1,26 @@
+meta {
+  name: a non member gets 404 for the team
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/invitations
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{daveToken}}
+}
+
+body:json {
+  {
+    "email": "new@example.com",
+    "role": "MEMBER"
+  }
+}
+
+assert {
+  res.status: eq 404
+}

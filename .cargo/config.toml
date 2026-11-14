@@ -1,0 +1,5 @@
+# sqlx's query macros read the committed `.sqlx/` metadata instead of a live database, so that every build,
+# including CI and the image, works without Postgres. `just sqlx-prepare` regenerates the metadata; it sets
+# SQLX_OFFLINE=false for its own build, which wins over this default.
+[env]
+SQLX_OFFLINE = "true"
