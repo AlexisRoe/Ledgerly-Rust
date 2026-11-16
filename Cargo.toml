@@ -34,6 +34,8 @@ ledgerly-shared = { path = "crates/shared" }
 ledgerly-teams = { path = "crates/teams" }
 
 argon2 = "0.6.0"
+aws-sdk-s3 = { version = "1.159.0", default-features = false, features = ["http-1x", "rt-tokio"] }
+aws-smithy-http-client = { version = "1.5.2", default-features = false, features = ["rustls-ring"] }
 base64 = "0.23.1"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 crc = "3.4.0"
@@ -56,6 +58,7 @@ serde_json = "1.0.154"
 serde-saphyr = "2.1.1"
 sha2 = "0.11.1"
 subtle = "2.6.1"
+tempfile = "3.27.0"
 sqlx = { version = "0.9.0", default-features = false, features = ["chrono", "postgres", "runtime-tokio", "rust_decimal", "uuid"] }
 thiserror = "2.0.21"
 tower = { version = "0.5.3", default-features = false, features = ["util"] }

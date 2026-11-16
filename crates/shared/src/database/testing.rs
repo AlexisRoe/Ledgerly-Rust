@@ -37,7 +37,7 @@ use crate::config::{DatabaseConfig, DatabaseUrl};
 const USER: &str = "ledgerly";
 const PASSWORD: &str = "ledgerly";
 /// Every container the tests start carries it; `just test-db-down` removes them by it.
-const LABEL: &str = "org.ledgerly.purpose=integration-tests";
+pub(crate) const LABEL: &str = "org.ledgerly.purpose=integration-tests";
 /// Any constant works, as long as nothing else in the test server takes the same advisory lock.
 const LOCK: i64 = 0x6c65_6467_6572_6c79; // "ledgerly"
 const STALE_AFTER: Duration = Duration::from_secs(60 * 60);
@@ -333,7 +333,7 @@ fn create(name: &str, image: &str) -> Result<(), TestDatabaseError> {
 ///
 /// It blocks the calling thread. That is acceptable in test setup: each test process sets up one database,
 /// before the test itself runs.
-fn docker(args: &[&str]) -> Result<String, TestDatabaseError> {
+pub(crate) fn docker(args: &[&str]) -> Result<String, TestDatabaseError> {
     let failed = |reason: String| TestDatabaseError::Docker {
         command: args.first().copied().unwrap_or_default().to_owned(),
         reason,
@@ -402,7 +402,7 @@ async fn drop_stale_databases(admin: &mut PgConnection) -> Result<(), TestDataba
 
 /// The `image:` of a service in `compose.yaml`, so that the tests use the very images the dev loop uses, pinned
 /// by the same digests, and Renovate updates both at once.
-fn image_of(service: &str) -> Result<&'static str, TestDatabaseError> {
+pub(crate) fn image_of(service: &str) -> Result<&'static str, TestDatabaseError> {
     let header = format!("  {service}:");
     COMPOSE
         .lines()

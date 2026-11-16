@@ -28,6 +28,7 @@ use ledgerly_shared::config::Limits;
 use ledgerly_shared::database::SchemaError;
 use ledgerly_shared::events::{Discard, Publisher};
 use ledgerly_shared::ratelimit::RateLimiter;
+use ledgerly_shared::storage::S3ObjectStorage;
 use ledgerly_shared::web::{self, Authentication, Problem, Routes, TokenVerifier};
 use ledgerly_teams::Teams;
 use sqlx::PgPool;
@@ -62,6 +63,7 @@ pub struct Modules {
     clock: Arc<dyn Clock>,
     identity: Identity,
     teams: Teams,
+    storage: S3ObjectStorage,
 }
 
 impl Modules {
@@ -78,7 +80,25 @@ impl Modules {
         let events: Arc<dyn Publisher> = Arc::new(Discard);
         let identity = Identity::new(&config.auth, config.profiles, pool, &clock, &events, &limiter)?;
         let teams = Teams::new(&config.teams, pool, &clock, &events);
-        Ok(Self { clock, identity, teams })
+        let storage = S3ObjectStorage::new(&config.storage);
+        Ok(Self {
+            clock,
+            identity,
+            teams,
+            storage,
+        })
+    }
+
+    /// Creates the object store's bucket if it is missing, in the background. Java does this once the
+    /// application is ready, so that a slow or absent store does not delay the start; uploads fail with a clear
+    /// error until the store is reachable.
+    fn ensure_bucket(&self) {
+        let storage = self.storage.clone();
+        tokio::spawn(async move {
+            if let Err(error) = storage.ensure_bucket().await {
+                tracing::warn!("Object store not reachable at start-up ({error}); receipts cannot be stored yet");
+            }
+        });
     }
 }
 
@@ -243,6 +263,7 @@ impl App {
         };
 
         tracing::info!(apiPort = api_port, managementPort = management_port, "Started Ledgerly");
+        self.modules.ensure_bucket();
         let (api_result, management_result, ()) = tokio::join!(api_then_management, management, trigger);
         api_result.and(management_result)
     }

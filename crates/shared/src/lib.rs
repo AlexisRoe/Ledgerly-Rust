@@ -18,6 +18,7 @@ pub mod money;
 pub mod paging;
 pub mod ratelimit;
 pub mod role;
+pub mod storage;
 pub mod text;
 pub mod version;
 pub mod web;

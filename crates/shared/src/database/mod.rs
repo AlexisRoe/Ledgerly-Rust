@@ -6,7 +6,7 @@
 mod migrations;
 mod schema;
 #[cfg(feature = "testing")]
-mod testing;
+pub(crate) mod testing;
 
 use std::time::Duration;
 

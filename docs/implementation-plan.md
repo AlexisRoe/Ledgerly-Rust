@@ -374,7 +374,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** upload, scan, quarantine, download and delete, with Java's exact validation order and messages.
 **Rust you meet:** streams and `AsyncRead`, multipart, incremental hashing, `tokio::net::TcpStream`, retries, `'static` tasks and `Send`.
 
-- [ ] **M7.1 Object storage**
+- [x] **M7.1 Object storage**
   - Do: an `ObjectStorage` trait in `shared` (put, open, delete, move, presign GET), implemented with `aws-sdk-s3` (path-style for SeaweedFS). Ensure the bucket exists at startup. Metric/span `ledgerly.s3{operation}`.
   - Accept: integration test against SeaweedFS in Docker, started like `TestDatabase` does Postgres.
 
