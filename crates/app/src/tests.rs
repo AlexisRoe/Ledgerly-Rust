@@ -45,9 +45,17 @@ fn app() -> Router {
             },
             (),
         );
+    let limits = RequestLimits::new(
+        RateLimiter::new(Arc::new(SystemClock)),
+        600,
+        60,
+        ledgerly_shared::config::ForwardHeaders::None,
+    )
+    .unwrap();
     layered(
         routes,
         Authentication::new(Some(Arc::new(TestTokens)), false),
+        limits,
         &telemetry,
     )
 }

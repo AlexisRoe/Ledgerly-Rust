@@ -65,6 +65,24 @@ pub struct ServerConfig {
     pub management_port: u16,
     /// After SIGTERM, how long requests in flight get to finish.
     pub shutdown_timeout: Duration,
+    /// Where the client address comes from (`server.forward-headers-strategy`).
+    pub forward_headers: ForwardHeaders,
+}
+
+/// `server.forward-headers-strategy`: whether the client address is the peer of the connection or comes from
+/// headers a proxy set. Only the per-address rate limit on `/api/v1/auth/**` uses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ForwardHeaders {
+    /// The peer of the TCP connection. Spring Boot's default outside a cloud platform.
+    #[default]
+    None,
+    /// Tomcat's `RemoteIpValve`: `X-Forwarded-For`, but only when the peer is an internal proxy (a private,
+    /// loopback or link-local address), read from the right and skipping internal proxies. Spring Boot's
+    /// default on a detected cloud platform such as Kubernetes.
+    Native,
+    /// Spring's `ForwardedHeaderFilter`: the first `for=` of `Forwarded`, else the first entry of
+    /// `X-Forwarded-For`, from any peer.
+    Framework,
 }
 
 impl Default for ServerConfig {
@@ -73,6 +91,7 @@ impl Default for ServerConfig {
             api_port: 8080,
             management_port: 8081,
             shutdown_timeout: Duration::from_secs(30),
+            forward_headers: ForwardHeaders::None,
         }
     }
 }

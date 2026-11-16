@@ -482,7 +482,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** every OWASP row green, and Java's headers, limits, CORS and metrics exactly.
 **Rust you meet:** writing tower layers, `governor`, the `metrics`/Prometheus exporter, profiling (`cargo flamegraph`, `tokio-console`).
 
-- [ ] **M10.1 Rate limits**
+- [x] **M10.1 Rate limits**
   - Do: per user (`requests-per-minute`, 600) on authenticated routes, and per client address (`auth-requests-per-minute`, 60) on the token-free routes, kept in memory and evicted after 2 hours idle. The login limiter is keyed by email. A 429 problem with `Retry-After` **computed as Bucket4j does** (the seconds until the next token; check Java's code). Honour `SERVER_FORWARD_HEADERS_STRATEGY=native`.
   - Accept: Api4 parity tests in their run group (30/min, 12/min for auth).
 

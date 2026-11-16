@@ -132,7 +132,6 @@ mod m10 {
     /// Java: `Api4UnrestrictedResourceConsumptionTest.aBurstOfRequestsFromOneUserGets429WithRetryAfterWhileOthersAreUnaffected`,
     /// up to the point where Java moves its clock forward by a minute.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn a_burst_of_requests_from_one_user_gets_429_with_retry_after_while_others_are_unaffected() {
         let world = World::start().await;
         let (busy, calm) = (world.user().await, world.user().await);
@@ -158,7 +157,6 @@ mod m10 {
     /// Java: `Api4UnrestrictedResourceConsumptionTest.theEndpointsThatNeedNoTokenAreLimitedByClientAddress`, up
     /// to the point where Java moves its clock forward by two minutes.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn the_endpoints_that_need_no_token_are_limited_by_client_address() {
         let world = World::start().await;
 

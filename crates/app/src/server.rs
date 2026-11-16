@@ -53,7 +53,11 @@ pub(crate) async fn serve(
     drain: Duration,
 ) -> io::Result<()> {
     let signal = shutdown.clone();
-    let server = axum::serve(listener, router).with_graceful_shutdown(async move { signal.wait().await });
+    let server = axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move { signal.wait().await });
     let deadline = async {
         shutdown.wait().await;
         tokio::time::sleep(drain).await;

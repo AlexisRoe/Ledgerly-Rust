@@ -10,6 +10,7 @@ mod extract;
 mod multipart;
 mod problem;
 mod query;
+mod rate_limit;
 mod routing;
 
 pub use authentication::{Authentication, TokenVerifier, authenticate};
@@ -20,4 +21,5 @@ pub use extract::{Json, MAX_JSON_BODY_SIZE, Validate, Violations, header_text, r
 pub use multipart::{MAX_FILE_SIZE, MAX_REQUEST_SIZE, MultipartUpload, UploadedFile};
 pub use problem::{ErrorCode, FieldViolation, Problem, TraceContext, render};
 pub use query::QueryParameters;
+pub use rate_limit::{RequestLimits, limit_by_client_address, limit_by_user};
 pub use routing::{Body, PathParameters, RouteRejection, RouteService, Routes};

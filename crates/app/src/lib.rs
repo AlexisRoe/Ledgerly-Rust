@@ -31,9 +31,9 @@ use ledgerly_shared::clock::{Clock, SystemClock};
 use ledgerly_shared::config::Limits;
 use ledgerly_shared::database::SchemaError;
 use ledgerly_shared::events::{Outbox, Publisher};
-use ledgerly_shared::ratelimit::RateLimiter;
+use ledgerly_shared::ratelimit::{InvalidRateLimit, RateLimiter};
 use ledgerly_shared::storage::{ObjectStorage, S3ObjectStorage};
-use ledgerly_shared::web::{self, Authentication, Problem, Routes, TokenVerifier};
+use ledgerly_shared::web::{self, Authentication, Problem, RequestLimits, Routes, TokenVerifier};
 use ledgerly_teams::Teams;
 use sqlx::PgPool;
 use tokio::net::TcpListener;
@@ -59,6 +59,8 @@ pub enum StartupError {
     Identity(#[from] IdentityError),
     #[error("{0}")]
     Seed(#[from] seed::SeedError),
+    #[error("{0}")]
+    RateLimit(#[from] InvalidRateLimit),
 }
 
 /// The modules that keep state between requests, built once at startup.
@@ -73,6 +75,8 @@ pub struct Modules {
     storage: S3ObjectStorage,
     outbox: Outbox,
     events: Arc<dyn Publisher>,
+    /// The request budgets, sharing the process's buckets with the login lock.
+    request_limits: RequestLimits,
 }
 
 impl Modules {
@@ -80,11 +84,17 @@ impl Modules {
     ///
     /// # Errors
     ///
-    /// An [`IdentityError`] if the configured signing key cannot be used, none is configured where one is
-    /// needed, or the lock duration is zero.
-    pub fn new(config: &Config, pool: &PgPool) -> Result<Self, IdentityError> {
+    /// [`StartupError::Identity`] if the configured signing key cannot be used, none is configured where one is
+    /// needed, or the lock duration is zero; [`StartupError::RateLimit`] for a zero request allowance.
+    pub fn new(config: &Config, pool: &PgPool) -> Result<Self, StartupError> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let limiter = RateLimiter::new(clock.clone());
+        let request_limits = RequestLimits::new(
+            limiter.clone(),
+            config.limits.requests_per_minute,
+            config.limits.auth_requests_per_minute,
+            config.server.forward_headers,
+        )?;
         let outbox = Outbox::new(pool.clone(), clock.clone());
         let events: Arc<dyn Publisher> = Arc::new(outbox.clone());
         let identity = Identity::new(&config.auth, config.profiles, pool, &clock, &events, &limiter)?;
@@ -127,6 +137,7 @@ impl Modules {
             storage,
             outbox,
             events,
+            request_limits,
         })
     }
 
@@ -172,6 +183,7 @@ pub fn router(config: &Config, modules: &Modules, telemetry: &Telemetry, pool: &
         extra,
         routes(&config.limits, modules, pool),
         authentication,
+        modules.request_limits.clone(),
         telemetry,
         config.limits.max_json_body_size,
     )
@@ -202,17 +214,25 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
 /// 2. problem rendering: every problem body gets `instance` and `traceId`;
 /// 3. the JSON body limit: a declared JSON body over `ledgerly.limits.max-json-body-size` is 413 before
 ///    authentication, as Java's `JsonBodyLimitFilter` runs before Spring Security;
-/// 4. authentication: the caller from the bearer token, or 401 for anything that is not public. Before
+/// 4. the budget per client address on `/api/v1/auth/**` (429), before the token is checked;
+/// 5. authentication: the caller from the bearer token, or 401 for anything that is not public. Before
 ///    routing, as in Spring Security, so that only an authenticated caller learns which paths exist;
-/// 5. panic catching: a handler that panics is answered with a 500 `INTERNAL_ERROR` problem that carries only
+/// 6. the budget per signed-in user (429), right after the token check, so it counts unknown paths too;
+/// 7. panic catching: a handler that panics is answered with a 500 `INTERNAL_ERROR` problem that carries only
 ///    the `traceId`, and logged as Java logs an unhandled exception.
 ///
 /// Public so that tests can put a route of their own behind exactly these layers.
-pub fn layered(routes: Routes, authentication: Authentication, telemetry: &Telemetry) -> Router {
+pub fn layered(
+    routes: Routes,
+    authentication: Authentication,
+    request_limits: RequestLimits,
+    telemetry: &Telemetry,
+) -> Router {
     layered_with(
         Router::new(),
         routes,
         authentication,
+        request_limits,
         telemetry,
         Limits::default().max_json_body_size,
     )
@@ -223,13 +243,22 @@ fn layered_with(
     extra: Router,
     routes: Routes,
     authentication: Authentication,
+    request_limits: RequestLimits,
     telemetry: &Telemetry,
     max_json_body_size: u64,
 ) -> Router {
     extra
         .fallback_service(routes.into_service())
         .layer(CatchPanicLayer::custom(unhandled_panic))
+        .layer(axum::middleware::from_fn_with_state(
+            request_limits.clone(),
+            web::limit_by_user,
+        ))
         .layer(axum::middleware::from_fn_with_state(authentication, web::authenticate))
+        .layer(axum::middleware::from_fn_with_state(
+            request_limits,
+            web::limit_by_client_address,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             max_json_body_size,
             web::limit_json_bodies,

@@ -9,8 +9,9 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use ledgerly_shared::config::{
-    AuthConfig, ClamavConfig, DatabaseConfig, DatabaseUrl, EventsConfig, KeycloakConfig, Limits, Profiles, S3Config,
-    SecurityConfig, ServerConfig, TeamsConfig, TracingConfig, is_valid_origin, parse_data_size, parse_duration,
+    AuthConfig, ClamavConfig, DatabaseConfig, DatabaseUrl, EventsConfig, ForwardHeaders, KeycloakConfig, Limits,
+    Profiles, S3Config, SecurityConfig, ServerConfig, TeamsConfig, TracingConfig, is_valid_origin, parse_data_size,
+    parse_duration,
 };
 use secrecy::SecretString;
 
@@ -36,6 +37,9 @@ pub struct Config {
 pub trait Environment {
     /// The value of a variable, or `None` if it is not set.
     fn var(&self, name: &str) -> Option<String>;
+
+    /// The names of every variable that is set. Spring Boot looks at them to detect Kubernetes.
+    fn names(&self) -> Vec<String>;
 }
 
 /// The environment of this process. A value that is not valid Unicode counts as not set.
@@ -46,11 +50,21 @@ impl Environment for ProcessEnvironment {
     fn var(&self, name: &str) -> Option<String> {
         std::env::var(name).ok()
     }
+
+    fn names(&self) -> Vec<String> {
+        std::env::vars_os()
+            .filter_map(|(name, _)| name.into_string().ok())
+            .collect()
+    }
 }
 
 impl<S: std::hash::BuildHasher> Environment for HashMap<&str, &str, S> {
     fn var(&self, name: &str) -> Option<String> {
         self.get(name).map(|value| (*value).to_owned())
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.keys().map(|name| (*name).to_owned()).collect()
     }
 }
 
@@ -198,6 +212,7 @@ impl Config {
                 "SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE",
                 server_defaults.shutdown_timeout,
             ),
+            forward_headers: reader.forward_headers(),
         };
 
         let defaults = Limits::default();
@@ -407,6 +422,19 @@ impl Reader<'_> {
         }
     }
 
+    /// `server.forward-headers-strategy`. Unset, Spring Boot uses `native` on a cloud platform it detects
+    /// (`spring.main.cloud-platform`, or the platform's own variables) and `none` elsewhere.
+    fn forward_headers(&mut self) -> ForwardHeaders {
+        let platform = self.parsed("SPRING_MAIN_CLOUD_PLATFORM", None, parse_cloud_platform);
+        let detected = platform.unwrap_or_else(|| on_a_cloud_platform(self.env));
+        let default = if detected {
+            ForwardHeaders::Native
+        } else {
+            ForwardHeaders::None
+        };
+        self.parsed("SERVER_FORWARD_HEADERS_STRATEGY", default, parse_forward_headers)
+    }
+
     /// `LEDGERLY_SECURITY_ALLOWED_ORIGINS` as a comma-separated list, or Spring's indexed form
     /// `LEDGERLY_SECURITY_ALLOWED_ORIGINS_0`, `_1`, … Entries are trimmed; each must be an exact origin.
     fn allowed_origins(&mut self) -> Vec<String> {
@@ -465,6 +493,61 @@ fn parse_port(text: &str) -> Result<u16, &'static str> {
 /// A port to listen on: 0 lets the operating system pick one.
 fn parse_listen_port(text: &str) -> Result<u16, &'static str> {
     u16::from_str(text.trim()).map_err(|_| "must be a port number from 0 to 65535")
+}
+
+/// An enum constant as Spring's `LenientObjectToEnumConverterFactory` matches it: case and every character that
+/// is not a letter or digit are ignored, so `native`, `NATIVE` and `Native` are the same.
+fn lenient(text: &str) -> String {
+    text.chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+fn parse_forward_headers(text: &str) -> Result<ForwardHeaders, &'static str> {
+    match lenient(text).as_str() {
+        "none" => Ok(ForwardHeaders::None),
+        "native" => Ok(ForwardHeaders::Native),
+        "framework" => Ok(ForwardHeaders::Framework),
+        _ => Err("must be one of none, native, framework"),
+    }
+}
+
+/// `spring.main.cloud-platform`: `Some(true)` for a platform that uses forward headers (all of them), `Some(false)`
+/// for `none`.
+fn parse_cloud_platform(text: &str) -> Result<Option<bool>, &'static str> {
+    match lenient(text).as_str() {
+        "none" => Ok(Some(false)),
+        "cloudfoundry" | "heroku" | "sap" | "nomad" | "kubernetes" | "azureappservice" => Ok(Some(true)),
+        _ => Err("must be one of none, cloud_foundry, heroku, sap, nomad, kubernetes, azure_app_service"),
+    }
+}
+
+/// Spring Boot's `CloudPlatform` detection from environment variables. Every platform it knows uses forward
+/// headers. Kubernetes is any pair `X_SERVICE_HOST` and `X_SERVICE_PORT`, which Kubernetes sets for every
+/// service in the namespace (`KUBERNETES_SERVICE_HOST` among them).
+fn on_a_cloud_platform(env: &dyn Environment) -> bool {
+    let set = |name: &str| env.var(name).is_some();
+    let names = env.names();
+    let kubernetes = names.iter().any(|name| {
+        name.strip_suffix("_SERVICE_HOST")
+            .is_some_and(|service| set(&format!("{service}_SERVICE_PORT")))
+    });
+    let azure = [
+        "WEBSITE_SITE_NAME",
+        "WEBSITE_INSTANCE_ID",
+        "WEBSITE_RESOURCE_GROUP",
+        "WEBSITE_SKU",
+    ]
+    .iter()
+    .all(|name| set(name));
+    set("VCAP_APPLICATION")
+        || set("VCAP_SERVICES")
+        || set("DYNO")
+        || set("HC_LANDSCAPE")
+        || set("NOMAD_ALLOC_ID")
+        || kubernetes
+        || azure
 }
 
 /// The spellings Spring's `StringToBooleanConverter` accepts.
@@ -742,6 +825,52 @@ mod tests {
     // --- defaults and overrides ---
 
     #[test]
+    fn forward_headers_follow_spring_boots_cloud_platform_detection() {
+        let strategy =
+            |extra: &[(&'static str, &'static str)]| load(&with(local(), extra)).unwrap().server.forward_headers;
+
+        assert_eq!(strategy(&[]), ForwardHeaders::None);
+        assert_eq!(
+            strategy(&[
+                ("KUBERNETES_SERVICE_HOST", "10.0.0.1"),
+                ("KUBERNETES_SERVICE_PORT", "443")
+            ]),
+            ForwardHeaders::Native
+        );
+        assert_eq!(
+            strategy(&[("BILLING_SERVICE_HOST", "10.0.0.2"), ("BILLING_SERVICE_PORT", "80")]),
+            ForwardHeaders::Native
+        );
+        assert_eq!(
+            strategy(&[("KUBERNETES_SERVICE_HOST", "10.0.0.1")]),
+            ForwardHeaders::None
+        );
+        assert_eq!(strategy(&[("DYNO", "web.1")]), ForwardHeaders::Native);
+        assert_eq!(
+            strategy(&[("SPRING_MAIN_CLOUD_PLATFORM", "kubernetes")]),
+            ForwardHeaders::Native
+        );
+        assert_eq!(
+            strategy(&[("DYNO", "web.1"), ("SPRING_MAIN_CLOUD_PLATFORM", "none")]),
+            ForwardHeaders::None
+        );
+        assert_eq!(
+            strategy(&[("DYNO", "web.1"), ("SERVER_FORWARD_HEADERS_STRATEGY", "NONE")]),
+            ForwardHeaders::None
+        );
+        assert_eq!(
+            strategy(&[("SERVER_FORWARD_HEADERS_STRATEGY", "Framework")]),
+            ForwardHeaders::Framework
+        );
+        assert!(
+            load(&with(local(), &[("SERVER_FORWARD_HEADERS_STRATEGY", "proxy")]))
+                .unwrap_err()
+                .to_string()
+                .contains("SERVER_FORWARD_HEADERS_STRATEGY")
+        );
+    }
+
+    #[test]
     fn everything_optional_has_javas_default() {
         let config = load(&local()).unwrap();
 
@@ -768,6 +897,7 @@ mod tests {
                 ("SERVER_PORT", "9000"),
                 ("MANAGEMENT_SERVER_PORT", "0"),
                 ("SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE", "5s"),
+                ("SERVER_FORWARD_HEADERS_STRATEGY", "native"),
                 ("LEDGERLY_LIMITS_MAX_PAGE_SIZE", "50"),
                 ("LEDGERLY_LIMITS_MAX_BATCH_SIZE", "20"),
                 ("LEDGERLY_LIMITS_MAX_UPLOAD_SIZE", "2MB"),
@@ -806,7 +936,8 @@ mod tests {
             ServerConfig {
                 api_port: 9000,
                 management_port: 0,
-                shutdown_timeout: Duration::from_secs(5)
+                shutdown_timeout: Duration::from_secs(5),
+                forward_headers: ForwardHeaders::Native,
             }
         );
         assert_eq!(
