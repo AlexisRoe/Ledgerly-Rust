@@ -82,7 +82,7 @@ impl World {
     }
 
     fn delete(&self) -> DeleteExpense {
-        DeleteExpense::new(self.pool.clone(), self.memberships.clone())
+        DeleteExpense::new(self.pool.clone(), self.memberships.clone(), crate::deletions::nobody())
     }
 
     fn transition(&self, accepted_receipts: u32) -> TransitionExpense {

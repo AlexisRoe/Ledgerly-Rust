@@ -56,7 +56,10 @@ impl TransitionExpense {
         let found = access::load(&mut transaction, actor, team, id).await?;
         let mut expense = found.value;
         match action {
-            Action::Submit => expense.submit(actor, self.receipts.summary_for(team, id))?,
+            Action::Submit => {
+                let receipts = self.receipts.summary_for(&mut transaction, team, id).await?;
+                expense.submit(actor, receipts)?;
+            }
             Action::Withdraw => expense.withdraw(actor)?,
             Action::Approve => expense.approve(actor)?,
             Action::Reject => expense.reject(actor, reason.unwrap_or_default())?,

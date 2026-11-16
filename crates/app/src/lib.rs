@@ -158,6 +158,8 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
             &modules.clock,
             limits,
             modules.teams.facade(),
+            &Receipts::checks(),
+            &modules.receipts.cleanup(),
         ))
         .merge(modules.receipts.routes())
 }

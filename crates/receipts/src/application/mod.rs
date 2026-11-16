@@ -4,12 +4,18 @@
 //! the caller may see the expense, or change its receipts (`ExpensesFacade`), so the receipts module never
 //! decides that itself.
 
+mod checks;
+mod delete;
+mod download;
 mod list;
 mod scan;
 mod upload;
 
 use std::sync::Arc;
 
+pub(crate) use checks::ReceiptCounts;
+pub(crate) use delete::{DeleteReceipt, ExpenseDeletedCleanup};
+pub(crate) use download::DownloadReceipt;
 use ledgerly_expenses::{ExpenseRefusal, ExpensesFacade};
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::events::Publisher;
@@ -42,7 +48,6 @@ pub(crate) enum UseCaseError {
     Upload(Problem),
     /// No receipt of that id on that expense, or not one that may be served. Java: `NotFound`.
     #[error("not found")]
-    #[expect(dead_code, reason = "the download and delete arrive in M7.4")]
     NotFound,
     /// The file has no content. Java: `InvalidRequest("file", "The file is empty")`.
     #[error("the file is empty")]

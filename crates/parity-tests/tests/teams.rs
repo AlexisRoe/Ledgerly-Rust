@@ -570,9 +570,6 @@ mod m6 {
 
     /// Java: `TeamsApiTest.removedClaimantCannotWithdrawOrReopenButApproversStillDecide`.
     #[tokio::test]
-    #[ignore = "needs M7: :submit refuses an expense without an accepted receipt until the receipts module \
-                exists (Java seeds one with TeamSeeder in TeamsApiTest); covered in-process by \
-                expenses application::tests::a_removed_claimant_loses_access_but_approvers_still_decide"]
     async fn removed_claimant_cannot_withdraw_or_reopen_but_approvers_still_decide() {
         let world = World::start().await;
         let team = new_team(&world).await;

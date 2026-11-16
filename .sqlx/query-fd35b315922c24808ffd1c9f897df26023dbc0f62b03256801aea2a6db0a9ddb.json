@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select count(*) filter (where scan_status = 'ACCEPTED') as \"accepted!\", count(*) filter (where scan_status = 'PENDING_SCAN') as \"pending!\" from receipts where team_id = $1 and expense_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "accepted!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "fd35b315922c24808ffd1c9f897df26023dbc0f62b03256801aea2a6db0a9ddb"
+}

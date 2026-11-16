@@ -1,0 +1,162 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select id, team_id, expense_id, storage_key, original_name, detected_type, size_bytes, sha256, scan_status, possible_duplicate, uploaded_by, created_at from receipts where team_id = $1 and expense_id = $2 and id = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "team_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "team_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "expense_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "expense_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "storage_key",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "storage_key"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "original_name",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "original_name"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "detected_type",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "detected_type"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "size_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "sha256",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "sha256"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "scan_status",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "scan_status"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "possible_duplicate",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "possible_duplicate"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "uploaded_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "uploaded_by"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3ae1f502b28c778ff90c54f19656a11691f12a53215895d4874eba54fc6af10b"
+}

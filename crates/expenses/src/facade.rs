@@ -68,6 +68,13 @@ impl ExpensesFacade {
     }
 }
 
+/// The facade on the teams module's memberships, as the app wires it.
+impl Default for ExpensesFacade {
+    fn default() -> Self {
+        Self::new(TeamsFacade)
+    }
+}
+
 /// The expenses module said no, or could not answer.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]

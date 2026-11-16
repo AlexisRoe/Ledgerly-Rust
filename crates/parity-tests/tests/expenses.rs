@@ -521,7 +521,6 @@ mod m7 {
 
     /// Java: `ExpensesApiTest.fullWorkflowDraftToReimbursed`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn full_workflow_draft_to_reimbursed() {
         let world = World::start().await;
         let team = world.team().await;
@@ -544,7 +543,6 @@ mod m7 {
 
     /// Java: `ExpensesApiTest.rejectReopenWithdrawCycle`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn reject_reopen_withdraw_cycle() {
         let world = World::start().await;
         let team = world.team().await;
@@ -573,7 +571,6 @@ mod m7 {
 
     /// Java: `ExpensesApiTest.memberCallingApproveGets403_API5`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn member_calling_approve_gets_403() {
         let world = World::start().await;
         let team = world.team().await;
@@ -591,7 +588,6 @@ mod m7 {
 
     /// Java: `ExpensesApiTest.editingOrDeletingANonDraftGets409`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn editing_or_deleting_a_non_draft_gets_409() {
         let world = World::start().await;
         let team = world.team().await;
@@ -614,7 +610,6 @@ mod m7 {
 
     /// Java: `ExpensesApiTest.submitNeedsAcceptedReceipt_D3`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn submit_needs_an_accepted_receipt() {
         let world = World::start().await;
         let team = world.team().await;
@@ -632,7 +627,6 @@ mod m7 {
 
     /// Java: `ExpensesApiTest.rejectWithoutReasonGets400`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn reject_without_reason_gets_400() {
         let world = World::start().await;
         let team = world.team().await;

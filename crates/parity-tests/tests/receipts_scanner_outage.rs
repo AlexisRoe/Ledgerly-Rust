@@ -59,7 +59,6 @@ mod m7 {
     /// Java: `ReceiptsApiTest.submitNeedsAnAcceptedReceiptAndNoPendingOne`, up to the point where Java calls
     /// the scan again in-process (see `NOT_PARITY.md`).
     #[tokio::test]
-    #[ignore = "M7"]
     async fn submit_needs_an_accepted_receipt_and_no_pending_one() {
         let world = World::start().await;
         let team = world.team().await;

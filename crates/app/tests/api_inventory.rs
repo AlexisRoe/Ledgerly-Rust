@@ -21,16 +21,6 @@ const METHODS: [&str; 7] = ["get", "put", "post", "delete", "options", "head", "
 /// Documented operations that are not served yet, with the milestone that serves them. The test fails when one
 /// of them starts being served without being taken off this list, so the list only ever shrinks.
 const NOT_YET: &[(&str, &str, &str)] = &[
-    (
-        "M7",
-        "DELETE",
-        "/api/v1/teams/{teamId}/expenses/{expenseId}/receipts/{receiptId}",
-    ),
-    (
-        "M7",
-        "GET",
-        "/api/v1/teams/{teamId}/expenses/{expenseId}/receipts/{receiptId}/download",
-    ),
     ("M8", "POST", "/api/v1/teams/{teamId}/expenses:batch"),
     ("M8", "GET", "/api/v1/teams/{teamId}/expenses.csv"),
     ("M8", "POST", "/api/v1/teams/{teamId}/imports"),

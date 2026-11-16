@@ -441,7 +441,6 @@ mod m7 {
     /// §4.2, Bruno `03-lifecycle` seq 4: a MEMBER approving their own DRAFT gets 403, not the 409 of the state
     /// or of self-dealing.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn a_member_approving_their_own_draft_gets_403() {
         let world = World::start().await;
         let team = world.team().await;
@@ -459,7 +458,6 @@ mod m7 {
     /// §4.2 "If-Match", Bruno `03-lifecycle` seq 6: every transition bumps the version, a receipt upload does
     /// not. After create ("0") and submit the ETag is "1".
     #[tokio::test]
-    #[ignore = "M7"]
     async fn transitions_bump_the_version_and_receipt_uploads_do_not() {
         let world = World::start().await;
         let team = world.team().await;

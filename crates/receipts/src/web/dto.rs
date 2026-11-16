@@ -34,3 +34,11 @@ impl From<Receipt> for ReceiptResponse {
         }
     }
 }
+
+/// `DownloadLink`: where to fetch the file, and until when.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DownloadLink {
+    pub url: String,
+    pub expires_at: String,
+}

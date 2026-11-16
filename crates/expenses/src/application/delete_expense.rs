@@ -7,18 +7,29 @@ use ledgerly_shared::version::Version;
 use sqlx::PgPool;
 
 use super::{MembershipLookup, UseCaseError, access};
+use crate::deletions::ExpenseDeletedListener;
 use crate::persistence;
 
-/// Deletes a draft; only its claimant may, and only with the current version.
+/// Deletes a draft; only its claimant may, and only with the current version. Its receipts follow once the
+/// deletion has committed.
 #[derive(Debug, Clone)]
 pub(crate) struct DeleteExpense {
     pool: PgPool,
     memberships: Arc<dyn MembershipLookup>,
+    deleted: Arc<dyn ExpenseDeletedListener>,
 }
 
 impl DeleteExpense {
-    pub(crate) fn new(pool: PgPool, memberships: Arc<dyn MembershipLookup>) -> Self {
-        Self { pool, memberships }
+    pub(crate) fn new(
+        pool: PgPool,
+        memberships: Arc<dyn MembershipLookup>,
+        deleted: Arc<dyn ExpenseDeletedListener>,
+    ) -> Self {
+        Self {
+            pool,
+            memberships,
+            deleted,
+        }
     }
 
     /// # Errors
@@ -38,6 +49,7 @@ impl DeleteExpense {
         found.value.require_deletable_by(actor)?;
         persistence::delete(&mut transaction, team, id, found.version).await?;
         transaction.commit().await?;
+        self.deleted.expense_deleted(team, id);
         Ok(())
     }
 }

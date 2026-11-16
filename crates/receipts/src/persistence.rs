@@ -193,3 +193,72 @@ pub(crate) async fn mark_quarantined(
     .await?;
     Ok(updated.rows_affected() == 1)
 }
+
+/// The receipt, if it is on that expense of that team. Java: `findByIdAndTeamIdAndExpenseId`: a receipt id
+/// alone never reaches a file.
+pub(crate) async fn find_on_expense(
+    connection: &mut PgConnection,
+    team: TeamId,
+    expense: ExpenseId,
+    id: ReceiptId,
+) -> sqlx::Result<Option<Receipt>> {
+    let row = sqlx::query_as!(
+        Row,
+        "select id, team_id, expense_id, storage_key, original_name, detected_type, size_bytes, sha256, scan_status, \
+         possible_duplicate, uploaded_by, created_at \
+         from receipts where team_id = $1 and expense_id = $2 and id = $3",
+        team.as_uuid(),
+        expense.as_uuid(),
+        id.as_uuid(),
+    )
+    .fetch_optional(connection)
+    .await?;
+    row.map(Receipt::try_from).transpose()
+}
+
+/// Removes one receipt row. `false` if it was already gone.
+pub(crate) async fn delete(connection: &mut PgConnection, team: TeamId, id: ReceiptId) -> sqlx::Result<bool> {
+    let deleted = sqlx::query!(
+        "delete from receipts where team_id = $1 and id = $2",
+        team.as_uuid(),
+        id.as_uuid(),
+    )
+    .execute(connection)
+    .await?;
+    Ok(deleted.rows_affected() == 1)
+}
+
+/// Removes every receipt row of the expense and returns their storage keys. Java: `findByExpenseId` and
+/// `deleteAll`.
+pub(crate) async fn delete_all_of_expense(
+    connection: &mut PgConnection,
+    team: TeamId,
+    expense: ExpenseId,
+) -> sqlx::Result<Vec<String>> {
+    sqlx::query_scalar!(
+        "delete from receipts where team_id = $1 and expense_id = $2 returning storage_key",
+        team.as_uuid(),
+        expense.as_uuid(),
+    )
+    .fetch_all(connection)
+    .await
+}
+
+/// How many of the expense's receipts are accepted, and how many still wait for their scan. Java: two calls of
+/// `countByExpenseIdAndScanStatus`.
+pub(crate) async fn count_by_status(
+    connection: &mut PgConnection,
+    team: TeamId,
+    expense: ExpenseId,
+) -> sqlx::Result<(i64, i64)> {
+    let counts = sqlx::query!(
+        "select count(*) filter (where scan_status = 'ACCEPTED') as \"accepted!\", \
+                count(*) filter (where scan_status = 'PENDING_SCAN') as \"pending!\" \
+         from receipts where team_id = $1 and expense_id = $2",
+        team.as_uuid(),
+        expense.as_uuid(),
+    )
+    .fetch_one(connection)
+    .await?;
+    Ok((counts.accepted, counts.pending))
+}

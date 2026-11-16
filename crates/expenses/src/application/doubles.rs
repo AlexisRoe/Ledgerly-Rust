@@ -9,6 +9,7 @@ use sqlx::PgConnection;
 
 use super::MembershipLookup;
 use super::membership::BoxFuture;
+use crate::receipt_checks::SummaryFuture;
 use crate::{ReceiptChecks, ReceiptSummary};
 
 /// Memberships a test sets up. Clones share them, so a test can change a role after handing a clone over.
@@ -39,8 +40,13 @@ impl MembershipLookup for Memberships {
 pub(crate) struct FixedReceipts(pub ReceiptSummary);
 
 impl ReceiptChecks for FixedReceipts {
-    fn summary_for(&self, _team_id: TeamId, _expense_id: ExpenseId) -> ReceiptSummary {
-        self.0
+    fn summary_for<'a>(
+        &'a self,
+        _connection: &'a mut PgConnection,
+        _team_id: TeamId,
+        _expense_id: ExpenseId,
+    ) -> SummaryFuture<'a> {
+        Box::pin(std::future::ready(Ok(self.0)))
     }
 }
 
@@ -66,7 +72,10 @@ mod tests {
             None
         );
         assert_eq!(
-            FixedReceipts(ReceiptSummary::new(1, 0)).summary_for(team, ExpenseId::new_v7()),
+            FixedReceipts(ReceiptSummary::new(1, 0))
+                .summary_for(&mut connection, team, ExpenseId::new_v7())
+                .await
+                .unwrap(),
             ReceiptSummary::new(1, 0)
         );
     }

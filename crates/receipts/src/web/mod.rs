@@ -12,28 +12,35 @@ use axum::Json;
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use ledgerly_shared::id::{ExpenseId, TeamId};
+use ledgerly_shared::id::{ExpenseId, ReceiptId, TeamId};
+use ledgerly_shared::iso::format_instant;
 use ledgerly_shared::web::{
     Body, CurrentUser, ErrorCode, MultipartUpload, PathParameters, Problem, Routes, uuid_parameter,
 };
 
-use self::dto::ReceiptResponse;
-use crate::application::{ListReceipts, UploadReceipt, UseCaseError};
+use self::dto::{DownloadLink, ReceiptResponse};
+use crate::application::{DeleteReceipt, DownloadReceipt, ListReceipts, UploadReceipt, UseCaseError};
 
 const RECEIPTS: &str = "/api/v1/teams/{teamId}/expenses/{expenseId}/receipts";
+const RECEIPT: &str = "/api/v1/teams/{teamId}/expenses/{expenseId}/receipts/{receiptId}";
+const DOWNLOAD: &str = "/api/v1/teams/{teamId}/expenses/{expenseId}/receipts/{receiptId}/download";
 
 /// The use cases behind the endpoints.
 #[derive(Debug, Clone)]
 pub(crate) struct ReceiptsApi {
     pub upload: UploadReceipt,
     pub list: ListReceipts,
+    pub download: DownloadReceipt,
+    pub delete: DeleteReceipt,
 }
 
 impl ReceiptsApi {
     pub(crate) fn routes(self) -> Routes {
         Routes::new()
             .route(Method::GET, RECEIPTS, Body::Ignored, list, self.clone())
-            .route(Method::POST, RECEIPTS, Body::Multipart, upload, self)
+            .route(Method::POST, RECEIPTS, Body::Multipart, upload, self.clone())
+            .route(Method::DELETE, RECEIPT, Body::Ignored, delete, self.clone())
+            .route(Method::GET, DOWNLOAD, Body::Ignored, download, self)
     }
 }
 
@@ -68,6 +75,49 @@ async fn list(
     let (team, expense) = expense(&parameters)?;
     let receipts = api.list.execute(team, expense, user.id()).await.map_err(failure)?;
     Ok(Json(receipts.into_iter().map(ReceiptResponse::from).collect()))
+}
+
+/// `GET …/receipts/{receiptId}/download`: a link valid for five minutes, never cached.
+async fn download(
+    State(api): State<ReceiptsApi>,
+    user: CurrentUser,
+    parameters: PathParameters,
+) -> Result<Response, Problem> {
+    let (team, expense) = expense(&parameters)?;
+    let receipt = receipt(&parameters)?;
+    let link = api
+        .download
+        .execute(team, expense, receipt, user.id())
+        .await
+        .map_err(failure)?;
+    let body = DownloadLink {
+        url: link.url,
+        expires_at: format_instant(link.expires_at),
+    };
+    let mut response = Json(body).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(response)
+}
+
+/// `DELETE …/receipts/{receiptId}`: 204.
+async fn delete(
+    State(api): State<ReceiptsApi>,
+    user: CurrentUser,
+    parameters: PathParameters,
+) -> Result<StatusCode, Problem> {
+    let (team, expense) = expense(&parameters)?;
+    let receipt = receipt(&parameters)?;
+    api.delete
+        .execute(team, expense, receipt, user.id())
+        .await
+        .map_err(failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn receipt(parameters: &PathParameters) -> Result<ReceiptId, Problem> {
+    uuid_parameter(parameters, "receiptId").map(ReceiptId::from_uuid)
 }
 
 fn expense(parameters: &PathParameters) -> Result<(TeamId, ExpenseId), Problem> {

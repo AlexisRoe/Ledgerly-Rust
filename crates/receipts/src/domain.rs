@@ -74,7 +74,6 @@ impl DetectedType {
 
     /// The extension of a download name. Java: `FileNames.EXTENSIONS`.
     #[must_use]
-    #[cfg_attr(not(test), expect(dead_code, reason = "the download arrives in M7.4"))]
     pub const fn extension(self) -> &'static str {
         match self {
             Self::Pdf => "pdf",
@@ -205,7 +204,6 @@ fn first_utf16_units(text: &str, limit: usize) -> String {
 /// leading separators, at most 80 characters before the extension, and the extension of the detected type,
 /// never the claimed one. Java: `FileNames.sanitize`.
 #[must_use]
-#[cfg_attr(not(test), expect(dead_code, reason = "the download arrives in M7.4"))]
 pub fn download_name(original: &str, detected: Option<DetectedType>) -> String {
     let name = original
         .rfind(['/', '\\'])
@@ -258,7 +256,6 @@ pub struct Receipt {
 impl Receipt {
     /// Only an accepted receipt is served.
     #[must_use]
-    #[expect(dead_code, reason = "the download arrives in M7.4")]
     pub fn is_downloadable(&self) -> bool {
         self.scan_status == ScanStatus::Accepted
     }

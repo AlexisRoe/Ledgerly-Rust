@@ -399,7 +399,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     Until M9, the scan runs in a task started after commit.
   - Accept: EICAR → QUARANTINED, and its download → 404, against real ClamAV in the parity suite. A scanner outage (container stopped) leaves `PENDING_SCAN`.
 
-- [ ] **M7.4 Submit needs receipts; download; delete**
+- [x] **M7.4 Submit needs receipts; download; delete**
   - Do: `receipts` implements `expenses::ReceiptChecks`. Download: ACCEPTED only, with the expense's visibility, presigned for 5 minutes, `{url, expiresAt}`, `Content-Disposition: attachment` with the sanitised name. Delete: Draft only. Cleanup on `ExpenseDeleted`.
   - Accept: Bruno `03-lifecycle` passes end to end against the composed stack with real ClamAV.
 

@@ -74,7 +74,6 @@ mod m7 {
 
     /// Java: `Api1BrokenObjectLevelAuthorizationTest.aUserOfTeamAGets404ForTeamBsExpenseAndReceipt`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn a_user_of_team_a_gets_404_for_team_bs_expense_and_receipt() {
         let world = World::start().await;
         let (a, b) = (world.team().await, world.team().await);
@@ -103,7 +102,6 @@ mod m7 {
 
     /// Java: `Api1BrokenObjectLevelAuthorizationTest.receiptsFollowTheirExpenseNotJustTheirOwnId`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn receipts_follow_their_expense_not_just_their_own_id() {
         let world = World::start().await;
         let team = world.team().await;

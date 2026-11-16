@@ -34,6 +34,7 @@ use crate::application::{
     CreateExpense, CreateExpenseCommand, DeleteExpense, Filter, GetExpense, ListExpenses, ListQuery, MembershipLookup,
     TransitionExpense, UpdateExpense, UpdateExpenseCommand,
 };
+use crate::deletions::ExpenseDeletedListener;
 use crate::domain::{Action, Category, Expense, ExpenseStatus, NewExpense};
 use crate::receipt_checks::ReceiptChecks;
 
@@ -57,6 +58,7 @@ impl ExpensesApi {
         clock: &Arc<dyn Clock>,
         memberships: &Arc<dyn MembershipLookup>,
         receipts: &Arc<dyn ReceiptChecks>,
+        deleted: &Arc<dyn ExpenseDeletedListener>,
         max_page_size: u32,
     ) -> Self {
         Self {
@@ -64,7 +66,7 @@ impl ExpensesApi {
             create: CreateExpense::new(pool.clone(), clock.clone(), memberships.clone()),
             get: GetExpense::new(pool.clone(), memberships.clone()),
             update: UpdateExpense::new(pool.clone(), clock.clone(), memberships.clone()),
-            delete: DeleteExpense::new(pool.clone(), memberships.clone()),
+            delete: DeleteExpense::new(pool.clone(), memberships.clone(), deleted.clone()),
             transition: TransitionExpense::new(pool.clone(), clock.clone(), memberships.clone(), receipts.clone()),
         }
     }

@@ -117,7 +117,15 @@ impl World {
         );
         let receipts: Arc<dyn ReceiptChecks> = Arc::new(FixedReceipts(ReceiptSummary::new(1, 0)));
         let clock: Arc<dyn Clock> = Arc::new(FixedClock::at(Utc.with_ymd_and_hms(2026, 11, 5, 10, 0, 0).unwrap()));
-        let routes = ExpensesApi::new(database.pool(), &clock, &memberships, &receipts, max_page_size).routes();
+        let routes = ExpensesApi::new(
+            database.pool(),
+            &clock,
+            &memberships,
+            &receipts,
+            &crate::deletions::nobody(),
+            max_page_size,
+        )
+        .routes();
         let router = Router::new()
             .fallback_service(routes.into_service())
             .layer(axum::middleware::from_fn(render));

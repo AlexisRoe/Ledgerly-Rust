@@ -38,11 +38,21 @@ pub fn eicar() -> String {
     .concat()
 }
 
-/// `"%PDF-1.4\n" + EICAR`: what Java's tests upload as an infected receipt. It starts like a PDF, so the type
-/// check lets it through to the scanner.
+/// An infected receipt: a PDF whose only stream is the EICAR file. It starts like a PDF, so the type check
+/// lets it through to the scanner.
+///
+/// Java's tests upload `"%PDF-1.4\n" + EICAR`, which their fake scanner flags because it finds the string
+/// anywhere. Real ClamAV recognises EICAR by the hash of a whole file and answers `stream: OK` for that
+/// prefixed content; it does take a PDF apart and scan each stream, so EICAR as a stream is found
+/// (`Eicar-Signature FOUND`).
 #[must_use]
 pub fn infected_pdf() -> Vec<u8> {
-    format!("%PDF-1.4\n{}", eicar()).into_bytes()
+    let eicar = eicar();
+    format!(
+        "%PDF-1.4\n1 0 obj\n<< /Length {} >>\nstream\n{eicar}\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n",
+        eicar.len()
+    )
+    .into_bytes()
 }
 
 /// The first bytes of a Windows executable, as in Java's tests: content that is neither a receipt nor a CSV.

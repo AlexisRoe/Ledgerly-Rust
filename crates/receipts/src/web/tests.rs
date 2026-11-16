@@ -21,7 +21,6 @@ use ledgerly_shared::id::{ExpenseId, TeamId, UserId};
 use ledgerly_shared::storage::ObjectStorage;
 use ledgerly_shared::storage::testing::InMemoryStorage;
 use ledgerly_shared::web::{CurrentUser, render};
-use ledgerly_teams::TeamsFacade;
 use serde_json::Value;
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -141,7 +140,7 @@ impl World {
                 pool: database.pool(),
                 clock: &clock,
                 events: &publisher,
-                expenses: ExpensesFacade::new(TeamsFacade),
+                expenses: ExpensesFacade::default(),
             },
             &objects,
             scanner.clone(),
@@ -593,4 +592,198 @@ async fn the_list_is_visible_like_the_expense_and_oldest_first() {
     assert_eq!(names, ["first.pdf", "second.png"]);
     assert_eq!(approver.status, StatusCode::OK);
     assert_eq!(colleague.status, StatusCode::NOT_FOUND);
+}
+
+impl World {
+    /// A receipt of the claimant's draft, scanned clean.
+    async fn accepted(&self, expense: ExpenseId, name: &str, content: &[u8]) -> String {
+        let reply = self.upload(expense, self.claimant, name, content).await;
+        let receipt = reply.body["id"].as_str().unwrap().to_owned();
+        let (status, _) = self.settled(&receipt, |status| status != "PENDING_SCAN").await;
+        assert_eq!(status, "ACCEPTED");
+        receipt
+    }
+
+    async fn download(&self, expense: ExpenseId, receipt: &str, caller: UserId) -> Reply {
+        let path = format!("{}/{receipt}/download", self.receipts(expense));
+        self.send(Request::get(path).body(HttpBody::empty()).unwrap(), caller)
+            .await
+    }
+
+    async fn delete(&self, expense: ExpenseId, receipt: &str, caller: UserId) -> Reply {
+        let path = format!("{}/{receipt}", self.receipts(expense));
+        self.send(Request::delete(path).body(HttpBody::empty()).unwrap(), caller)
+            .await
+    }
+
+    async fn key_of(&self, receipt: &str) -> String {
+        sqlx::query_scalar("select storage_key from receipts where id = $1")
+            .bind(receipt.parse::<Uuid>().unwrap())
+            .fetch_one(self.pool())
+            .await
+            .unwrap()
+    }
+}
+
+#[tokio::test]
+async fn an_accepted_receipt_is_downloaded_through_a_five_minute_link_under_its_sanitised_name() {
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+    let receipt = world.accepted(expense, "../../etc/passwd", PDF).await;
+
+    let reply = world.download(expense, &receipt, world.claimant).await;
+
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    assert_eq!(reply.headers["cache-control"], "no-store");
+    let key = world.key_of(&receipt).await;
+    assert_eq!(reply.body["url"], format!("memory://{key}"));
+    // The fixed clock is at 12:00:00.
+    assert_eq!(reply.body["expiresAt"], "2026-11-16T12:05:00Z");
+    let presigned = world.storage.presigned();
+    assert_eq!(presigned.len(), 1);
+    assert_eq!(presigned[0].key, key);
+    assert_eq!(presigned[0].download_name, "passwd.pdf");
+    assert_eq!(presigned[0].content_type, "application/pdf");
+    assert_eq!(presigned[0].ttl, std::time::Duration::from_secs(300));
+    assert_eq!(
+        world.download(expense, &receipt, world.approver).await.status,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn pending_quarantined_and_unreachable_receipts_are_404() {
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+    let sibling = world.expense("DRAFT").await;
+    let accepted = world.accepted(expense, "a.pdf", PDF).await;
+    let infected = world
+        .upload(expense, world.claimant, "b.pdf", &[PDF, b"EICAR".as_slice()].concat())
+        .await;
+    let infected = infected.body["id"].as_str().unwrap().to_owned();
+    world.settled(&infected, |status| status == "QUARANTINED").await;
+    world.scanner.set(Behaviour::Unavailable);
+    let pending = world
+        .upload(expense, world.claimant, "c.png", b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR")
+        .await;
+    let pending = pending.body["id"].as_str().unwrap().to_owned();
+
+    for (expense, receipt, caller) in [
+        (expense, infected.as_str(), world.claimant),
+        (expense, infected.as_str(), world.approver),
+        (expense, pending.as_str(), world.claimant),
+        (expense, accepted.as_str(), world.colleague),
+        (sibling, accepted.as_str(), world.claimant),
+        (expense, &Uuid::new_v4().to_string(), world.claimant),
+    ] {
+        let reply = world.download(expense, receipt, caller).await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{receipt}");
+        assert_eq!(reply.code(), "NOT_FOUND");
+    }
+    assert!(world.storage.presigned().is_empty());
+}
+
+#[tokio::test]
+async fn the_claimant_deletes_a_receipt_of_a_draft_with_its_object() {
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+    let receipt = world.accepted(expense, "a.pdf", PDF).await;
+    let key = world.key_of(&receipt).await;
+
+    let deleted = world.delete(expense, &receipt, world.claimant).await;
+
+    assert_eq!(deleted.status, StatusCode::NO_CONTENT);
+    assert_eq!(world.rows().await, 0);
+    assert!(world.storage.get(&key).is_none());
+    assert_eq!(world.events().last(), Some(&"ledgerly-rust:receipts.ReceiptDeleted"));
+    assert_eq!(
+        world.delete(expense, &receipt, world.claimant).await.status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn only_the_claimant_deletes_and_only_from_a_draft() {
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+    let receipt = world.accepted(expense, "a.pdf", PDF).await;
+    let sibling = world.expense("DRAFT").await;
+
+    assert_eq!(
+        world.delete(expense, &receipt, world.approver).await.code(),
+        "FORBIDDEN"
+    );
+    assert_eq!(
+        world.delete(expense, &receipt, world.colleague).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        world.delete(sibling, &receipt, world.claimant).await.status,
+        StatusCode::NOT_FOUND
+    );
+    sqlx::query("update expenses set status = 'SUBMITTED' where id = $1")
+        .bind(expense.as_uuid())
+        .execute(world.pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        world.delete(expense, &receipt, world.claimant).await.code(),
+        "EXPENSE_NOT_DRAFT"
+    );
+    assert_eq!(world.rows().await, 1);
+}
+
+#[tokio::test]
+async fn deleting_an_expense_removes_its_receipts_and_files_but_no_others() {
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+    let other = world.expense("DRAFT").await;
+    world.accepted(expense, "a.pdf", PDF).await;
+    world.accepted(expense, "b.png", b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR").await;
+    let kept = world.accepted(other, "c.jpg", &[0xFF, 0xD8, 0xFF, 0xE0]).await;
+    let receipts = Receipts::assemble(
+        Modules {
+            pool: world.pool(),
+            clock: &(Arc::new(FixedClock::at(Utc::now())) as Arc<dyn Clock>),
+            events: &(world.events.clone() as Arc<dyn Publisher>),
+            expenses: ExpensesFacade::default(),
+        },
+        &(Arc::new(world.storage.clone()) as Arc<dyn ObjectStorage>),
+        world.scanner.clone(),
+        [std::time::Duration::ZERO; 3],
+        &Limits::default(),
+    );
+
+    receipts.cleanup.execute(world.team, expense).await.unwrap();
+
+    assert_eq!(world.rows().await, 1);
+    assert_eq!(world.storage.keys(), [world.key_of(&kept).await]);
+}
+
+#[tokio::test]
+async fn the_submit_rule_counts_accepted_and_pending_receipts_of_the_expense() {
+    use ledgerly_expenses::ReceiptSummary;
+
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+    let other = world.expense("DRAFT").await;
+    world.accepted(expense, "a.pdf", PDF).await;
+    world.accepted(other, "b.pdf", PDF).await;
+    world.scanner.set(Behaviour::Unavailable);
+    world
+        .upload(expense, world.claimant, "c.png", b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR")
+        .await;
+    let mut connection = world.pool().acquire().await.unwrap();
+
+    let summary = Receipts::checks()
+        .summary_for(&mut connection, world.team, expense)
+        .await
+        .unwrap();
+    let elsewhere = Receipts::checks()
+        .summary_for(&mut connection, TeamId::new_v7(), expense)
+        .await
+        .unwrap();
+
+    assert_eq!(summary, ReceiptSummary::new(1, 1));
+    assert_eq!(elsewhere, ReceiptSummary::new(0, 0));
 }

@@ -1818,7 +1818,6 @@ dependencies = [
  "chrono",
  "ledgerly-expenses",
  "ledgerly-shared",
- "ledgerly-teams",
  "regex",
  "serde",
  "serde_json",

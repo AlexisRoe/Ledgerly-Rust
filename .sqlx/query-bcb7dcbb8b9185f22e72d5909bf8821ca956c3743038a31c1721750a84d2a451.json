@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from receipts where team_id = $1 and expense_id = $2 returning storage_key",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "storage_key",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "receipts",
+            "name": "storage_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bcb7dcbb8b9185f22e72d5909bf8821ca956c3743038a31c1721750a84d2a451"
+}

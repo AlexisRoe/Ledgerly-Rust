@@ -6,8 +6,10 @@
 //! Java counterpart: `expenses/ReceiptChecks.java` and `expenses/ReceiptSummary.java`.
 
 use std::fmt;
+use std::pin::Pin;
 
 use ledgerly_shared::id::{ExpenseId, TeamId};
+use sqlx::PgConnection;
 
 /// Receipt counts for one expense, by scan status.
 ///
@@ -37,26 +39,22 @@ impl ReceiptSummary {
     }
 }
 
+/// The future [`ReceiptChecks::summary_for`] returns.
+pub type SummaryFuture<'a> = Pin<Box<dyn Future<Output = sqlx::Result<ReceiptSummary>> + Send + 'a>>;
+
 /// Implemented by the receipts module, called by expenses before a submit.
 ///
 /// Unlike Java's `summaryFor(ExpenseId)`, the team is part of the question: no read of team data goes without a
-/// team id (CLAUDE.md, OWASP API1).
-///
-/// Synchronous and infallible for now, because M0 has no I/O. It becomes `async` and fallible when a database
-/// stands behind it.
+/// team id (CLAUDE.md, OWASP API1). It reads on the submit's own connection, in its transaction, as Java's
+/// `@Transactional(readOnly = true)` joins the submit's.
 pub trait ReceiptChecks: fmt::Debug + Send + Sync {
     /// Counts the receipts attached to the expense. Submitting needs at least one accepted and none pending.
-    fn summary_for(&self, team_id: TeamId, expense_id: ExpenseId) -> ReceiptSummary;
-}
-
-/// Until the receipts module exists (M7), no expense has a receipt.
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct NoReceiptsYet;
-
-impl ReceiptChecks for NoReceiptsYet {
-    fn summary_for(&self, _team_id: TeamId, _expense_id: ExpenseId) -> ReceiptSummary {
-        ReceiptSummary::new(0, 0)
-    }
+    fn summary_for<'a>(
+        &'a self,
+        connection: &'a mut PgConnection,
+        team_id: TeamId,
+        expense_id: ExpenseId,
+    ) -> SummaryFuture<'a>;
 }
 
 #[cfg(test)]
@@ -76,15 +74,17 @@ mod tests {
         struct TwoAccepted;
 
         impl ReceiptChecks for TwoAccepted {
-            fn summary_for(&self, _team_id: TeamId, _expense_id: ExpenseId) -> ReceiptSummary {
-                ReceiptSummary::new(2, 0)
+            fn summary_for<'a>(
+                &'a self,
+                _connection: &'a mut PgConnection,
+                _team_id: TeamId,
+                _expense_id: ExpenseId,
+            ) -> SummaryFuture<'a> {
+                Box::pin(std::future::ready(Ok(ReceiptSummary::new(2, 0))))
             }
         }
 
         let checks: Box<dyn ReceiptChecks> = Box::new(TwoAccepted);
-        assert_eq!(
-            checks.summary_for(TeamId::new_v7(), ExpenseId::new_v7()),
-            ReceiptSummary::new(2, 0)
-        );
+        assert_eq!(format!("{checks:?}"), "TwoAccepted");
     }
 }

@@ -104,7 +104,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.uploadIsAcceptedThenScannedAndBecomesDownloadable`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn upload_is_accepted_then_scanned_and_becomes_downloadable() {
         let world = World::start().await;
         let team = world.team().await;
@@ -299,7 +298,6 @@ mod m7 {
     /// Java: `ReceiptsApiTest.anEicarFileIsQuarantinedAndNeverServed`. Java also checks that the key was
     /// never presigned, which only its fake store records.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn an_eicar_file_is_quarantined_and_never_served() {
         let world = World::start().await;
         let team = world.team().await;
@@ -327,7 +325,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.aQuarantinedReceiptDoesNotCountTowardsSubmitting`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn a_quarantined_receipt_does_not_count_towards_submitting() {
         let world = World::start().await;
         let team = world.team().await;
@@ -355,7 +352,6 @@ mod m7 {
     /// M1), and the object store's answer must carry them: an attachment named `passwd.pdf` of type
     /// `application/pdf`. The lifetime comes from `expiresAt`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn a_traversal_file_name_is_only_metadata() {
         let world = World::start().await;
         let team = world.team().await;
@@ -547,7 +543,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.aTeamBReceiptIdGets404FromTeamA_API1`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn a_receipt_id_of_another_team_gets_404() {
         let world = World::start().await;
         let team = world.team().await;
@@ -574,7 +569,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.aReceiptIdFromAnotherExpenseOfTheSameTeamGets404`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn a_receipt_id_from_another_expense_of_the_same_team_gets_404() {
         let world = World::start().await;
         let team = world.team().await;
@@ -591,7 +585,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.receiptsAreVisibleLikeTheirExpense`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn receipts_are_visible_like_their_expense() {
         let world = World::start().await;
         let team = world.team().await;
@@ -614,7 +607,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.theClaimantCanDeleteAReceiptOfADraftAndItsObjectIsRemoved`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn the_claimant_can_delete_a_receipt_of_a_draft_and_its_object_is_removed() {
         let world = World::start().await;
         let team = world.team().await;
@@ -632,7 +624,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.receiptsCannotBeDeletedOnceTheExpenseIsSubmitted`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn receipts_cannot_be_deleted_once_the_expense_is_submitted() {
         let world = World::start().await;
         let team = world.team().await;
@@ -652,7 +643,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.deletingTheExpenseRemovesItsReceiptsAndFiles`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn deleting_the_expense_removes_its_receipts_and_files() {
         let world = World::start().await;
         let team = world.team().await;

@@ -18,7 +18,6 @@ mod m7 {
 
     /// Java: `Api10UnsafeConsumptionOfApisTest.anInfectedFileIsQuarantinedAndNeverServed`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn an_infected_file_is_quarantined_and_never_served() {
         let world = World::start().await;
         let team = world.team().await;

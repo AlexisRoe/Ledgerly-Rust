@@ -15,7 +15,7 @@ mod web;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ledgerly_expenses::ExpensesFacade;
+use ledgerly_expenses::{ExpenseDeletedListener, ExpensesFacade, ReceiptChecks};
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::config::{ClamavConfig, Limits};
 use ledgerly_shared::events::Publisher;
@@ -23,7 +23,10 @@ use ledgerly_shared::storage::ObjectStorage;
 use ledgerly_shared::web::Routes;
 use sqlx::PgPool;
 
-use crate::application::{Context, ListReceipts, RETRY_DELAYS, ScanReceipt, UploadReceipt};
+use crate::application::{
+    Context, DeleteReceipt, DownloadReceipt, ExpenseDeletedCleanup, ListReceipts, RETRY_DELAYS, ReceiptCounts,
+    ScanReceipt, UploadReceipt,
+};
 use crate::scanner::{ClamAvScanner, MalwareScanner};
 use crate::web::ReceiptsApi;
 
@@ -41,6 +44,7 @@ pub struct Modules<'a> {
 #[derive(Debug, Clone)]
 pub struct Receipts {
     api: ReceiptsApi,
+    cleanup: ExpenseDeletedCleanup,
 }
 
 impl Receipts {
@@ -70,8 +74,11 @@ impl Receipts {
         Self {
             api: ReceiptsApi {
                 upload: UploadReceipt::new(context.clone(), scan, limits.max_upload_size),
-                list: ListReceipts::new(context),
+                list: ListReceipts::new(context.clone()),
+                download: DownloadReceipt::new(context.clone()),
+                delete: DeleteReceipt::new(context.clone()),
             },
+            cleanup: ExpenseDeletedCleanup::new(context),
         }
     }
 
@@ -79,5 +86,17 @@ impl Receipts {
     #[must_use]
     pub fn routes(&self) -> Routes {
         self.api.clone().routes()
+    }
+
+    /// Receipts' side of the submit rule, for the expenses module. Java: `ReceiptChecksImpl`.
+    #[must_use]
+    pub fn checks() -> Arc<dyn ReceiptChecks> {
+        Arc::new(ReceiptCounts)
+    }
+
+    /// Removes the receipts of a deleted expense, for the expenses module. Java: `ExpenseDeletedCleanup`.
+    #[must_use]
+    pub fn cleanup(&self) -> Arc<dyn ExpenseDeletedListener> {
+        Arc::new(self.cleanup.clone())
     }
 }
