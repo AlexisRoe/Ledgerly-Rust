@@ -509,7 +509,6 @@ mod m9 {
 
     /// §4.5: `MEMBER_INVITED` records the role and nothing about the address.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn member_invited_records_the_role_only() {
         let world = World::start().await;
         let team = world.team().await;
@@ -537,7 +536,6 @@ mod m9 {
 
     /// §4.5: the scanner's verdict has no actor.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn receipt_accepted_has_no_actor() {
         let world = World::start().await;
         let team = world.team().await;
@@ -569,7 +567,6 @@ mod m9 {
 
     /// §4.5: without `limit` a page has 50 rows.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn the_default_limit_is_50() {
         let world = World::start().await;
         let team = world.team().await;

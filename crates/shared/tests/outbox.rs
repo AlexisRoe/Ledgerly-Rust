@@ -135,11 +135,10 @@ async fn an_event_is_delivered_after_its_transaction_commits() {
 
     until("the delivery", async || counting.delivered.load(Ordering::SeqCst) == 1).await;
     until("the completion", async || open_rows(pool).await == 0).await;
-    let (listener, status): (String, String) =
-        sqlx::query_as("select listener_id, status from event_publication")
-            .fetch_one(pool)
-            .await
-            .unwrap();
+    let (listener, status): (String, String) = sqlx::query_as("select listener_id, status from event_publication")
+        .fetch_one(pool)
+        .await
+        .unwrap();
     assert_eq!(listener, "ledgerly-rust:tests.Counting");
     assert_eq!(status, "COMPLETED");
     dispatcher.abort();

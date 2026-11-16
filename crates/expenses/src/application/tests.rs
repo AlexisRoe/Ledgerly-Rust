@@ -429,7 +429,10 @@ async fn an_edit_publishes_the_names_of_the_changed_fields_in_javas_order() {
         ]
     );
     let edit = &events[1];
-    assert_eq!((edit.team_id, edit.expense_id, edit.actor_id), (world.team, id, world.member));
+    assert_eq!(
+        (edit.team_id, edit.expense_id, edit.actor_id),
+        (world.team, id, world.member)
+    );
     assert_eq!(edit.occurred_at, now());
 }
 
@@ -782,7 +785,12 @@ async fn a_key_expires_after_24_hours() {
     let database = TestDatabase::new().await.unwrap();
     let world = World::new(&database);
     let clock = Arc::new(FixedClock::at(now()));
-    let create = CreateExpense::new(world.pool.clone(), clock.clone(), world.memberships.clone(), world.publisher());
+    let create = CreateExpense::new(
+        world.pool.clone(),
+        clock.clone(),
+        world.memberships.clone(),
+        world.publisher(),
+    );
     world
         .create_with_key(&create, world.member, lunch(), "key-expiring")
         .await
@@ -864,7 +872,12 @@ async fn a_removed_claimant_loses_access_but_approvers_still_decide() {
             .unwrap();
     }
     let memberships: Arc<dyn MembershipLookup> = Arc::new(TeamsMembershipLookup(ledgerly_teams::TeamsFacade));
-    let create = CreateExpense::new(pool.clone(), clock(), memberships.clone(), Arc::new(Recorded::default()));
+    let create = CreateExpense::new(
+        pool.clone(),
+        clock(),
+        memberships.clone(),
+        Arc::new(Recorded::default()),
+    );
     let get = GetExpense::new(pool.clone(), memberships.clone());
     let transition = TransitionExpense::new(
         pool.clone(),

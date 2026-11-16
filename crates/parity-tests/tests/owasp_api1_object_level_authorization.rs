@@ -130,7 +130,6 @@ mod m9 {
 
     /// Java: `Api1BrokenObjectLevelAuthorizationTest.theAuditTrailAndImportsOfOtherTeamsAreNotReachable`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn the_audit_trail_and_imports_of_other_teams_are_not_reachable() {
         let world = World::start().await;
         let (a, b) = (world.team().await, world.team().await);

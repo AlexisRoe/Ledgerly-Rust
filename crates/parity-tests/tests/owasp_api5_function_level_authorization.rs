@@ -99,7 +99,6 @@ mod m9 {
 
     /// Java: `Api5BrokenFunctionLevelAuthorizationTest.teamAdministrationIsForOwnersOnly`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn team_administration_is_for_owners_only() {
         let world = World::start().await;
         let team = world.team().await;

@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::response::IntoResponse;
+use ledgerly_audit::Audit;
 use ledgerly_expenses::ExpensesFacade;
 use ledgerly_identity::{Identity, IdentityError};
 use ledgerly_imports::Imports;
@@ -68,6 +69,7 @@ pub struct Modules {
     teams: Teams,
     receipts: Receipts,
     imports: Imports,
+    audit: Audit,
     storage: S3ObjectStorage,
     outbox: Outbox,
     events: Arc<dyn Publisher>,
@@ -110,7 +112,8 @@ impl Modules {
             &config.clamav,
             &config.limits,
         );
-        let listeners = [receipts.listeners(), imports.listeners()].concat();
+        let audit = Audit::new(pool, &clock, Arc::new(teams.facade()), &config.limits);
+        let listeners = [receipts.listeners(), imports.listeners(), audit.listeners()].concat();
         if outbox.subscribe(listeners).is_err() {
             tracing::warn!("The outbox's listeners were set twice");
         }
@@ -120,6 +123,7 @@ impl Modules {
             teams,
             receipts,
             imports,
+            audit,
             storage,
             outbox,
             events,
@@ -189,6 +193,7 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
         ))
         .merge(modules.receipts.routes())
         .merge(modules.imports.routes())
+        .merge(modules.audit.routes())
 }
 
 /// `routes` behind the layers every API request passes, from the outside in:

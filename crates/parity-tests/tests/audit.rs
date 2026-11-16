@@ -79,7 +79,6 @@ mod m9 {
 
     /// Java: `AuditApiTest.submittingAnExpenseLeavesARowAndTheWholeLifeIsTold`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn submitting_an_expense_leaves_a_row_and_the_whole_life_is_told() {
         let world = World::start().await;
         let team = world.team().await;
@@ -146,7 +145,6 @@ mod m9 {
 
     /// Java: `AuditApiTest.anEditRecordsWhichFieldsChangedButNeverTheirValues`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn an_edit_records_which_fields_changed_but_never_their_values() {
         let world = World::start().await;
         let team = world.team().await;
@@ -175,7 +173,6 @@ mod m9 {
 
     /// Java: `AuditApiTest.teamEventsAppearToo`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn team_events_appear_too() {
         let world = World::start().await;
         let team = world.team().await;
@@ -194,7 +191,6 @@ mod m9 {
 
     /// Java: `AuditApiTest.registeringAndVerifyingAreStoredWithoutATeamAndNeverShownInOne`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn registering_and_verifying_are_stored_without_a_team_and_never_shown_in_one() {
         let world = World::start().await;
         let email = format!("audit-{}@example.com", Uuid::new_v4());
@@ -243,7 +239,6 @@ mod m9 {
 
     /// Java: `AuditApiTest.onlyOwnersMayReadTheTrail`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn only_owners_may_read_the_trail() {
         let world = World::start().await;
         let team = world.team().await;
@@ -262,7 +257,6 @@ mod m9 {
 
     /// Java: `AuditApiTest.anotherTeamsEventsAreNeverVisible_API1`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn another_teams_events_are_never_visible() {
         let world = World::start().await;
         let team = world.team().await;
@@ -290,7 +284,6 @@ mod m9 {
     /// Java: `AuditApiTest.pagingWithCursorsVisitsEveryRowOnceNewestFirst`. Java's team has no other events;
     /// neither has a team written with SQL.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn paging_with_cursors_visits_every_row_once_newest_first() {
         let world = World::start().await;
         let team = world.team().await;
@@ -323,7 +316,6 @@ mod m9 {
 
     /// Java: `AuditApiTest.newRowsArrivingWhilePagingNeverCauseRepeats`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn new_rows_arriving_while_paging_never_cause_repeats() {
         let world = World::start().await;
         let team = world.team().await;
@@ -353,7 +345,6 @@ mod m9 {
 
     /// Java: `AuditApiTest.theLastPageHasNoCursor`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn the_last_page_has_no_cursor() {
         let world = World::start().await;
         let team = world.team().await;
@@ -367,7 +358,6 @@ mod m9 {
 
     /// Java: `AuditApiTest.badCursorsAndLimitsGet400`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn bad_cursors_and_limits_get_400() {
         let world = World::start().await;
         let team = world.team().await;

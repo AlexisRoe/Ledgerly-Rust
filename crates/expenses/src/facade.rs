@@ -160,7 +160,12 @@ impl ExpensesFacade {
 /// The facade on the teams module's memberships, as the app wires it.
 impl Default for ExpensesFacade {
     fn default() -> Self {
-        Self::new(TeamsFacade, Arc::new(SystemClock), Arc::new(Discard), &Limits::default())
+        Self::new(
+            TeamsFacade,
+            Arc::new(SystemClock),
+            Arc::new(Discard),
+            &Limits::default(),
+        )
     }
 }
 

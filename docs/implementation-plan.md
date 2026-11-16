@@ -469,7 +469,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - **Crashed imports (decided after M8):** an import found `RUNNING` at start-up, with no live runner, is resumed after its last committed chunk, with the same chunk-skipping as a `FAILED` restart. Java leaves it `RUNNING`.
   - Accept: the M7 "app dies before the scan" scenario recovers on restart.
 
-- [ ] **M9.3 Audit trail**
+- [x] **M9.3 Audit trail**
   - Do: one consumer per event type (all 25), idempotent on the event id (`on conflict`). Java's `eventType` strings and `details` JSON exactly (inventory §4.5). Team-less events have `team_id NULL`. `GET …/audit-events` is OWNER-only via `shared::TeamRoles` and cursor-paged with the M4 helper.
   - Accept: every event type reaches the audit trail with Java's name and details. A raw `UPDATE audit_events` from the app's role fails.
 

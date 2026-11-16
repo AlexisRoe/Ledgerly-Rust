@@ -255,7 +255,11 @@ impl Outbox {
                 return;
             }
         };
-        let Some(listener) = self.listeners().iter().find(|listener| listener.id() == row.listener_id) else {
+        let Some(listener) = self
+            .listeners()
+            .iter()
+            .find(|listener| listener.id() == row.listener_id)
+        else {
             tracing::warn!("No listener {} for event publication {id}", row.listener_id);
             return;
         };
@@ -304,9 +308,7 @@ impl Publisher for Outbox {
             if listeners.is_empty() {
                 return Ok(());
             }
-            let payload = event
-                .payload()
-                .map_err(|error| sqlx::Error::Encode(Box::new(error)))?;
+            let payload = event.payload().map_err(|error| sqlx::Error::Encode(Box::new(error)))?;
             let now = self.inner.clock.now();
             for listener in listeners {
                 // Modulith's ids are random (v4).

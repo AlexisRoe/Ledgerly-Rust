@@ -106,7 +106,6 @@ mod m9 {
 
     /// Java: `Api4UnrestrictedResourceConsumptionTest.aPageOfMoreThanHundredIsRefusedNotClamped`.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn a_page_of_more_than_hundred_is_refused_not_clamped() {
         let world = World::start().await;
         let team = world.team().await;

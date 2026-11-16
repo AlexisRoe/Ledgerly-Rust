@@ -119,7 +119,13 @@ mod tests {
         ];
         let mut types = std::collections::BTreeSet::new();
         for kind in kinds {
-            let event = ExpenseEvent::new(TeamId::new_v7(), ExpenseId::new_v7(), UserId::new_v7(), Utc::now(), kind);
+            let event = ExpenseEvent::new(
+                TeamId::new_v7(),
+                ExpenseId::new_v7(),
+                UserId::new_v7(),
+                Utc::now(),
+                kind,
+            );
             assert!(event.event_type().starts_with("ledgerly-rust:expenses.Expense"));
             types.insert(event.event_type());
             let back: ExpenseEvent = serde_json::from_str(&event.payload().unwrap()).unwrap();

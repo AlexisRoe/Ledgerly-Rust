@@ -47,7 +47,6 @@ mod m9 {
     /// `REQUEST_REJECTED`, and a path that exists under another method answers 405; a served operation gives
     /// neither, whatever else it thinks of an empty request with made-up ids.
     #[tokio::test]
-    #[ignore = "M9"]
     async fn every_documented_operation_is_served() {
         let world = World::start().await;
         let user = world.as_user(&world.user().await);

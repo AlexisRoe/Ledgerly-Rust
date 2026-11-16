@@ -16,3 +16,15 @@ ledgerly-teams.workspace = true
 ledgerly-expenses.workspace = true
 ledgerly-receipts.workspace = true
 ledgerly-imports.workspace = true
+axum.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx = { workspace = true, features = ["json", "macros"] }
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+ledgerly-shared = { workspace = true, features = ["testing"] }
+tokio.workspace = true
