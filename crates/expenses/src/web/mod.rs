@@ -5,6 +5,7 @@
 //! the caller, then headers and path parameters, then the body, then the constraints on headers (checked by
 //! Spring's method validation once all arguments are there), then what the controller itself parses.
 
+mod csv;
 mod dto;
 #[cfg(test)]
 mod list_tests;
@@ -35,8 +36,8 @@ use self::dto::{
     UpdateExpenseRequest,
 };
 use crate::application::{
-    BatchCreateExpenses, CreateExpense, CreateExpenseCommand, DeleteExpense, Filter, GetExpense, ListExpenses,
-    ListQuery, MembershipLookup, TransitionExpense, UpdateExpense, UpdateExpenseCommand,
+    BatchCreateExpenses, CreateExpense, CreateExpenseCommand, DeleteExpense, ExportExpenses, ExportPages, Filter,
+    GetExpense, ListExpenses, ListQuery, MembershipLookup, TransitionExpense, UpdateExpense, UpdateExpenseCommand,
 };
 use crate::deletions::ExpenseDeletedListener;
 use crate::domain::{Action, Category, Expense, ExpenseStatus, NewExpense};
@@ -55,6 +56,7 @@ pub(crate) struct ExpensesApi {
     transition: TransitionExpense,
     list: ListExpenses,
     batch: BatchCreateExpenses,
+    export: ExportExpenses,
 }
 
 impl ExpensesApi {
@@ -68,6 +70,7 @@ impl ExpensesApi {
     ) -> Self {
         Self {
             batch: BatchCreateExpenses::new(pool.clone(), clock.clone(), memberships.clone(), limits.max_batch_size),
+            export: ExportExpenses::new(pool.clone(), memberships.clone(), limits.max_export_rows),
             list: ListExpenses::new(pool.clone(), memberships.clone(), limits.max_page_size),
             create: CreateExpense::new(pool.clone(), clock.clone(), memberships.clone()),
             get: GetExpense::new(pool.clone(), memberships.clone()),
@@ -90,6 +93,13 @@ impl ExpensesApi {
         };
         let routes = Routes::new()
             .route(Method::GET, EXPENSES, Body::Ignored, list, self.clone())
+            .route(
+                Method::GET,
+                "/api/v1/teams/{teamId}/expenses.csv",
+                Body::Ignored,
+                export,
+                self.clone(),
+            )
             .route(Method::POST, EXPENSES, Body::Json, create, self.clone())
             .route(
                 Method::POST,
@@ -176,6 +186,85 @@ async fn list(
     };
     let found = api.list.execute(query).await.map_err(|e| problem::failure(&e))?;
     Ok(axum::Json(ExpensePageResponse::from(&found)).into_response())
+}
+
+/// `GET /teams/{teamId}/expenses.csv`: the list's filters without paging, newest first, at most
+/// `max-export-rows` rows, streamed: one page of 500 is read when the previous one has been written.
+async fn export(
+    State(api): State<ExpensesApi>,
+    user: CurrentUser,
+    parameters: PathParameters,
+    query: QueryParameters,
+) -> Result<Response, Problem> {
+    let team = team(&parameters)?;
+    let status = query.convert("status", |name| name.parse::<ExpenseStatus>().ok())?;
+    let category = query.convert("category", |name| name.parse::<Category>().ok())?;
+    let claimant = query.uuid("claimantId")?.map(UserId::from_uuid);
+    let currency = query.text("currency");
+    let incurred_from = query.convert_unless_blank("incurredFrom", iso::parse_date_with_optional_offset)?;
+    let incurred_to = query.convert_unless_blank("incurredTo", iso::parse_date_with_optional_offset)?;
+    let mut violations = Violations::default();
+    violations.pattern("currency", currency.as_deref(), CURRENCY_PATTERN, |code| {
+        code.len() == 3 && code.bytes().all(|b| b.is_ascii_uppercase())
+    });
+    violations.into_result()?;
+
+    let filter = Filter {
+        status,
+        category,
+        claimant,
+        currency,
+        incurred_from,
+        incurred_to,
+    };
+    let export = api
+        .export
+        .execute(team, user.id(), filter)
+        .await
+        .map_err(|e| problem::failure(&e))?;
+    let body = axum::body::Body::from_stream(csv_stream(export.pages));
+    let headers = [
+        (header::CONTENT_TYPE, "text/csv;charset=UTF-8".to_owned()),
+        (
+            header::CONTENT_DISPOSITION,
+            "attachment; filename=\"expenses.csv\"".to_owned(),
+        ),
+        (
+            header::HeaderName::from_static("x-total-count"),
+            export.total.to_string(),
+        ),
+        (
+            header::HeaderName::from_static("x-truncated"),
+            export.truncated.to_string(),
+        ),
+        (header::CACHE_CONTROL, "no-store".to_owned()),
+    ];
+    let mut response = body.into_response();
+    for (name, value) in headers {
+        if let Ok(value) = HeaderValue::from_str(&value) {
+            response.headers_mut().insert(name, value);
+        }
+    }
+    Ok(response)
+}
+
+/// The header, then one chunk per page until the pages run out. A page that cannot be read ends the body with
+/// an error, which breaks off the download, as an exception in Java's stream does.
+fn csv_stream(pages: ExportPages) -> impl futures_util::Stream<Item = Result<String, std::io::Error>> + Send + 'static {
+    futures_util::stream::unfold((false, Some(pages)), |(started, pages)| async move {
+        if !started {
+            return Some((Ok(csv::HEADER.to_owned()), (true, pages)));
+        }
+        let mut pages = pages?;
+        match pages.next().await {
+            Ok(rows) if rows.is_empty() => None,
+            Ok(rows) => Some((Ok(csv::rows(&rows)), (true, Some(pages)))),
+            Err(error) => {
+                tracing::error!(error = %error, "Unhandled exception");
+                Some((Err(std::io::Error::other("the export could not be read")), (true, None)))
+            }
+        }
+    })
 }
 
 /// `^(incurredOn|createdAt|amount)(,(asc|desc))?$`, matched against the whole value.

@@ -10,6 +10,7 @@ mod create_expense;
 mod delete_expense;
 #[cfg(test)]
 pub(crate) mod doubles;
+mod export;
 mod filters;
 mod get_expense;
 mod list_expenses;
@@ -23,6 +24,7 @@ pub(crate) use {
     batch::{BatchCreateExpenses, Candidate, ItemResult},
     create_expense::{CreateExpense, CreateExpenseCommand},
     delete_expense::DeleteExpense,
+    export::{ExportExpenses, ExportPages},
     filters::Filter,
     get_expense::GetExpense,
     list_expenses::{ExpensePage, ListExpenses, ListQuery},

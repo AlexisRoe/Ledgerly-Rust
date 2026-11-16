@@ -360,7 +360,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.exportReturnsAnAttachmentWithHeaderAndRows`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn export_returns_an_attachment_with_header_and_rows() {
         let world = World::start().await;
         let team = world.team().await;
@@ -394,7 +393,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.formulaCellsAreNeutralisedAndSpecialCharactersAreQuoted_API10`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn formula_cells_are_neutralised_and_special_characters_are_quoted() {
         let world = World::start().await;
         let team = world.team().await;
@@ -430,7 +428,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.aMemberExportsOnlyTheirOwnExpenses_API1`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_member_exports_only_their_own_expenses() {
         let world = World::start().await;
         let team = world.team().await;
@@ -451,7 +448,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.exportUsesTheSameFiltersAsTheList`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn export_uses_the_same_filters_as_the_list() {
         let world = World::start().await;
         let team = world.team().await;
@@ -470,7 +466,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.exportStreamsManyPagesWithoutRepeatsOrGaps`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn export_streams_many_pages_without_repeats_or_gaps() {
         let world = World::start().await;
         let team = world.team().await;
@@ -502,7 +497,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.exportIsCappedAndSaysSo`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn export_is_capped_and_says_so() {
         let world = World::start().await;
         let team = world.team().await;
@@ -527,7 +521,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.exportOfNothingIsJustTheHeader`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn export_of_nothing_is_just_the_header() {
         let world = World::start().await;
         let team = world.team().await;
@@ -540,7 +533,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.exportAuthorizationAndValidation`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn export_authorization_and_validation() {
         let world = World::start().await;
         let team = world.team().await;

@@ -72,7 +72,6 @@ mod m8 {
 
     /// Java: `Api10UnsafeConsumptionOfApisTest.aFormulaInTheDataIsEscapedInTheExport`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_formula_in_the_data_is_escaped_in_the_export() {
         let world = World::start().await;
         let team = world.team().await;

@@ -416,7 +416,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: `POST …/expenses:batch`, at most 100 items (otherwise 400). Every item is validated before any insert. By default the result is partial: 200 with per-item `{index, status, id | problem}`. With `atomic=true` it's all or nothing, and a failure answers 422. Unknown fields in items are rejected. `ExpensesFacade::create_drafts` and `validate` are the single entry points.
   - Accept: an atomic batch with one bad item writes nothing. 101 items → 400.
 
-- [ ] **M8.2 CSV export**
+- [x] **M8.2 CSV export**
   - Do: `GET …/expenses.csv` with the list's filters and no paging, capped at `max-export-rows` (10,000), with `X-Total-Count` and `X-Truncated`. Java's header row and CRLF line endings. Neutralise cells that start with `=`, `+`, `-`, `@`, tab or CR. Stream the response.
   - Accept: the export parity tests, run in the `max-export-rows=1200` group, and a formula-injection row.
 
