@@ -221,16 +221,17 @@ impl TryFrom<InvitationRow> for Invitation {
     }
 }
 
-/// The team's invitation with this id; `None` also when it belongs to another team. Java:
-/// `InvitationRepository.findByIdAndTeamId`.
-pub(crate) async fn find_invitation_in_team(
+/// The team's invitation with this id, its row locked (`for update`); `None` also when it belongs to another
+/// team. Java: `InvitationRepository.findByIdAndTeamId`, without the lock (see [`lock_invitation`]).
+pub(crate) async fn lock_invitation_in_team(
     connection: &mut PgConnection,
     team: TeamId,
     id: InvitationId,
 ) -> sqlx::Result<Option<Invitation>> {
     sqlx::query_as!(
         InvitationRow,
-        "select id, team_id, email, role, status, expires_at from invitations where id = $1 and team_id = $2",
+        "select id, team_id, email, role, status, expires_at from invitations where id = $1 and team_id = $2 \
+         for update",
         id.as_uuid(),
         team.as_uuid(),
     )
@@ -270,6 +271,24 @@ pub(crate) async fn find_invitation_for_addressee(
     sqlx::query_as!(
         InvitationRow,
         "select id, team_id, email, role, status, expires_at from invitations where id = $1",
+        id.as_uuid(),
+    )
+    .fetch_optional(connection)
+    .await?
+    .map(Invitation::try_from)
+    .transpose()
+}
+
+/// [`find_invitation_for_addressee`] with the row locked (`for update`), so that accepting, declining and revoking
+/// the same invitation run one after the other and only the first succeeds. Java reads without a lock, so two
+/// of them can both succeed (decided after M6: lock). Every use case that takes the team lock takes it first.
+pub(crate) async fn lock_invitation(
+    connection: &mut PgConnection,
+    id: InvitationId,
+) -> sqlx::Result<Option<Invitation>> {
+    sqlx::query_as!(
+        InvitationRow,
+        "select id, team_id, email, role, status, expires_at from invitations where id = $1 for update",
         id.as_uuid(),
     )
     .fetch_optional(connection)

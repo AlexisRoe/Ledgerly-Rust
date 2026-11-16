@@ -1,3 +1,5 @@
+//! Two requests change the same thing at the same moment, and exactly one of them may win.
+//!
 //! Two owners act on each other at the same moment. Without the team row lock both see "two owners left" and
 //! both succeed, leaving none. With it they run one after the other, and the second finds that it is no longer
 //! allowed.
@@ -16,7 +18,13 @@ use ledgerly_shared::role::Role;
 use sqlx::PgPool;
 use tokio::sync::Barrier;
 
-use super::{ChangeMemberRole, Context, LeaveTeam, RemoveMember, UseCaseError};
+use ledgerly_shared::id::InvitationId;
+use uuid::Uuid;
+
+use super::{
+    AcceptInvitation, ChangeMemberRole, Context, DeclineInvitation, LeaveTeam, RemoveMember, RevokeInvitation,
+    UseCaseError,
+};
 
 const ROUNDS: usize = 10;
 
@@ -171,5 +179,120 @@ async fn two_owners_leaving_at_the_same_time_leave_exactly_one_owner() {
 
         assert_eq!(owners(pool, team).await, 1);
         one_winner(&outcomes, |error| matches!(error, UseCaseError::LastOwner(_)));
+    }
+}
+
+/// A verified user with a pending invitation to the team of `owner`, inserted with SQL.
+async fn invited(pool: &PgPool, team: TeamId, owner: UserId) -> (UserId, InvitationId) {
+    let (user, invitation) = (UserId::new_v7(), InvitationId::new_v7());
+    let email = format!("race-{}@example.com", Uuid::new_v4());
+    sqlx::query("insert into users (id, email, password_hash, verified, created_at) values ($1, $2, null, true, $3)")
+        .bind(user.as_uuid())
+        .bind(&email)
+        .bind(Utc::now())
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "insert into invitations (id, team_id, email, role, status, invited_by, created_at, expires_at) \
+         values ($1, $2, $3, 'MEMBER', 'PENDING', $4, now(), now() + interval '7 days')",
+    )
+    .bind(invitation.as_uuid())
+    .bind(team.as_uuid())
+    .bind(&email)
+    .bind(owner.as_uuid())
+    .execute(pool)
+    .await
+    .unwrap();
+    (user, invitation)
+}
+
+/// The invitation's stored status and whether its addressee became a member: they must agree.
+async fn outcome(pool: &PgPool, team: TeamId, user: UserId, invitation: InvitationId) -> (String, bool) {
+    let status: String = sqlx::query_scalar("select status from invitations where id = $1")
+        .bind(invitation.as_uuid())
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let member: bool =
+        sqlx::query_scalar("select exists (select 1 from memberships where team_id = $1 and user_id = $2)")
+            .bind(team.as_uuid())
+            .bind(user.as_uuid())
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    (status, member)
+}
+
+/// Not in Java, which locks no invitation row, so both can succeed there (decided after M6).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn accepting_and_declining_at_the_same_time_lets_exactly_one_win() {
+    let database = TestDatabase::new().await.unwrap();
+    let pool = database.pool();
+    let (accept, decline) = (
+        AcceptInvitation::new(context(pool)),
+        DeclineInvitation::new(context(pool)),
+    );
+    for _ in 0..ROUNDS {
+        let (team, owner, _) = two_owners(pool).await;
+        let (user, invitation) = invited(pool, team, owner).await;
+
+        let outcomes = race(
+            {
+                let accept = accept.clone();
+                async move { accept.execute(invitation, user).await.map(drop) }
+            },
+            {
+                let decline = decline.clone();
+                async move { decline.execute(invitation, user).await }
+            },
+        )
+        .await;
+
+        one_winner(&outcomes, |error| {
+            matches!(error, UseCaseError::InvitationNotPending(_))
+        });
+        let accepted = outcomes[0].is_ok();
+        let expected = if accepted { "ACCEPTED" } else { "DECLINED" };
+        assert_eq!(
+            outcome(pool, team, user, invitation).await,
+            (expected.to_owned(), accepted)
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn accepting_and_revoking_at_the_same_time_lets_exactly_one_win() {
+    let database = TestDatabase::new().await.unwrap();
+    let pool = database.pool();
+    let (accept, revoke) = (
+        AcceptInvitation::new(context(pool)),
+        RevokeInvitation::new(context(pool)),
+    );
+    for _ in 0..ROUNDS {
+        let (team, owner, _) = two_owners(pool).await;
+        let (user, invitation) = invited(pool, team, owner).await;
+
+        let outcomes = race(
+            {
+                let accept = accept.clone();
+                async move { accept.execute(invitation, user).await.map(drop) }
+            },
+            {
+                let revoke = revoke.clone();
+                async move { revoke.execute(team, invitation, owner).await }
+            },
+        )
+        .await;
+
+        one_winner(&outcomes, |error| {
+            matches!(error, UseCaseError::InvitationNotPending(_))
+        });
+        let accepted = outcomes[0].is_ok();
+        let expected = if accepted { "ACCEPTED" } else { "REVOKED" };
+        assert_eq!(
+            outcome(pool, team, user, invitation).await,
+            (expected.to_owned(), accepted)
+        );
     }
 }

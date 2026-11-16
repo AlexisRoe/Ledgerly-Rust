@@ -100,7 +100,7 @@ impl RevokeInvitation {
         let mut transaction = self.context.pool.begin().await?;
         guard::lock_and_require_owner(&mut transaction, team, caller).await?;
         let now = self.context.clock.now();
-        let invitation = persistence::find_invitation_in_team(&mut transaction, team, id)
+        let invitation = persistence::lock_invitation_in_team(&mut transaction, team, id)
             .await?
             .ok_or(UseCaseError::NotFound)?;
         if invitation.status(now) != InvitationStatus::Pending {
@@ -141,7 +141,7 @@ impl AcceptInvitation {
     /// pending and not expired, and a caller who is not a teammate yet.
     pub(crate) async fn execute(&self, id: InvitationId, caller: UserId) -> Result<Joined, UseCaseError> {
         let mut transaction = self.context.pool.begin().await?;
-        let (invitation, user) = addressed(&mut transaction, id, caller).await?;
+        let (invitation, user) = addressed(&mut transaction, id, caller, Lock::None).await?;
         if !user.verified {
             return Err(UseCaseError::EmailNotVerified);
         }
@@ -149,6 +149,12 @@ impl AcceptInvitation {
         require_pending(&invitation, now)?;
         // The same team lock as every membership change, so accepting cannot interleave with removing.
         guard::lock(&mut transaction, invitation.team).await?;
+        // Then the invitation's own row, after the team's as in revoking, and checked again: a decline or revoke
+        // that committed meanwhile wins (Java does not lock it; decided after M6).
+        let invitation = persistence::lock_invitation(&mut transaction, id)
+            .await?
+            .ok_or(UseCaseError::NotFound)?;
+        require_pending(&invitation, now)?;
         if persistence::role_of(&mut transaction, invitation.team, caller)
             .await?
             .is_some()
@@ -187,7 +193,7 @@ impl DeclineInvitation {
     /// Not addressed to the caller: 404. Unlike accepting, declining needs no verified email.
     pub(crate) async fn execute(&self, id: InvitationId, caller: UserId) -> Result<(), UseCaseError> {
         let mut transaction = self.context.pool.begin().await?;
-        let (invitation, _) = addressed(&mut transaction, id, caller).await?;
+        let (invitation, _) = addressed(&mut transaction, id, caller, Lock::Row).await?;
         let now = self.context.clock.now();
         require_pending(&invitation, now)?;
         persistence::set_status(&mut transaction, id, InvitationStatus::Declined).await?;
@@ -211,10 +217,13 @@ async fn addressed(
     connection: &mut PgConnection,
     id: InvitationId,
     caller: UserId,
+    lock: Lock,
 ) -> Result<(Invitation, UserSummary), UseCaseError> {
-    let invitation = persistence::find_invitation_for_addressee(connection, id)
-        .await?
-        .ok_or(UseCaseError::NotFound)?;
+    let invitation = match lock {
+        Lock::None => persistence::find_invitation_for_addressee(connection, id).await?,
+        Lock::Row => persistence::lock_invitation(connection, id).await?,
+    }
+    .ok_or(UseCaseError::NotFound)?;
     let user = ledgerly_identity::find_user(connection, caller)
         .await?
         .ok_or(UseCaseError::NotFound)?;
@@ -223,6 +232,14 @@ async fn addressed(
     } else {
         Err(UseCaseError::NotFound)
     }
+}
+
+/// Whether [`addressed`] locks the invitation's row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Lock {
+    /// Accepting locks the team first, and the invitation only then.
+    None,
+    Row,
 }
 
 /// Expired is [`UseCaseError::InvitationExpired`]; answered or revoked is

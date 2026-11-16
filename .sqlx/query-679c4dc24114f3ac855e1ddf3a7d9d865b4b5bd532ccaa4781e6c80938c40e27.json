@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select id, team_id, email, role, status, expires_at from invitations where id = $1 and team_id = $2",
+  "query": "select id, team_id, email, role, status, expires_at from invitations where id = $1 for update",
   "describe": {
     "columns": [
       {
@@ -72,7 +72,6 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Uuid"
       ]
     },
@@ -85,5 +84,5 @@
       false
     ]
   },
-  "hash": "7fe03be24406c545d75e36aac321df77db1d498d0c4842e45df0aaf5f0a2d156"
+  "hash": "679c4dc24114f3ac855e1ddf3a7d9d865b4b5bd532ccaa4781e6c80938c40e27"
 }
