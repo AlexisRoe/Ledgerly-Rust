@@ -358,6 +358,48 @@ One section per milestone, written by the implementing agent when the milestone 
 
 ## M6 · Teams and authorization
 
+`J/` is Ledgerly-Java's `src/main/java/com/ledgerly/` and `JT/` its `src/test/java/com/ledgerly/`, both at the commit in `vendor/ledgerly-java/SOURCE`. Commits: `19f56b8` (M6.4 `/me`, done first because the teams parity tests read roles through `/me`), `52c05b5` (M6.1), `38b5395` (M6.2), `afc5073` (M6.3).
+
+- **Java → Rust:**
+  - `TeamsController` with `@PreAuthorize("@teamAuthorization.anyOf(#teamId, 'OWNER')")` (`J/teams/internal/web/TeamsController.java`, `J/teams/internal/application/TeamAuthorization.java`) → plain handlers in `crates/teams/src/web/mod.rs` that call `TeamAuthorization::any_of`/`at_least` (`crates/teams/src/application/authorization.rs`) *after* reading the path and the body. Spring resolves every argument (including `@Valid @RequestBody`) before the method interceptor runs, so the order is now visible in the handler instead of being implied by AOP: a non-member with a broken body gets 400, with a good body 404.
+  - `TeamGuard` with `@Lock(PESSIMISTIC_WRITE)` on `TeamRepository.lockById` → `crates/teams/src/application/guard.rs` over `select id from teams where id = $1 for update` (`persistence::lock_team`). Each use case opens its transaction, takes the lock, re-reads the caller's role, then counts owners. JPA's dirty checking (`membership.changeRole`, `invitation.revoke()` flushed at commit) became explicit `update` statements.
+  - `Invitation.status(now)` and the never-stored `EXPIRED` (`J/teams/internal/domain/Invitation.java`) → `Invitation::status` with a separate `stored_status` field (`crates/teams/src/domain.rs`), so code cannot confuse "what the row says" with "what it is now".
+  - The sealed `TeamEvent` with eight records → one `TeamEvent` struct (id, team, actor, time) plus a `TeamEventKind` enum for what differs (`crates/teams/src/events.rs`): the shared header is written once, and a `match` on the kind is exhaustive like Java's switch over the sealed interface.
+  - `TeamsFacade` / `TeamsMembershipLookup` (`J/teams/TeamsFacade.java`, `J/expenses/internal/infrastructure/TeamsMembershipLookup.java`) → `ledgerly_teams::TeamsFacade` (a `Copy` unit struct; it reads in the *caller's* connection) and `TeamsMembershipLookup` in `crates/expenses/src/application/membership.rs`, replacing the `NoTeamsYet` stand-in. `TeamsFacade` also implements the new `shared::role::TeamRoles` port, which M9's audit module will be handed instead of depending on teams (Java's bean-name trick).
+  - `IdentityFacade.find` / `UserSummary` → `ledgerly_identity::find_user` / `UserSummary`, whose `Debug` leaves the email out.
+  - `MdcTeamFilter` → five lines in `shared::web::authenticate` that record `teamId` on the request span from the raw path.
+  - `LastOwnerConcurrencyTest` (`CyclicBarrier`, two threads, `@RepeatedTest(10)`) → `crates/teams/src/application/concurrency_tests.rs`: `tokio::sync::Barrier`, two spawned tasks on a two-worker runtime, ten rounds per case.
+- **Rust features that carried the weight:**
+  - Enums with data and exhaustive `match`: `TeamEventKind`, `UseCaseError` → `Problem` in `crates/teams/src/web/mod.rs` (a new error variant does not compile until it has a status).
+  - Trait objects behind `Arc` at module seams: `Arc<dyn MembershipLookup>` in expenses, `TeamRoles` in shared; boxed futures because `async fn` in a trait is not object-safe.
+  - `&mut PgConnection` as the unit of work: the same `persistence::role_of` serves the authorization check (its own pool connection), the guard (inside the locked transaction) and expenses (inside the expense's transaction).
+  - Multi-threaded Tokio tests with a barrier for the race (`#[tokio::test(flavor = "multi_thread", worker_threads = 2)]`).
+- **Surprises and dead ends:**
+  - The race test was checked to be meaningful, as Java's log says it did: with the lock skipped, all three cases leave zero owners in the first round.
+  - With real memberships, 41 expense parity tests reached a response for the first time, and all failed the harness's contract check on `"note": null` (M4 open question 4). By the reviewer's decision the harness's spec check now accepts `null` for `ExpenseResponse.note` only (`crates/parity-tests/src/spec.rs`, `allow_known_deviations`); a unit test fails once the re-vendored spec makes it unnecessary.
+  - Bruno `04-teams` alone is all 401: it uses the tokens `00-auth` stores. Run them together.
+  - Hibernate's `@Email` refuses an address with surrounding spaces, so `normalise_email`'s `strip()` only ever matters for the user's stored address in `/me` and accept.
+  - Docker Desktop stopped twice while the machine slept; the DB tests were rerun after restarting it.
+- **Parity traps:**
+  - Inviting looks at nothing about the address: not registered, not a teammate, not the inviter's own. Re-inviting revokes the stored-`PENDING` row (also an expired one) *before* inserting, because of the partial unique index `invitations_one_pending_idx`, and publishes no `InvitationRevoked` for it.
+  - Accept checks, in order: addressed to the caller's (normalised) email, else 404 also for an unknown id; verified, else 403 `EMAIL_NOT_VERIFIED`; expired 409 `INVITATION_EXPIRED`; answered 409 `INVITATION_NOT_PENDING` "This invitation is DECLINED"; team lock; already a teammate 409 `ALREADY_MEMBER`. Decline needs no verified email.
+  - Expiry is `!expiresAt.isAfter(now)`: at exactly `expires_at` the invitation is expired. `expiresAt` is written as Jackson writes an `OffsetDateTime` in UTC: seconds always, the fraction with as many digits as needed (`shared::iso::format_instant`; chrono's `AutoSi` writes groups of three). Rust truncates it to microseconds before storing, so the response shows what Postgres keeps.
+  - Two 403 texts: the web check says "Role APPROVER may not do this"; the in-transaction re-check (lost a race) says "Only an owner may do this".
+  - Two `LAST_OWNER` details: "A team must keep at least one owner" (demote, remove) and "The last owner cannot leave; promote someone else first".
+  - Leave answers 404 for a non-teammate *before* taking the lock. Changing a role to the one already held still writes and publishes `MemberRoleChanged`.
+  - The team name is stripped when stored and the stripped name is returned; `"   "` passes `@Size(min = 1)` and is stored as `""`.
+  - `teamId` is on the log span for `/api/v1/teams/<uuid>` followed by the end, `/` or `:`, on the undecoded path, also when the request then fails with 401 for a missing token (the filter sits after the token check but before the authorization decision).
+- **Decisions:**
+  - `/me` lists teams by `joined_at, team_id` and invitations by `created_at, id`. Java's repositories name no order (Postgres usually returns insertion order).
+  - The invitation row is not locked when accepting or declining, as in Java; only the team row is.
+  - The empty email is refused for invitations too, because the M5 decision lives in `Violations::email`. Java accepts `""` there and would store an invitation to the empty address.
+  - `removed_claimant_cannot_withdraw_or_reopen_but_approvers_still_decide` stays ignored until M7: `:submit` needs an accepted receipt over HTTP. The edge case is covered in-process against the real teams adapter (`crates/expenses/src/application/tests.rs`, `a_removed_claimant_loses_access_but_approvers_still_decide`): withdraw, reopen and read are 404 for the removed claimant; an approver still approves, and the expense keeps its claimant id.
+- **Parity tests:** M6: 87 passed, 2 ignored with reasons, 0 failed, including the 80-cell role matrix and all list tests moved from M4. The suite: 144 passed, 124 ignored, 0 failed. `just verify`: 562 tests passed, including the in-process clock tests (`crates/teams/src/web/tests.rs`) and the race tests. Bruno against the app in `local`: `00-auth` 10/10, `01-expenses` all, `04-teams` 4/4, and every `02-reading` list request; its export (M8) and audit (M9) requests are not served yet.
+- **Open questions:**
+  1. **Is the parity trap for `-1.00` right?** `traps.rs` `zero_negative_and_non_monetary_amounts_are_refused` (written in this repo, no Java test of its own) expects field `money` for every case. `-1.00` breaks the spec's `Money.amount` pattern `^[0-9]{1,15}(\.[0-9]{1,4})?$`, so Java's generated model (`@Pattern` under `@Valid`) reports `money.amount` before `ExpenseMapper.toMoney` runs, and Rust does the same. Java's `ExpensesApiTest` only checks `money` for an amount that passes the pattern (`12.345 EUR`). The test is ignored with this reason; should its expectation for `-1.00` become `money.amount`?
+  2. **Accept and decline can both win.** Neither locks the invitation row (Java neither), so an accept and a decline of the same invitation at the same moment can both succeed: the caller is a member and the invitation reads `DECLINED` (or `ACCEPTED`, whichever writes last). Harmless, but lock the row (`for update`) in both?
+  3. **`/me` order.** Is a fixed order (joined, then created) acceptable, or should the reviewer want none named, as in Java?
+
 ## M7 · Receipts
 
 ## M8 · Batch work
