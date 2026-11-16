@@ -109,7 +109,12 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
     Routes::new()
         .merge(modules.identity.routes())
         .merge(modules.teams.routes())
-        .merge(ledgerly_expenses::routes(pool, &modules.clock, limits))
+        .merge(ledgerly_expenses::routes(
+            pool,
+            &modules.clock,
+            limits,
+            modules.teams.facade(),
+        ))
 }
 
 /// `routes` behind the layers every API request passes, from the outside in:

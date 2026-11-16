@@ -353,7 +353,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: lock the team row (`SELECT … FOR UPDATE`) in ChangeRole, Remove and Leave.
   - Accept: two OWNERs demoting each other at the same moment (two tasks with a barrier) leave exactly one OWNER.
 
-- [ ] **M6.3 Authorization everywhere**
+- [x] **M6.3 Authorization everywhere**
   - Do:
     - `TeamsFacade::role_of` replaces the expenses `MembershipLookup` double.
     - `teams` implements `shared::TeamRoles`.

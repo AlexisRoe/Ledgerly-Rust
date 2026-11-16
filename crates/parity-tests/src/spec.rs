@@ -57,7 +57,8 @@ impl Spec {
     }
 
     fn parse(yaml: &str) -> Self {
-        let document: Value = serde_saphyr::from_str(yaml).expect("api/openapi.yaml is valid YAML");
+        let mut document: Value = serde_saphyr::from_str(yaml).expect("api/openapi.yaml is valid YAML");
+        allow_known_deviations(&mut document);
         let default_prefix = server_prefix(&document);
         let mut operations = Vec::new();
         for (path, item) in document["paths"].as_object().expect("the spec has paths") {
@@ -250,6 +251,19 @@ fn matches_segment(pattern: &str, actual: &str) -> bool {
     actual
         .strip_suffix(suffix)
         .is_some_and(|value| !value.is_empty() && !value.contains(':'))
+}
+
+/// `ExpenseResponse.note` is `{type: string}` in the spec, but Java writes `"note": null` for an expense without
+/// a note (its generated model has no `@JsonInclude`), and Rust does the same. The reviewer decided after M4 to
+/// keep Java's `null` and to declare `note` nullable in the spec, upstream in Ledgerly-Java first; after M6, to
+/// accept `null` here until then (learning log, M4 open question 4 and M6). This is the only property widened,
+/// and [`tests::the_note_exception_is_still_needed`] fails once the vendored spec no longer needs it.
+fn allow_known_deviations(document: &mut Value) {
+    if let Some(note) = document.pointer_mut("/components/schemas/ExpenseResponse/properties/note")
+        && note == &json!({"type": "string"})
+    {
+        *note = json!({"type": ["string", "null"]});
+    }
 }
 
 #[cfg(test)]
@@ -448,5 +462,43 @@ mod tests {
 
         assert_eq!(check(me(TEAM)), Ok(()));
         assert!(matches!(check(me("not-a-uuid")), Err(Violation::WrongBody(_))));
+    }
+
+    /// The vendored spec still says `note: {type: string}`. When Ledgerly-Java declares it nullable and the spec
+    /// is re-vendored, this fails: then delete [`allow_known_deviations`] and this test.
+    #[test]
+    fn the_note_exception_is_still_needed() {
+        let vendored: Value = serde_saphyr::from_str(SOURCE).unwrap();
+        assert_eq!(
+            vendored.pointer("/components/schemas/ExpenseResponse/properties/note"),
+            Some(&json!({"type": "string"}))
+        );
+    }
+
+    #[test]
+    fn an_expense_without_a_note_passes_and_other_nulls_do_not() {
+        let expense = |note: Value, merchant: Value| {
+            json!({
+                "id": "0196f3a2-0000-7000-8000-000000000002",
+                "teamId": TEAM,
+                "claimantId": "0196f3a2-0000-7000-8000-000000000003",
+                "money": {"amount": "12.50", "currency": "EUR"},
+                "category": "MEALS",
+                "incurredOn": "2026-11-14",
+                "merchant": merchant,
+                "note": note,
+                "status": "DRAFT",
+                "rejectionReasons": [],
+            })
+            .to_string()
+            .into_bytes()
+        };
+        let path = format!("/api/v1/teams/{TEAM}/expenses/0196f3a2-0000-7000-8000-000000000002");
+        let check = |body: Vec<u8>| spec().check("GET", &path, 200, Some("application/json"), &body);
+
+        assert_eq!(check(expense(Value::Null, json!("Cafe"))), Ok(()));
+        assert_eq!(check(expense(json!("lunch"), json!("Cafe"))), Ok(()));
+        assert!(check(expense(json!(5), json!("Cafe"))).is_err());
+        assert!(check(expense(Value::Null, Value::Null)).is_err());
     }
 }

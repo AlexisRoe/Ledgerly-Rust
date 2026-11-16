@@ -82,7 +82,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.pagingThrough250ExpensesVisitsEachOnce`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn paging_through_250_expenses_visits_each_once() {
         let world = World::start().await;
         let team = world.team().await;
@@ -113,7 +112,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.pageBeyondTheEndIsEmptyNotAnError`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn page_beyond_the_end_is_empty_not_an_error() {
         let world = World::start().await;
         let team = world.team().await;
@@ -127,7 +125,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.sizeAbove100IsRejectedNotClamped_API4`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn size_above_100_is_rejected_not_clamped() {
         let world = World::start().await;
         let team = world.team().await;
@@ -140,7 +137,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.zeroNegativeAndNonNumericPagingParametersAreRejected`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn zero_negative_and_non_numeric_paging_parameters_are_rejected() {
         let world = World::start().await;
         let team = world.team().await;
@@ -154,7 +150,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.defaultSortIsIncurredOnDescending`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn default_sort_is_incurred_on_descending() {
         let world = World::start().await;
         let team = world.team().await;
@@ -169,7 +164,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.sortAscendingAndByCreatedAt`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn sort_ascending_and_by_created_at() {
         let world = World::start().await;
         let team = world.team().await;
@@ -188,7 +182,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.sortByAmountNeedsACurrencyFilter`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn sort_by_amount_needs_a_currency_filter() {
         let world = World::start().await;
         let team = world.team().await;
@@ -209,7 +202,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.sortByAmountWithCurrencyOrdersNumerically`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn sort_by_amount_with_currency_orders_numerically() {
         let world = World::start().await;
         let team = world.team().await;
@@ -227,7 +219,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.sortInjectionIsRejected`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn sort_injection_is_rejected() {
         let world = World::start().await;
         let team = world.team().await;
@@ -254,7 +245,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.filtersCombine`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn filters_combine() {
         let world = World::start().await;
         let team = world.team().await;
@@ -314,7 +304,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.dateRangeIsInclusive`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn date_range_is_inclusive() {
         let world = World::start().await;
         let team = world.team().await;
@@ -329,7 +318,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.badFilterValuesAreRejected`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn bad_filter_values_are_rejected() {
         let world = World::start().await;
         let team = world.team().await;
@@ -349,7 +337,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.memberSeesOnlyOwnEvenWhenFilteringForSomeoneElse`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn member_sees_only_own_even_when_filtering_for_someone_else() {
         let world = World::start().await;
         let team = world.team().await;
@@ -372,7 +359,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.approverAndOwnerSeeEveryone`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn approver_and_owner_see_everyone() {
         let world = World::start().await;
         let team = world.team().await;
@@ -385,7 +371,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.nonTeammateGets404`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn non_teammate_gets_404() {
         let world = World::start().await;
         let team = world.team().await;
@@ -397,7 +382,6 @@ mod m6 {
 
     /// Java: `ExpensesListApiTest.anotherTeamsExpensesAreNotListed`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn another_teams_expenses_are_not_listed() {
         let world = World::start().await;
         let team = world.team().await;

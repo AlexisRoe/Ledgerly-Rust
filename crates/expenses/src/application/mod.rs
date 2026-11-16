@@ -24,7 +24,7 @@ pub(crate) use {
     filters::Filter,
     get_expense::GetExpense,
     list_expenses::{ExpensePage, ListExpenses, ListQuery},
-    membership::{MembershipLookup, NoTeamsYet},
+    membership::{MembershipLookup, TeamsMembershipLookup},
     transition_expense::TransitionExpense,
     update_expense::{UpdateExpense, UpdateExpenseCommand},
 };

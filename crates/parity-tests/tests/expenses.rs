@@ -86,7 +86,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.createReturns201WithLocationAndEtag`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn create_returns_201_with_location_and_etag() {
         let world = World::start().await;
         let team = world.team().await;
@@ -107,7 +106,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.getReturnsTheExpenseWithEtag`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn get_returns_the_expense_with_etag() {
         let world = World::start().await;
         let team = world.team().await;
@@ -125,7 +123,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.patchWithIfMatchUpdatesAndBumpsEtag`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn patch_with_if_match_updates_and_bumps_etag() {
         let world = World::start().await;
         let team = world.team().await;
@@ -147,7 +144,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.deleteDraftReturns204ThenGone`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn delete_draft_returns_204_then_gone() {
         let world = World::start().await;
         let team = world.team().await;
@@ -165,7 +161,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.patchCannotSetStatusOrClaimant_API3`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn patch_cannot_set_status_or_claimant() {
         let world = World::start().await;
         let team = world.team().await;
@@ -195,7 +190,6 @@ mod m6 {
     /// answer, so the expense it approves is still a draft; the role and self-dealing checks come before the
     /// state check.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn approving_your_own_expense_gets_409() {
         let world = World::start().await;
         let team = world.team().await;
@@ -212,7 +206,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.illegalTransitionGets409`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn illegal_transition_gets_409() {
         let world = World::start().await;
         let team = world.team().await;
@@ -234,7 +227,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.tooManyDecimalsGets400WithFieldError`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn too_many_decimals_gets_400_with_field_error() {
         let world = World::start().await;
         let team = world.team().await;
@@ -249,7 +241,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.futureDateGets400`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn future_date_gets_400() {
         let world = World::start().await;
         let team = world.team().await;
@@ -269,7 +260,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.beanValidationErrorsAreListedPerField`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn validation_errors_are_listed_per_field() {
         let world = World::start().await;
         let team = world.team().await;
@@ -285,7 +275,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.malformedJsonGets400Problem`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn malformed_json_gets_400_problem() {
         let world = World::start().await;
         let team = world.team().await;
@@ -303,7 +292,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.missingIfMatchGets428AndStaleGets412`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn missing_if_match_gets_428_and_stale_gets_412() {
         let world = World::start().await;
         let team = world.team().await;
@@ -330,7 +318,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.secondPatchWithOldEtagGets412`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn second_patch_with_old_etag_gets_412() {
         let world = World::start().await;
         let team = world.team().await;
@@ -356,7 +343,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.anotherMemberCannotSeeOrTouchMyExpense_API1`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn another_member_cannot_see_or_touch_my_expense() {
         let world = World::start().await;
         let team = world.team().await;
@@ -380,7 +366,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.nonTeammateGets404EvenWithAValidId_API1`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn non_teammate_gets_404_even_with_a_valid_id() {
         let world = World::start().await;
         let team = world.team().await;
@@ -404,7 +389,6 @@ mod m6 {
     /// Java: `ExpensesApiTest.expenseOfTeamAIsNotFoundThroughTeamB_API1`. Java makes the caller an OWNER of the
     /// random team in the path; here it is the owner of a second team.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn expense_of_team_a_is_not_found_through_team_b() {
         let world = World::start().await;
         let (a, b) = (world.team().await, world.team().await);
@@ -421,7 +405,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.approverCanSeeAnotherMembersExpense`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn approver_can_see_another_members_expense() {
         let world = World::start().await;
         let team = world.team().await;
@@ -438,7 +421,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.missingTokenGets401`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn missing_token_gets_401() {
         let world = World::start().await;
         let team = world.team().await;
@@ -474,7 +456,6 @@ mod m6 {
     /// Java: `ExpensesApiTest.sameKeySameBodyReplaysTheOriginal`. The key is fresh per run: the database is
     /// shared and never cleaned, and Java's literal key would replay an earlier run.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn same_key_same_body_replays_the_original() {
         let world = World::start().await;
         let team = world.team().await;
@@ -489,7 +470,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.sameKeyDifferentBodyGets422`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn same_key_different_body_gets_422() {
         let world = World::start().await;
         let team = world.team().await;
@@ -511,7 +491,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.sameKeyFromAnotherUserIsIndependent`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn same_key_from_another_user_is_independent() {
         let world = World::start().await;
         let team = world.team().await;
@@ -526,7 +505,6 @@ mod m6 {
 
     /// Java: `ExpensesApiTest.withoutKeyEveryPostCreatesANewExpense`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn without_key_every_post_creates_a_new_expense() {
         let world = World::start().await;
         let team = world.team().await;

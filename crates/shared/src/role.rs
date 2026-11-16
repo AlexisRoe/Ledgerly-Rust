@@ -3,7 +3,12 @@
 //! Java counterpart: `shared/role/Role.java`.
 
 use std::fmt;
+use std::pin::Pin;
 use std::str::FromStr;
+
+use sqlx::PgConnection;
+
+use crate::id::{TeamId, UserId};
 
 /// A rank within a team. The ladder is Member < Approver < Owner, and a higher rank includes the lower ones.
 ///
@@ -66,6 +71,20 @@ impl FromStr for Role {
             .find(|role| role.as_str() == s)
             .ok_or_else(|| UnknownRole(s.to_owned()))
     }
+}
+
+/// Port: the user's role in the team, `None` when they are not a teammate. The teams module implements it and
+/// the app hands it to modules that may not depend on teams (audit), as Java's audit module reaches
+/// `@teamAuthorization` by bean name without importing teams (CONCEPT, ADR 0010).
+///
+/// It takes the caller's connection, so that the role is read in the caller's transaction.
+pub trait TeamRoles: fmt::Debug + Send + Sync {
+    fn role_of<'a>(
+        &'a self,
+        connection: &'a mut PgConnection,
+        team: TeamId,
+        user: UserId,
+    ) -> Pin<Box<dyn Future<Output = sqlx::Result<Option<Role>>> + Send + 'a>>;
 }
 
 #[cfg(test)]

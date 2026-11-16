@@ -14,7 +14,6 @@ mod m6 {
 
     /// Java: `Api1BrokenObjectLevelAuthorizationTest.aMemberGets404ForATeammatesExpense`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn a_member_gets_404_for_a_teammates_expense() {
         let world = World::start().await;
         let team = world.team().await;
@@ -28,7 +27,6 @@ mod m6 {
 
     /// Java: `Api1BrokenObjectLevelAuthorizationTest.theListNeverShowsAnotherTeamsOrAnotherMembersExpenses`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn the_list_never_shows_another_teams_or_another_members_expenses() {
         let world = World::start().await;
         let (a, b) = (world.team().await, world.team().await);
@@ -50,7 +48,6 @@ mod m6 {
 
     /// Java: `Api1BrokenObjectLevelAuthorizationTest.anOutsiderLearnsNothingAboutWhichTeamsExist`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn an_outsider_learns_nothing_about_which_teams_exist() {
         let world = World::start().await;
         let outsider = world.user().await;

@@ -536,7 +536,6 @@ mod m6 {
     /// Java: `AuthApiTest.aValidTokenIsAcceptedAndNoTokenIsNot`, the half with a token: 404, not 401, because
     /// the caller is authenticated but not a teammate of this (random) team.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn a_valid_token_is_accepted() {
         let world = World::start().await;
         let token = access_token(&logged_in(&world).await);

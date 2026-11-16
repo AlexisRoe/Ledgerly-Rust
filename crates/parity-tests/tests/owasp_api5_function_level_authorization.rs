@@ -14,7 +14,6 @@ mod m6 {
 
     /// Java: `Api5BrokenFunctionLevelAuthorizationTest.aMemberCallingApproveGets403`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn a_member_calling_approve_gets_403() {
         let world = World::start().await;
         let team = world.team().await;
@@ -33,7 +32,6 @@ mod m6 {
 
     /// Java: `Api5BrokenFunctionLevelAuthorizationTest.anApproverCannotReimburseAndAMemberCannotReject`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn an_approver_cannot_reimburse_and_a_member_cannot_reject() {
         let world = World::start().await;
         let team = world.team().await;
@@ -58,7 +56,6 @@ mod m6 {
 
     /// Java: `Api5BrokenFunctionLevelAuthorizationTest.nobodyCanActAsAnotherRoleThroughHeadersOrTokens`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn nobody_can_act_as_another_role_through_headers_or_tokens() {
         let world = World::start().await;
         let team = world.team().await;
@@ -79,7 +76,6 @@ mod m6 {
 
     /// Java: `Api5BrokenFunctionLevelAuthorizationTest.aDemotionTakesEffectOnTheNextRequestWithTheSameToken`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn a_demotion_takes_effect_on_the_next_request_with_the_same_token() {
         let world = World::start().await;
         let team = world.team().await;

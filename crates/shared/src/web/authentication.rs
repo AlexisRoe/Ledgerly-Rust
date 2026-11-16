@@ -111,8 +111,8 @@ fn bearer(headers: &HeaderMap) -> Bearer<'_> {
     }
 }
 
-/// Middleware: the caller as [`CurrentUser`] in the request's extensions, `userId` on the request's log span,
-/// or 401.
+/// Middleware: the caller as [`CurrentUser`] in the request's extensions, `userId` and `teamId` on the request's
+/// log span, or 401.
 ///
 /// It must run inside the problem rendering, so that the 401 gets `instance` and `traceId`, and outside the
 /// routes.
@@ -131,6 +131,10 @@ pub async fn authenticate(State(authentication): State<Authentication>, mut requ
             }
         }
     };
+    // Java's `MdcTeamFilter`, which sits after the token check but before the decision about a missing token.
+    if let Some(team) = team_in_path(request.uri().path()) {
+        tracing::Span::current().record("teamId", team);
+    }
     match user {
         Some(user) => {
             // Java's `MdcUserFilter`: the id, never the email, on every log line of the request.
@@ -141,6 +145,23 @@ pub async fn authenticate(State(authentication): State<Authentication>, mut requ
         None => return Problem::unauthenticated().into_response(),
     }
     next.run(request).await
+}
+
+/// The team id of `/api/v1/teams/{teamId}`, `…/{teamId}/…` and `…/{teamId}:…`, as the raw path has it. Java:
+/// `MdcTeamFilter.TEAM_PATH`, `^/api/v1/teams/(<uuid>)(?:[/:].*)?$` on the undecoded request URI, with the
+/// UUID's hex digits in either case.
+fn team_in_path(path: &str) -> Option<&str> {
+    let rest = path.strip_prefix("/api/v1/teams/")?;
+    let (team, after) = rest.split_at_checked(36)?;
+    let canonical = team.char_indices().all(|(index, c)| {
+        if matches!(index, 8 | 13 | 18 | 23) {
+            c == '-'
+        } else {
+            c.is_ascii_hexdigit()
+        }
+    });
+    let ends = after.is_empty() || after.starts_with('/') || after.starts_with(':');
+    (canonical && ends).then_some(team)
 }
 
 #[cfg(test)]
@@ -355,5 +376,25 @@ mod tests {
             call(&router, Method::GET, "/api/v1/auth/login", None).await.0,
             StatusCode::OK
         );
+    }
+
+    /// Java: `MdcTeamFilterTest`.
+    #[test]
+    fn team_scoped_paths_name_their_team_and_no_other_path_does() {
+        let team = "11111111-2222-3333-4444-555555555555";
+        assert_eq!(team_in_path(&format!("/api/v1/teams/{team}/expenses")), Some(team));
+        assert_eq!(team_in_path(&format!("/api/v1/teams/{team}:leave")), Some(team));
+        assert_eq!(team_in_path(&format!("/api/v1/teams/{team}")), Some(team));
+        assert_eq!(
+            team_in_path("/api/v1/teams/ABCDEF01-2222-3333-4444-555555555555/x"),
+            Some("ABCDEF01-2222-3333-4444-555555555555")
+        );
+
+        assert_eq!(team_in_path("/api/v1/me"), None);
+        assert_eq!(team_in_path("/api/v1/teams"), None);
+        assert_eq!(team_in_path("/api/v1/teams/not-a-uuid/expenses"), None);
+        assert_eq!(team_in_path("/api/v1/teams/{x}%0Afake=1/expenses"), None);
+        assert_eq!(team_in_path(&format!("/api/v1/teams/{team}x")), None);
+        assert_eq!(team_in_path("/api/v1/teams/11111111-2222-3333-4444-55555555555é"), None);
     }
 }

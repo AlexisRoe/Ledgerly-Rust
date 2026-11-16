@@ -251,7 +251,6 @@ mod m6 {
     /// Java: `RoleMatrixTest.everyCellOfTheMatrix`. Every cell gets a fresh team, as in Java; all cells are
     /// tried, and the ones that differ are reported together.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn every_cell_of_the_matrix() {
         let world = World::start().await;
         let mut wrong = Vec::new();

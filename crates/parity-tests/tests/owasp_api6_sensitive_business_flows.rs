@@ -15,7 +15,6 @@ mod m6 {
 
     /// Java: `Api6UnrestrictedAccessToSensitiveBusinessFlowsTest.anApproverCannotApproveOrRejectTheirOwnExpense`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn an_approver_cannot_approve_or_reject_their_own_expense() {
         let world = World::start().await;
         let team = world.team().await;
@@ -39,7 +38,6 @@ mod m6 {
 
     /// Java: `Api6UnrestrictedAccessToSensitiveBusinessFlowsTest.anOwnerCannotReimburseTheirOwnExpense`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn an_owner_cannot_reimburse_their_own_expense() {
         let world = World::start().await;
         let team = world.team().await;
@@ -57,7 +55,6 @@ mod m6 {
 
     /// Java: `Api6UnrestrictedAccessToSensitiveBusinessFlowsTest.somebodyElseCanStillDecideSoTheRuleIsNotJustABrokenWorkflow`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn somebody_else_can_still_decide_so_the_rule_is_not_just_a_broken_workflow() {
         let world = World::start().await;
         let team = world.team().await;

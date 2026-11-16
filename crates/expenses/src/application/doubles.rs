@@ -49,10 +49,9 @@ mod tests {
     use ledgerly_shared::database::TestDatabase;
 
     use super::*;
-    use crate::application::NoTeamsYet;
 
     #[tokio::test]
-    async fn the_doubles_answer_what_the_test_set_up_and_the_stand_in_knows_nobody() {
+    async fn the_doubles_answer_what_the_test_set_up() {
         let database = TestDatabase::new().await.unwrap();
         let mut connection = database.pool().acquire().await.unwrap();
         let (team, member, stranger) = (TeamId::new_v7(), UserId::new_v7(), UserId::new_v7());
@@ -66,7 +65,6 @@ mod tests {
             memberships.role_of(&mut connection, team, stranger).await.unwrap(),
             None
         );
-        assert_eq!(NoTeamsYet.role_of(&mut connection, team, member).await.unwrap(), None);
         assert_eq!(
             FixedReceipts(ReceiptSummary::new(1, 0)).summary_for(team, ExpenseId::new_v7()),
             ReceiptSummary::new(1, 0)

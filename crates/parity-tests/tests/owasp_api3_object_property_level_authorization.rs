@@ -27,7 +27,6 @@ mod m6 {
 
     /// Java: `Api3BrokenObjectPropertyLevelAuthorizationTest.patchWithStatusIsRejectedAndNothingChanges`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn patch_with_status_is_rejected_and_nothing_changes() {
         let world = World::start().await;
         let team = world.team().await;
@@ -76,7 +75,6 @@ mod m6 {
 
     /// Java: `Api3BrokenObjectPropertyLevelAuthorizationTest.responsesShowOnlyTheDocumentedFields`.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn responses_show_only_the_documented_fields() {
         let world = World::start().await;
         let team = world.team().await;

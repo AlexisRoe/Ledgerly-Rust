@@ -133,7 +133,6 @@ mod m6 {
     /// Java: `Api2BrokenAuthenticationTest.accessTokensAreShortLivedAndTamperedOnesAreRefused`, the tampered
     /// half. The other half (a genuine token after 11 minutes) needs a clock.
     #[tokio::test]
-    #[ignore = "M6"]
     async fn a_token_with_a_forged_signature_is_refused() {
         let world = World::start().await;
         let user = world.user().await;

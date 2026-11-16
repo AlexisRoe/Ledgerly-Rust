@@ -727,3 +727,82 @@ async fn a_replay_of_a_deleted_expense_is_a_conflict() {
         "{replay:?}"
     );
 }
+
+/// The edge case of Java's M6, here against the real teams adapter (the parity test needs M7's receipts to
+/// submit over HTTP). A claimant removed from the team is no longer a teammate: withdrawing, reopening and
+/// reading their own expense are 404. Approvers can still decide on it, and it keeps its claimant. Java:
+/// `TeamsApiTest.removedClaimantCannotWithdrawOrReopenButApproversStillDecide`.
+#[tokio::test]
+async fn a_removed_claimant_loses_access_but_approvers_still_decide() {
+    let database = TestDatabase::new().await.unwrap();
+    let pool = database.pool().clone();
+    let (team, claimant, approver) = (TeamId::new_v7(), UserId::new_v7(), UserId::new_v7());
+    sqlx::query("insert into teams (id, name, created_at) values ($1, 'Acme', $2)")
+        .bind(team.as_uuid())
+        .bind(now())
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (user, role) in [(claimant, "MEMBER"), (approver, "APPROVER")] {
+        sqlx::query("insert into memberships (team_id, user_id, role, joined_at) values ($1, $2, $3, $4)")
+            .bind(team.as_uuid())
+            .bind(user.as_uuid())
+            .bind(role)
+            .bind(now())
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let memberships: Arc<dyn MembershipLookup> = Arc::new(TeamsMembershipLookup(ledgerly_teams::TeamsFacade));
+    let create = CreateExpense::new(pool.clone(), clock(), memberships.clone());
+    let get = GetExpense::new(pool.clone(), memberships.clone());
+    let transition = TransitionExpense::new(
+        pool.clone(),
+        clock(),
+        memberships,
+        Arc::new(FixedReceipts(ReceiptSummary::new(1, 0))),
+    );
+    let mut submitted = Vec::new();
+    for _ in 0..2 {
+        let command = CreateExpenseCommand {
+            team,
+            claimant,
+            expense: lunch(),
+        };
+        let id = create.execute(command, None).await.unwrap().value.id();
+        transition
+            .execute(Action::Submit, team, id, claimant, None)
+            .await
+            .unwrap();
+        submitted.push(id);
+    }
+    let (to_approve, to_reject) = (submitted[0], submitted[1]);
+    transition
+        .execute(Action::Reject, team, to_reject, approver, Some("receipt unreadable"))
+        .await
+        .unwrap();
+
+    sqlx::query("delete from memberships where team_id = $1 and user_id = $2")
+        .bind(team.as_uuid())
+        .bind(claimant.as_uuid())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let withdraw = transition
+        .execute(Action::Withdraw, team, to_approve, claimant, None)
+        .await;
+    let reopen = transition
+        .execute(Action::Reopen, team, to_reject, claimant, None)
+        .await;
+    let read = get.execute(team, to_approve, claimant).await;
+    assert!(matches!(withdraw, Err(UseCaseError::NotFound)), "{withdraw:?}");
+    assert!(matches!(reopen, Err(UseCaseError::NotFound)), "{reopen:?}");
+    assert!(matches!(read, Err(UseCaseError::NotFound)), "{read:?}");
+    let approved = transition
+        .execute(Action::Approve, team, to_approve, approver, None)
+        .await
+        .unwrap();
+    assert_eq!(approved.value.status(), ExpenseStatus::Approved);
+    assert_eq!(approved.value.claimant_id(), claimant);
+}
