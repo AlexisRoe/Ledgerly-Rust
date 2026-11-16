@@ -337,20 +337,20 @@ mod m6 {
 
     /// §4.4: zero and negative amounts are refused, and the pseudo-currencies too.
     #[tokio::test]
-    #[ignore = "expectation in question: -1.00 breaks the spec's Money.amount pattern ^[0-9]..., so Java's \
-                generated Money model (@Pattern, @Valid) reports field money.amount before ExpenseMapper.toMoney; \
-                Java's ExpensesApiTest only checks field money for amounts that pass the pattern (12.345 EUR)"]
     async fn zero_negative_and_non_monetary_amounts_are_refused() {
         let world = World::start().await;
         let team = world.team().await;
 
-        for (amount, currency) in [
-            ("0", "EUR"),
-            ("0.00", "EUR"),
-            ("-1.00", "EUR"),
-            ("1.00", "XAU"),
-            ("1.00", "XTS"),
-            ("1.00", "XXX"),
+        // `-1.00` already breaks the spec's `Money.amount` pattern, so Java's generated model (`@Pattern` under
+        // `@Valid`) names `money.amount` before `ExpenseMapper.toMoney` runs; the others pass the pattern and are
+        // refused by `Money` itself, on `money` (decided after M6).
+        for (amount, currency, field) in [
+            ("0", "EUR", "money"),
+            ("0.00", "EUR", "money"),
+            ("-1.00", "EUR", "money.amount"),
+            ("1.00", "XAU", "money"),
+            ("1.00", "XTS", "money"),
+            ("1.00", "XXX", "money"),
         ] {
             let body = json!({
                 "money": {"amount": amount, "currency": currency},
@@ -360,7 +360,7 @@ mod m6 {
             });
             let response = world.create_expense(&team, &team.member, &body).await;
             assert_eq!(response.status, 400, "{amount} {currency}");
-            assert_eq!(response.json()["errors"][0]["field"], "money", "{amount} {currency}");
+            assert_eq!(response.json()["errors"][0]["field"], field, "{amount} {currency}");
         }
     }
 
