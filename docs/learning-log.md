@@ -538,6 +538,46 @@ One section per milestone, written by the implementing agent when the milestone 
 
 ## M10 · Hardening and observability
 
+`J/` and `JT/` as in M8. Commits: `f46ca70` (M10.1), `eaca5c8` (M10.2), `29831f7` (M10.3), `abd3a00` (M10.4),
+`4cabd10` (M10.5), `9ce56ee` (M10.6), `69ea36e` (M10.7).
+
+- **Java → Rust:**
+  - `ApiRateLimitFilter` and `AuthRateLimitFilter` (`J/shared/security/`), placed in `SecurityConfig`'s chain, and `ProblemSecurityHandler.rateLimited` → two middlewares around `authenticate` (`crates/shared/src/web/rate_limit.rs`): the per-address budget on `/api/v1/auth/` before the token check, the per-user budget right after it. Both use M5's `RateLimiter`, now shared by the login lock and the request budgets. `Retry-After` is `max(1, ceil(ms / 1000))` as Java computes it.
+  - Tomcat's `RemoteIpValve` (`server.forward-headers-strategy=native`) and Spring's `ForwardedHeaderFilter` (`framework`) → `crates/shared/src/web/forwarded.rs`, which answers the two questions Java's code asks the servlet request: the client address (`getRemoteAddr`) and the origin the request was sent to (`getScheme`/`getServerName`/`getServerPort`, for the CORS same-origin check). The axum server now passes the peer address (`into_make_service_with_connect_info`).
+  - Spring Security's `HeaderWriterFilter` with the defaults plus `SecurityConfig.headers(…)` → `secure_headers` (API) and `management_headers` (`crates/shared/src/web/browser.rs`), which write after the handler, each header only if the handler has not, as Spring writes on commit.
+  - Spring's `CorsFilter` + `DefaultCorsProcessor` with `SecurityConfig.corsSource` → `cors` in the same file: the processor's decision as an enum (`NotCors`, `Actual(headers)`, `Preflight(headers)`, `Rejected`).
+  - Spring MVC's `HttpOptionsHandler` and `ProducesRequestCondition` → two more outcomes of the route table (`crates/shared/src/web/routing.rs`): `RouteRejection::Options` (200 with `Allow` and `Accept-Patch`) and `RouteRejection::NotAcceptable` (406), with the media-type matching of `MimeType.isCompatibleWith` in `crates/shared/src/web/accept.rs`. Each endpoint now declares what it produces (`Routes::producing`); the generated Java interfaces carry it as `produces`, and a test compares every endpoint's list with the spec (`crates/app/tests/api_inventory.rs`).
+  - Micrometer's `MeterRegistry` counters and `Observation`s → the `metrics` facade in the modules and `ledgerly_shared::observation::Observation` (timer `<name>_seconds` with the low-cardinality tags plus `error`, and an OpenTelemetry span named by the contextual name); the Prometheus registry → `metrics-exporter-prometheus` behind a small recorder that adds Micrometer's `_total` to counters (`crates/app/src/metrics.rs`).
+  - The ArchUnit rule of `JT/owasp/Api7ServerSideRequestForgeryTest.java` → two checks in `crates/app/tests/architecture.rs`: no crate but `shared` depends on an HTTP or socket client crate (from `cargo metadata`), and no production source outside `shared/storage` and the ClamAV scanner names one. `deny.toml` bans other HTTP clients and OpenSSL.
+  - Spring Boot's `DataSourceHealthIndicator` → `database_status` in `crates/app/src/management.rs`.
+- **Rust features that carried the weight:**
+  - `axum::middleware::from_fn_with_state` for every layer; the order of `.layer(…)` calls is the order of Spring Security's filters, outermost last (`crates/app/src/lib.rs`, `layered_with`).
+  - Request and response extensions as the channel between layers: `CurrentUser` (authentication → user budget), `ConnectInfo<SocketAddr>` (server → address budget, CORS), `MatchedRoute` (route table → HTTP metric).
+  - The `metrics::Recorder` trait, wrapped to rename counters without touching the call sites.
+  - `opentelemetry::trace::FutureExt::with_context`: the request's span is the current context while the request runs, so the observations' spans become its children without passing anything down.
+- **Surprises and dead ends:**
+  - `metrics-exporter-prometheus` does not add `_total` to counters, which Micrometer's Prometheus names have; the recorder wrapper does it (the unit test in `metrics.rs` pins the names).
+  - `PrometheusBuilder` is not `Clone`, so a builder whose bucket setting failed cannot be recovered; the fallback builds a fresh one.
+  - The in-process probe tests ran the app on a pool that never connects ("the probes never touch the database"). With the `db` indicator, `/actuator/health` does, so those tests now get a test database, and a new one checks `DOWN` without one.
+  - The log-hygiene port passed every secret check but not its last line, "the log names the team by id": Java's log names the team only through Spring Batch, which logs a job's parameters (the team id among them) when it starts and ends. See open question 4.
+- **Parity traps:**
+  - Spring Security's cache headers are `no-cache, no-store, max-age=0, must-revalidate` with `Pragma: no-cache` and `Expires: 0`, but only when the handler set none of the three: login and the receipt link keep their exact `no-store`. The reference doc said the global value had to be `no-store`; it is corrected. Spring also adds `X-XSS-Protection: 0`, and writes HSTS as `max-age=31536000 ; includeSubDomains` (space before the semicolon).
+  - The security headers go on everything inside the security chain: 401, 403 from CORS, 404, 429, the preflight. Not on the 413 for a declared oversized JSON body, because `JsonBodyLimitFilter` runs before the chain.
+  - CORS: every response gets three `Vary` lines (`Origin`, `Access-Control-Request-Method`, `Access-Control-Request-Headers`), CORS or not. Origins compare case-insensitively with a trailing slash ignored, and the answer echoes the origin as sent. An actual request with an allowed origin but a method outside the list (`PUT`, `HEAD`) is 403 before authentication. A preflight passes when at least one requested header is allowed, and lists only those. The rejection is a plain `Invalid CORS request` with no content type. `Access-Control-Allow-Methods` has no spaces, the header lists have `, `.
+  - With no allowed origins (the default), every cross-origin request from a browser is 403; a same-origin `Origin` (Swagger UI's own requests in `local`) is not a CORS request.
+  - `OPTIONS` lists the methods of every pattern that matches, so `…/{expenseId}:approve` answers `GET,HEAD,PATCH,DELETE,POST,OPTIONS` (the plain `{expenseId}` matches too). An unknown path stays 404.
+  - The generated interfaces declare `produces` as every media type of the operation's responses, so an operation without a response body produces only `application/problem+json`: `DELETE …` with `Accept: application/json` is 406. An `Accept` that cannot be parsed is 406, and `q=0` still matches. 415 is checked before 406.
+  - Unset `server.forward-headers-strategy` is `native` on a cloud platform Spring Boot detects, and Kubernetes is any pair `X_SERVICE_HOST`/`X_SERVICE_PORT` in the environment. In a pod, the address budget therefore trusts `X-Forwarded-For` from private addresses, read from the right, as Java does.
+  - The per-user budget counts every request with a valid token, including ones to unknown paths and to `/api/v1/auth/**`; the per-address budget counts `/api/v1/auth/` requests before their token is checked.
+  - Counters are counted where Java counts them: transitions after the change (Rust after the commit, Java just before it), quarantines once the row changed, skipped import rows per chunk.
+- **Decisions:**
+  - Timers are rendered as Prometheus summaries (quantiles, `_sum`, `_count`) with Micrometer's names and tags; Micrometer writes `_count`, `_sum` and `_max`, and a `…_active_seconds` long-task timer. No test reads them. See open question 3.
+  - The HTTP server histogram uses OpenTelemetry's buckets and labels (`http_request_method`, `http_response_status_code`, `http_route`, the template only); a method outside the standard ones is `_OTHER`, so a client cannot create series.
+  - `process_resident_memory_bytes` is read from `/proc/self/status`; elsewhere (macOS) it is left out.
+  - The management port gets Spring Security's default headers, reasoned from Spring Boot registering the security filter for the management child context; no Java test covers it.
+  - The database check waits as long as the pool does for a connection (30 s), like Hikari's `connectionTimeout`; the parity test allows for it. It logs Spring's `DataSource health check failed` without the error.
+  - An import runs inside a log span with `teamId`, so its lines carry the team as a request's do.
+  - The SSRF rule exempts the app's `TcpListener` (listening is not calling out) and treats `crates/parity-tests` as test code, like Java's `DoNotIncludeTests`.
 - **Profiling (M10.7):** a release build on the host (`local` profile, Compose's Postgres, macOS), sampled with
   the system's `sample` tool. `cargo flamegraph` needs DTrace and so root on macOS, and `tokio-console` needs
   `console-subscriber` and `--cfg tokio_unstable` built in; neither was worth a dependency for one session.
@@ -561,5 +601,12 @@ One section per milestone, written by the implementing agent when the milestone 
     for the outbox insert and its `pg_notify` (`with … insert … returning id select pg_notify(…)`), which
     would halve the outbox's round trips; and multi-row inserts for drafts. Both would differ from Java's
     write pattern only in timing.
+- **Parity tests:** M10: 12 passed, 0 ignored, 0 failed (Api4 ×2, Api8 ×4, MetricsTest ×4, log hygiene, database health). The suite: 261 passed, 8 ignored (M11 only), 0 failed. `just verify`: 686 tests passed. Bruno: the whole collection, 47 of 47 requests, including `05-security`.
+- **Open questions:**
+  1. **406 for `application/json` on operations without a body.** From the generator's template, the generated interfaces declare `produces = { "application/problem+json" }` for the eight operations whose success is 204 (verify, logout, leave, revoke, remove member, decline, delete expense, delete receipt). A client that sends `Accept: application/json` to them then gets 406 from Java, and now from Rust. This comes from reading the generator, not from a running Java, and no client in the repo sends such an `Accept`. Confirm against Java once, or should the spec list `application/json` too?
+  2. **The content type of a success with `Accept: application/problem+json`.** Spring negotiates the response type from `produces`, so Java answers `GET /me` with `Accept: application/problem+json` as `200` with `Content-Type: application/problem+json`. Rust checks that the `Accept` is acceptable (406 if not) but always answers JSON as `application/json`. Reproduce the negotiation, or accept the difference?
+  3. **Timer series.** Micrometer's Prometheus timers are `_count`/`_sum`/`_max` plus `…_active_seconds…` long-task timers; Rust's are summaries with quantiles under the same names and tags. Dashboards built on Java's `_max` would find nothing. Copy Micrometer's series exactly (a few dozen lines of our own rendering), or keep the exporter's?
+  4. **The team id in the import's log.** Java's log names the team through Spring Batch's job-parameter lines; Rust puts `teamId` on the import's log span instead (the test asserts only that the id appears). Is the span field acceptable, or should Rust write lines like Spring Batch's?
+  5. **`framework` forward headers and forwarded host and port.** `native` follows Tomcat's `RemoteIpValve` closely. `framework` (Spring's `ForwardedHeaderFilter`) and the forwarded host and port used for the same-origin check are simplified: the first `Forwarded: for=` or the first `X-Forwarded-For` entry; `X-Forwarded-Proto`, `-Host` and `-Port`, but not `Forwarded`'s `proto`/`host`. Ledgerly's deployments use `native` or nothing. Is that enough?
 
 ## M11 · Ship it
