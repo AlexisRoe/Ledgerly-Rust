@@ -23,6 +23,7 @@ chrono.workspace = true
 crc.workspace = true
 http-body-util.workspace = true
 idna.workspace = true
+multer.workspace = true
 regex.workspace = true
 rust_decimal.workspace = true
 secrecy.workspace = true

@@ -7,6 +7,7 @@
 
 mod application;
 mod domain;
+mod facade;
 mod persistence;
 mod receipt_checks;
 mod web;
@@ -19,6 +20,7 @@ use ledgerly_shared::web::Routes;
 use ledgerly_teams::TeamsFacade;
 use sqlx::PgPool;
 
+pub use facade::{ExpenseRefusal, ExpensesFacade};
 pub use receipt_checks::{ReceiptChecks, ReceiptSummary};
 
 use crate::application::{MembershipLookup, TeamsMembershipLookup};

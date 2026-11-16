@@ -45,7 +45,6 @@ mod m7 {
 
     /// Java: `Api10UnsafeConsumptionOfApisTest.theClaimedFileTypeAndNameAreNeverTrusted`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn the_claimed_file_type_and_name_are_never_trusted() {
         let world = World::start().await;
         let team = world.team().await;

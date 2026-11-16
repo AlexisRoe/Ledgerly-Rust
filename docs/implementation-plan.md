@@ -378,7 +378,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: an `ObjectStorage` trait in `shared` (put, open, delete, move, presign GET), implemented with `aws-sdk-s3` (path-style for SeaweedFS). Ensure the bucket exists at startup. Metric/span `ledgerly.s3{operation}`.
   - Accept: integration test against SeaweedFS in Docker, started like `TestDatabase` does Postgres.
 
-- [ ] **M7.2 Upload**
+- [x] **M7.2 Upload**
   - Do: check the claimant and that the expense is a Draft (via the `ExpensesFacade`) **before** reading the body. Then:
     1. Stream to a temp file through a byte cap and SHA-256.
     2. Sniff the type from magic bytes. Empty → 400, not PDF/JPEG/PNG → 415, over 10 MB → 413.

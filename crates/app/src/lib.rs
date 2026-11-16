@@ -22,13 +22,15 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::response::IntoResponse;
+use ledgerly_expenses::ExpensesFacade;
 use ledgerly_identity::{Identity, IdentityError};
+use ledgerly_receipts::Receipts;
 use ledgerly_shared::clock::{Clock, SystemClock};
 use ledgerly_shared::config::Limits;
 use ledgerly_shared::database::SchemaError;
 use ledgerly_shared::events::{Discard, Publisher};
 use ledgerly_shared::ratelimit::RateLimiter;
-use ledgerly_shared::storage::S3ObjectStorage;
+use ledgerly_shared::storage::{ObjectStorage, S3ObjectStorage};
 use ledgerly_shared::web::{self, Authentication, Problem, Routes, TokenVerifier};
 use ledgerly_teams::Teams;
 use sqlx::PgPool;
@@ -63,6 +65,7 @@ pub struct Modules {
     clock: Arc<dyn Clock>,
     identity: Identity,
     teams: Teams,
+    receipts: Receipts,
     storage: S3ObjectStorage,
 }
 
@@ -81,10 +84,14 @@ impl Modules {
         let identity = Identity::new(&config.auth, config.profiles, pool, &clock, &events, &limiter)?;
         let teams = Teams::new(&config.teams, pool, &clock, &events);
         let storage = S3ObjectStorage::new(&config.storage);
+        let objects: Arc<dyn ObjectStorage> = Arc::new(storage.clone());
+        let expenses = ExpensesFacade::new(teams.facade());
+        let receipts = Receipts::new(pool, &clock, &events, &objects, expenses, &config.limits);
         Ok(Self {
             clock,
             identity,
             teams,
+            receipts,
             storage,
         })
     }
@@ -135,6 +142,7 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
             limits,
             modules.teams.facade(),
         ))
+        .merge(modules.receipts.routes())
 }
 
 /// `routes` behind the layers every API request passes, from the outside in:

@@ -4,7 +4,7 @@
 //! Java counterpart: `expenses/internal/application/`. What Java's use cases also do arrives with later steps:
 //! the `Idempotency-Key` (M3.5), events (M9) and the transition metric (M10).
 
-mod access;
+pub(crate) mod access;
 mod create_expense;
 mod delete_expense;
 #[cfg(test)]

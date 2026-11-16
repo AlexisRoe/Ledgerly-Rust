@@ -9,7 +9,7 @@
 //! - Of all patterns that match, the most specific wins: fewer captures first, then more literal characters.
 //!   So `abc:approve` goes to `{expenseId}:approve`, not to `{expenseId}`.
 //! - No pattern matches: 404. A pattern matches, but not with this method: 405 with `Allow`. The endpoint
-//!   needs a JSON body and the request is not JSON: 415.
+//!   needs a JSON (or multipart) body and the request is something else: 415.
 //! - `HEAD` is answered by the `GET` endpoint.
 
 use std::convert::Infallible;
@@ -49,6 +49,19 @@ pub enum Body {
     Ignored,
     /// A JSON body: a request whose `Content-Type` is not `application/json` gets 415.
     Json,
+    /// A file upload: a request whose `Content-Type` is not `multipart/form-data` gets 415.
+    Multipart,
+}
+
+impl Body {
+    /// The media type the endpoint consumes, if it reads the body.
+    const fn media_type(self) -> Option<&'static str> {
+        match self {
+            Self::Ignored => None,
+            Self::Json => Some("application/json"),
+            Self::Multipart => Some("multipart/form-data"),
+        }
+    }
 }
 
 impl Routes {
@@ -159,8 +172,12 @@ pub enum RouteRejection {
     NotFound { path: String },
     /// The path matches, the method does not. Java: `HttpRequestMethodNotSupportedException`.
     MethodNotAllowed { method: Method, allowed: Vec<Method> },
-    /// The endpoint reads JSON, the request is something else. Java: `HttpMediaTypeNotSupportedException`.
-    UnsupportedMediaType { content_type: String },
+    /// The endpoint reads JSON or a multipart upload, the request is something else. Java:
+    /// `HttpMediaTypeNotSupportedException`, whose `Accept` header names what the endpoint consumes.
+    UnsupportedMediaType {
+        content_type: String,
+        accepted: &'static str,
+    },
 }
 
 /// The problem bodies Spring writes for these, with `code: REQUEST_REJECTED` (`ProblemFactory.enrich`).
@@ -183,11 +200,11 @@ impl IntoResponse for RouteRejection {
                     Err(_) => problem,
                 }
             }
-            Self::UnsupportedMediaType { content_type } => Problem::rejected(
+            Self::UnsupportedMediaType { content_type, accepted } => Problem::rejected(
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
                 format!("Content-Type '{content_type}' is not supported."),
             )
-            .with_header(header::ACCEPT, HeaderValue::from_static("application/json")),
+            .with_header(header::ACCEPT, HeaderValue::from_static(accepted)),
         };
         problem.into_response()
     }
@@ -228,10 +245,10 @@ fn select<'a>(
             allowed,
         });
     };
-    if endpoint.body == Body::Json {
+    if let Some(accepted) = endpoint.body.media_type() {
         let content_type = content_type(headers);
-        if !is_json(&content_type) {
-            return Err(RouteRejection::UnsupportedMediaType { content_type });
+        if content_type.split(';').next() != Some(accepted) {
+            return Err(RouteRejection::UnsupportedMediaType { content_type, accepted });
         }
     }
     Ok((endpoint, parameters.clone()))
@@ -250,10 +267,6 @@ fn content_type(headers: &HeaderMap) -> String {
         .chain(parts.map(str::to_owned))
         .collect::<Vec<_>>()
         .join(";")
-}
-
-fn is_json(content_type: &str) -> bool {
-    content_type.split(';').next() == Some("application/json")
 }
 
 /// The values of the `{name}` parameters of the matched path, percent-decoded.

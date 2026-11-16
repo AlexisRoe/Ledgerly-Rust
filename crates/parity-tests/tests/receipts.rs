@@ -136,7 +136,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.jpegAndPngAreAcceptedToo`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn jpeg_and_png_are_accepted_too() {
         let world = World::start().await;
         let team = world.team().await;
@@ -152,7 +151,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.theTypeComesFromTheBytesNotFromTheDeclaredContentType`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn the_type_comes_from_the_bytes_not_from_the_declared_content_type() {
         let world = World::start().await;
         let team = world.team().await;
@@ -176,7 +174,6 @@ mod m7 {
     /// Java: `ReceiptsApiTest.anExeRenamedToPdfGets415`. Java also counts the objects in its store; here the
     /// list stays empty and no receipt row exists.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn an_exe_renamed_to_pdf_gets_415() {
         let world = World::start().await;
         let team = world.team().await;
@@ -198,7 +195,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.plainTextAndHtmlAreRejectedWhateverTheyClaim`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn plain_text_and_html_are_rejected_whatever_they_claim() {
         let world = World::start().await;
         let team = world.team().await;
@@ -221,7 +217,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.anEmptyFileGets400`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn an_empty_file_gets_400() {
         let world = World::start().await;
         let team = world.team().await;
@@ -241,7 +236,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.tenMegabytesPlusOneByteGets413`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn ten_megabytes_plus_one_byte_gets_413() {
         let world = World::start().await;
         let team = world.team().await;
@@ -264,7 +258,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.exactlyTenMegabytesIsAccepted`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn exactly_ten_megabytes_is_accepted() {
         let world = World::start().await;
         let team = world.team().await;
@@ -286,7 +279,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.aMissingFilePartGets400`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn a_missing_file_part_gets_400() {
         let world = World::start().await;
         let team = world.team().await;
@@ -408,7 +400,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.controlCharactersInTheFileNameAreDropped`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn control_characters_in_the_file_name_are_dropped() {
         let world = World::start().await;
         let team = world.team().await;
@@ -430,7 +421,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.theSameFileTwiceOnOneExpenseGets409`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn the_same_file_twice_on_one_expense_gets_409() {
         let world = World::start().await;
         let team = world.team().await;
@@ -447,7 +437,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.theSameFileOnASiblingExpenseIsFlaggedNotBlocked`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn the_same_file_on_a_sibling_expense_is_flagged_not_blocked() {
         let world = World::start().await;
         let team = world.team().await;
@@ -470,7 +459,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.identicalFilesInAnotherTeamAreNotFlagged`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn identical_files_in_another_team_are_not_flagged() {
         let world = World::start().await;
         let team = world.team().await;
@@ -495,7 +483,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.twoSimultaneousIdenticalUploadsLeaveExactlyOne`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn two_simultaneous_identical_uploads_leave_exactly_one() {
         let world = World::start().await;
         let team = world.team().await;
@@ -518,7 +505,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.uploadingToASubmittedExpenseGets409`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn uploading_to_a_submitted_expense_gets_409() {
         let world = World::start().await;
         let team = world.team().await;
@@ -539,7 +525,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.onlyTheClaimantMayUpload`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn only_the_claimant_may_upload() {
         let world = World::start().await;
         let team = world.team().await;

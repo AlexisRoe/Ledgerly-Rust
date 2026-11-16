@@ -8,7 +8,7 @@
 mod dto;
 #[cfg(test)]
 mod list_tests;
-mod problem;
+pub(crate) mod problem;
 #[cfg(test)]
 mod tests;
 

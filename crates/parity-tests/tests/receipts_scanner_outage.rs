@@ -15,7 +15,6 @@ mod m7 {
     /// Java: `Api10UnsafeConsumptionOfApisTest.aFileIsNeverAcceptedUntilTheScannerHasClearlySaidSo`, and the
     /// same statement in `ReceiptsApiTest.whileTheScannerIsDownTheReceiptStaysPendingAndCannotBeDownloaded`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn a_file_is_never_accepted_until_the_scanner_has_clearly_said_so() {
         let world = World::start().await;
         let team = world.team().await;
@@ -37,7 +36,6 @@ mod m7 {
 
     /// Java: `ReceiptsApiTest.aReceiptThatIsStillPendingCannotBeDownloaded`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn a_receipt_that_is_still_pending_cannot_be_downloaded() {
         let world = World::start().await;
         let team = world.team().await;

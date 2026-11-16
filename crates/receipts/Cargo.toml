@@ -12,3 +12,20 @@ workspace = true
 [dependencies]
 ledgerly-shared.workspace = true
 ledgerly-expenses.workspace = true
+axum.workspace = true
+chrono.workspace = true
+serde.workspace = true
+sha2.workspace = true
+sqlx = { workspace = true, features = ["macros"] }
+tempfile.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util"] }
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+ledgerly-shared = { workspace = true, features = ["testing"] }
+ledgerly-teams.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tower.workspace = true

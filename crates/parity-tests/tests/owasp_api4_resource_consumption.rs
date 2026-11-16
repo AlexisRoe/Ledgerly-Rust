@@ -20,7 +20,6 @@ mod m7 {
 
     /// Java: `Api4UnrestrictedResourceConsumptionTest.uploadsOverTenMegabytesAreA413`.
     #[tokio::test]
-    #[ignore = "M7"]
     async fn uploads_over_ten_megabytes_are_a_413() {
         let world = World::start().await;
         let team = world.team().await;
