@@ -528,13 +528,13 @@ One section per milestone, written by the implementing agent when the milestone 
     4. `GetAuditEvents` (the configured page size, then the cursor: an undecodable one is 400 on `cursor`).
   - The audit row's `created_at` is the write time (the page order). `occurredAt` in the response is the event's own instant, written as Jackson writes an `OffsetDateTime`.
 - **Decisions:**
-  - `actorId`, `subjectType`, `subjectId` and `nextCursor` are left out when there is none, as the spec describes them. This is the reviewer's M8 decision for batch results, applied here. Java's generated model probably writes `null`; the parity tests accept either.
+  - `actorId`, `subjectType`, `subjectId` and `nextCursor` are left out when there is none, as the spec describes them (confirmed by the reviewer after M9). This is the reviewer's M8 decision for batch results, applied here. Java's generated model probably writes `null`; the parity tests accept either.
   - The scan listens to the public `ReceiptUploaded` rather than to a separate internal event, which would only repeat its ids.
   - Within one process, an import found `RUNNING` with no live job resumes when its `ImportQueued` is delivered again (the M8 decision). With several instances, two could resume the same import, as Java's registry would deliver to both; Ledgerly runs one instance.
   - The nightly purge runs at 03:17 UTC: chrono's local time zone is not compiled in, and the container's zone is UTC like Java's.
 - **Parity tests:** M9: 17 passed, 0 ignored, 0 failed. The suite: 249 passed, 19 ignored (M10 and M11), 0 failed. `just verify`: 654 tests passed. Bruno `00-auth` + `02-reading`: 18 of 18, including both audit-trail requests.
 - **Open questions:**
-  1. **Order of the role check and the parameter constraints on `GET …/audit-events`.** Rust answers 403/404 before a `limit` out of range or an over-long `after`, because Spring's `@Validated` method validation advice sits behind `@PreAuthorize`. No Java test pins this. A quick check against Java (`?limit=101` as an APPROVER: 403 or 400?) would settle it.
+  1. *Decided: keep the role check first.* **Order of the role check and the parameter constraints on `GET …/audit-events`.** Rust answers 403/404 before a `limit` out of range or an over-long `after`, because Spring's `@Validated` method validation advice sits behind `@PreAuthorize`. No Java test pins this. A quick check against Java (`?limit=101` as an APPROVER: 403 or 400?) would settle it.
 
 ## M10 · Hardening and observability
 
