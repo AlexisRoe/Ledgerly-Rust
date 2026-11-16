@@ -449,6 +449,45 @@ One section per milestone, written by the implementing agent when the milestone 
 
 ## M8 · Batch work
 
+`J/` is Ledgerly-Java's `src/main/java/com/ledgerly/` and `JT/` its `src/test/java/com/ledgerly/`, both at the commit in `vendor/ledgerly-java/SOURCE`. Commits: `2c9432e` (M8.1 and the JSON body limit), `d55e976` (M8.2), `23a15ba` (a read bug the export found), `6d42362` (M8.3–M8.5 together: the upload starts the job and answers with its status, so none of them stands alone).
+
+- **Java → Rust:**
+  - `BatchCreateExpenses` with the sealed `Candidate` (`Ready | Unparseable`) (`J/expenses/internal/application/BatchCreateExpenses.java`) → `crates/expenses/src/application/batch.rs` with a third variant, `TooLarge`, for an amount `Money` refuses but Java's `Money` accepts (see Parity traps). Results are `Result<ExpenseId, ItemProblem>` per item, so "exactly one of id and problem" is a type, not a comment.
+  - `ExpensesFacade.validate`/`createDrafts` (D4) → `ExpensesFacade::validate`, `validate_fields` and `create_drafts(&mut PgConnection, …)` (`crates/expenses/src/facade.rs`). Java's `@Transactional` joins the caller's transaction implicitly; here the caller hands its transaction in, which is how the import's chunk gets its drafts, errors and count into one commit.
+  - `JsonBodyLimitFilter` (`J/shared/web/JsonBodyLimitFilter.java`) → a layer in front of authentication (`crates/shared/src/web/body_limit.rs`) that refuses a declared over-limit JSON body unread, plus a request extension that tells `read_json` the configured limit for chunked bodies.
+  - `ExportExpenses` + `LazyCsvInputStream` (a pull-based `InputStream` over a `Supplier<List<…>>`) → `ExportPages::next` (`crates/expenses/src/application/export.rs`) and `futures_util::stream::unfold` into `Body::from_stream` (`crates/expenses/src/web/mod.rs`): the same "read a page when the previous one has been written", with back-pressure from the HTTP body instead of `read()` calls. `CsvCells` → `crates/expenses/src/web/csv.rs`, `CsvCellsTest` ported.
+  - The Spring Batch job (`ImportJobConfig`, `ImportRunner`, `ImportJobListener`, `ImportSkipListener`, `FlatFileItemReader`, `DelimitedLineTokenizer`) → about 300 lines without a framework (`crates/imports/src/application/runner.rs`, `crates/imports/src/domain.rs`). The reader and tokenizer rules were copied from the Spring Batch 6.0.6 sources, not guessed (see Parity traps). The `BATCH_*` tables stay empty; progress lives in `import_jobs` as in Java.
+  - `ImportApiTest.FlakyFacade` → a `Drafts` port in the imports module, implemented by `ExpensesFacade` and, in the tests, by a wrapper that fails its n-th `create` (`crates/imports/src/web/tests.rs`).
+  - The display-name rule (controls dropped, `strip()`, 255 UTF-16 units) is now `shared::text::display_name`, used by receipts and imports.
+- **Rust features that carried the weight:**
+  - Streams: `stream::unfold` with an owned state (`ExportPages` holds a `PgPool` clone and its criteria), so the response body is `'static` and the handler returns before the export is read.
+  - `&mut PgConnection` as the unit of work across modules: `create_drafts` runs inside batch's transaction and inside each import chunk's.
+  - Enums for outcomes: `Row` (`Blank | Rejected | Ready | TooLarge`) and the runner's `Outcome` make "a blank line is neither imported nor skipped" a `match` arm.
+  - `slice::chunks` for Spring Batch's chunking; the restart is a fold over chunk counts.
+  - `JoinSet` and `Semaphore`, which the plan lists, were not needed: Java runs one job per import on an unbounded virtual-thread executor, and the database pool already bounds the work.
+- **Surprises and dead ends:**
+  - `PARSE_ERROR` cannot happen in Java: with `SimpleRecordSeparatorPolicy` one line is always one record, `DelimitedLineTokenizer` never throws (an unterminated quote simply runs to the end of the line), and the line mapper cannot fail. Rust has no `PARSE_ERROR` path; the parity test with an unbalanced quote expects `COLUMN_COUNT` (two or three fields), which is what both produce.
+  - The export parity test found an M2 bug: reading an expense ran `Merchant::new` again, which strips, so a merchant stored as `"\tTabbed"` (by SQL or by Java) came back as `"Tabbed"`. Stored merchant, note and rejection reasons are now restored verbatim (`23a15ba`).
+  - The architecture test does not count dev-dependencies separately: the receipts tests' dependency on teams (M7) would have broken it; it was replaced by `ExpensesFacade::default()` before M8.
+- **Parity traps:**
+  - Batch: Bean Validation first (`items` 1 to 100 as "size must be between 1 and 100", each item's four required properties as `items[i].money.amount` etc.), then 404, then the configured limit "Between 1 and N items per batch". Unset `id`/`problem`/`field` are written as JSON `null` (Java's generated model; its test reads `id` with `path("id").isNull()`). `atomic` takes Spring's boolean words (`yes`, `on`, `1`, …). Item messages are `Money`'s and the expense rules' own.
+  - JSON body limit: "The request body is larger than 1048576 bytes", `Connection: close`, before authentication; a body whose type Spring counts as JSON (`*/*`, `application/*`, `…/json`, `…+json`).
+  - Export: `incurredOn desc, id desc`, offset pages of 500 (Java's `PageRequest`, so rows inserted during an export can repeat a row, as in Java); the first page and the total before the answer; `text/csv;charset=UTF-8`.
+  - Import reading: lines end at LF, CR or CRLF; a line starting with `#` is a Spring Batch comment, skipped silently but counted, while the upload counts it as a row (so `totalRows` can exceed imported + skipped); blank lines are neither rows nor errors; an unquoted field keeps its blanks, a quoted one loses blanks and quotes.
+  - Import checks: currency before amount; a known currency without minor units (`XXX`) is `AMOUNT_INVALID` with `Money`'s message; `VALIDATION_FAILED` messages are `"<field>: <message>"`. An invalid UTF-8 byte is reported when the reader reaches its line, so a wrong header further up wins.
+  - Daily limit: `Retry-After` is the whole seconds to the next UTC midnight, at least 1; refused uploads use up nothing; the advisory-lock key is Java's (`import:<team>:<user>` through `hashtextextended`), so Java and Rust instances exclude each other.
+- **Decisions:**
+  - The import upload checks the teammate and the daily limit before reading the body, following the reviewer's M7 decision for receipts.
+  - A restarted `FAILED` import re-reads the file and skips, without writing, the chunks whose imported and skipped rows add up to what is stored (decided 2026-11-12). If the counts never match (the file was changed, or a date that was in the future no longer is), the restart fails rather than risk duplicates.
+  - `ImportCompleted` and the `ledgerly.imports.rows.skipped` counter: the event is built and published (discarded until M9); the counter comes with M10.3.
+  - **Known gap until M9:** the job runs in a task started after the upload's commit; a process that stops leaves the import `QUEUED` or `RUNNING`.
+- **Parity tests:** M8: 45 passed, 0 ignored, 0 failed. The suite: 232 passed, 36 ignored, 0 failed. `just verify`: 634 tests passed before the read fix, which added one. Bruno `00-auth` + `02-reading`: 16 of 18; the two audit-trail requests are M9.
+- **Open questions:**
+  1. **`null` in the batch results.** Java writes `"id": null` for a rejected item, `"problem": null` for a created one and `"field": null` in a problem without one; the spec does not say `nullable`. Rust writes them as Java does, and the parity harness accepts `null` for exactly those three properties, as it does for `ExpenseResponse.note` since M6 (`crates/parity-tests/src/spec.rs`, with a test that fails once the spec is fixed). Agree, and add them to the upstream spec fix?
+  2. **An amount too large for `numeric(19,4)`.** Java's `Money` accepts it and the insert fails: a batch answers 500 with nothing created (also in partial mode), an import stops `FAILED` at that chunk. Rust copies this, as the plan asked ("drop or keep `TooLarge` accordingly"): `Money::TooLarge` is kept but turned into Java's failure. The alternative is to report it as that item's or row's problem ("Amount … has more than 15 digits before the decimal point"), which needs a Java change to match.
+  3. **A crashed import stays `RUNNING`.** Java's `run` leaves a `RUNNING` import alone and `restart` only takes `FAILED` ones, so an import whose process died mid-run is never resumed, even after its event is delivered again. Should M9.2 treat a `RUNNING` import found at start-up as failed and resume it (with the same chunk-skipping), which Java does not?
+  4. **`#` lines.** Spring Batch's default comment prefix makes the job skip any line starting with `#` without an error, while the upload counted it as a row. Copied; keep it, or report such lines (a change upstream)?
+
 ## M9 · Events and audit
 
 ## M10 · Hardening and observability
