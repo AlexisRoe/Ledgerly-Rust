@@ -538,4 +538,28 @@ One section per milestone, written by the implementing agent when the milestone 
 
 ## M10 · Hardening and observability
 
+- **Profiling (M10.7):** a release build on the host (`local` profile, Compose's Postgres, macOS), sampled with
+  the system's `sample` tool. `cargo flamegraph` needs DTrace and so root on macOS, and `tokio-console` needs
+  `console-subscriber` and `--cfg tokio_unstable` built in; neither was worth a dependency for one session.
+  - **100-item batch:** about 90 ms each, measured over six runs. The process is idle in nearly every sample
+    (`__psynch_cvwait`, `kevent`): the time is spent waiting on Postgres. One batch is about 300 statements in
+    one transaction, one round trip each: 100 expense inserts, then an `event_publication` insert and a
+    `pg_notify` per draft. Java's JPA `saveAll` without JDBC batching writes row by row too.
+  - **10,000-row import:** 10.7 s from `RUNNING` to `COMPLETED` (about 1 ms a row, 100 chunks of 100 rows).
+    The audit listener's 10,000 deliveries ran alongside and finished 30 ms after the import. Resident memory
+    after it: 33 MB. The runner reads the whole file into memory before it parses it (at most 10 MB, capped
+    by the upload limit).
+  - **Allocations:** nothing showed up; `malloc`/`memmove` frames are below 0.1 % of the samples.
+  - **Lock contention:** none in the process (`pthread_mutex_lock` in a handful of samples). The contention is
+    for the pool: every commit of a chunk wakes 100 deliveries, each a task of its own with no bound, and they
+    queue for the same ten connections as the import's next chunk. Java's Modulith listeners run on unbounded
+    virtual threads against a Hikari pool of ten, so this matches Java.
+  - **Slowest query:** none stands out. The outbox's lookups use `event_publication_by_completion_date_idx`
+    (0.02 to 0.06 ms in `EXPLAIN ANALYZE`); `expenses` saw 27 sequential scans in the whole session, all from
+    small lists.
+  - **Fixed:** nothing; nothing was clearly wrong. Two candidates if throughput ever matters: one statement
+    for the outbox insert and its `pg_notify` (`with … insert … returning id select pg_notify(…)`), which
+    would halve the outbox's round trips; and multi-row inserts for drafts. Both would differ from Java's
+    write pattern only in timing.
+
 ## M11 · Ship it
