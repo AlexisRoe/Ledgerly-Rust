@@ -3,7 +3,7 @@
 //! Java counterpart: `management.*` in `application.yaml` (`exposure.include: health,info,prometheus`,
 //! `endpoint.health.probes.enabled: true`). The bodies, status codes and content type are Spring Boot's, because
 //! orchestrators and dashboards written for the Java service read them (ADR 0013).
-//! `/actuator/prometheus` arrives with the metrics in M10.
+//! `/actuator/prometheus` serves the metrics of [`crate::metrics`].
 
 use axum::Router;
 use axum::extract::State;
@@ -50,6 +50,7 @@ pub(crate) fn router(shutdown: Shutdown, build: BuildInfo) -> Router {
         .route("/actuator/health/liveness", get(liveness))
         .route("/actuator/health/readiness", get(readiness))
         .route("/actuator/info", get(info))
+        .route("/actuator/prometheus", get(prometheus))
         .fallback(not_found)
         .with_state(Management { shutdown, build })
         // The `actuatorSecurity` chain writes Spring Security's default headers.
@@ -113,6 +114,18 @@ async fn info(State(state): State<Management>) -> Response {
         fields.insert("time".to_owned(), Value::from(time));
     }
     actuator(StatusCode::OK, &json!({ "build": build }))
+}
+
+/// The Prometheus text format, with the content type Spring Boot's endpoint gives it by default.
+async fn prometheus() -> Response {
+    (
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
+        )],
+        crate::metrics::render(),
+    )
+        .into_response()
 }
 
 /// Spring Boot's error body for the management context.

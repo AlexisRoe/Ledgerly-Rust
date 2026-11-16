@@ -39,7 +39,6 @@ mod m10 {
 
     /// Java: `MetricsTest.successfulTransitionsAreCountedByAction`.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn successful_transitions_are_counted_by_action() {
         let world = World::start().await;
         let team = world.team().await;
@@ -75,7 +74,6 @@ mod m10 {
 
     /// Java: `MetricsTest.quarantinedReceiptsAreCounted`.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn quarantined_receipts_are_counted() {
         let world = World::start().await;
         let team = world.team().await;
@@ -99,7 +97,6 @@ mod m10 {
 
     /// Java: `MetricsTest.skippedImportRowsAreCounted`.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn skipped_import_rows_are_counted() {
         let world = World::start().await;
         let team = world.team().await;
@@ -133,7 +130,6 @@ mod m10 {
 
     /// Java: `MetricsTest.prometheusExposesThemOnTheManagementPortOnly`.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn prometheus_exposes_them_on_the_management_port_only() {
         let world = World::start().await;
         let team = world.team().await;

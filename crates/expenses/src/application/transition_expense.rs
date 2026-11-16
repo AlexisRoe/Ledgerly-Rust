@@ -83,7 +83,10 @@ impl TransitionExpense {
         };
         let event = ExpenseEvent::new(team, id, caller, self.clock.now(), kind);
         self.events.publish(&mut transaction, &event).await?;
+        // Counted per action. Only transitions that succeeded get here: a refusal returned above. Java counts
+        // before its transaction commits; a failed commit is counted there and not here.
         transaction.commit().await?;
+        metrics::counter!("ledgerly.expenses.transitions", "action" => action.metric_tag()).increment(1);
         Ok(Versioned {
             value: expense,
             version,

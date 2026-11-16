@@ -26,4 +26,4 @@ pub use multipart::{MAX_FILE_SIZE, MAX_REQUEST_SIZE, MultipartUpload, UploadedFi
 pub use problem::{ErrorCode, FieldViolation, Problem, TraceContext, render};
 pub use query::QueryParameters;
 pub use rate_limit::{RequestLimits, limit_by_client_address, limit_by_user};
-pub use routing::{Body, PathParameters, RouteRejection, RouteService, Routes};
+pub use routing::{Body, MatchedRoute, PathParameters, RouteRejection, RouteService, Routes};

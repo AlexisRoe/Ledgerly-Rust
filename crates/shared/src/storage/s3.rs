@@ -14,6 +14,7 @@ use tracing::Instrument;
 
 use super::{ObjectReader, ObjectStorage, StorageError, StorageFuture};
 use crate::config::S3Config;
+use crate::observation::Observation;
 
 /// The adapter. The bucket is private; objects are only ever reached through presigned links.
 ///
@@ -132,87 +133,75 @@ impl S3ObjectStorage {
 
 impl ObjectStorage for S3ObjectStorage {
     fn put<'a>(&'a self, key: &'a str, file: &'a Path, content_type: &'a str) -> StorageFuture<'a, ()> {
-        Box::pin(
-            async move {
-                if self.put_object(key, file, content_type).await? {
-                    return Ok(());
-                }
-                self.create_bucket().await?;
-                if self.put_object(key, file, content_type).await? {
-                    Ok(())
-                } else {
-                    Err(StorageError::Failed {
-                        operation: "put",
-                        reason: "NoSuchBucket".to_owned(),
-                    })
-                }
+        Box::pin(observed("put", async move {
+            if self.put_object(key, file, content_type).await? {
+                return Ok(());
             }
-            .instrument(span("put")),
-        )
+            self.create_bucket().await?;
+            if self.put_object(key, file, content_type).await? {
+                Ok(())
+            } else {
+                Err(StorageError::Failed {
+                    operation: "put",
+                    reason: "NoSuchBucket".to_owned(),
+                })
+            }
+        }))
     }
 
     fn open<'a>(&'a self, key: &'a str) -> StorageFuture<'a, ObjectReader> {
-        Box::pin(
-            async move {
-                let object = self
-                    .client
-                    .get_object()
-                    .bucket(&self.bucket)
-                    .key(key)
-                    .send()
-                    .await
-                    .map_err(|error| {
-                        if error.as_service_error().is_some_and(|e| e.is_no_such_key()) {
-                            StorageError::NotFound { operation: "open" }
-                        } else {
-                            failed("open", &error)
-                        }
-                    })?;
-                let reader: ObjectReader = Box::pin(object.body.into_async_read());
-                Ok(reader)
-            }
-            .instrument(span("open")),
-        )
+        Box::pin(observed("open", async move {
+            let object = self
+                .client
+                .get_object()
+                .bucket(&self.bucket)
+                .key(key)
+                .send()
+                .await
+                .map_err(|error| {
+                    if error.as_service_error().is_some_and(|e| e.is_no_such_key()) {
+                        StorageError::NotFound { operation: "open" }
+                    } else {
+                        failed("open", &error)
+                    }
+                })?;
+            let reader: ObjectReader = Box::pin(object.body.into_async_read());
+            Ok(reader)
+        }))
     }
 
     fn delete<'a>(&'a self, key: &'a str) -> StorageFuture<'a, ()> {
-        Box::pin(
-            async move {
-                self.client
-                    .delete_object()
-                    .bucket(&self.bucket)
-                    .key(key)
-                    .send()
-                    .await
-                    .map(|_| ())
-                    .map_err(|error| failed("delete", &error))
-            }
-            .instrument(span("delete")),
-        )
+        Box::pin(observed("delete", async move {
+            self.client
+                .delete_object()
+                .bucket(&self.bucket)
+                .key(key)
+                .send()
+                .await
+                .map(|_| ())
+                .map_err(|error| failed("delete", &error))
+        }))
     }
 
     fn relocate<'a>(&'a self, from: &'a str, to: &'a str) -> StorageFuture<'a, ()> {
-        Box::pin(
-            async move {
-                self.client
-                    .copy_object()
-                    .bucket(&self.bucket)
-                    .copy_source(format!("{}/{from}", self.bucket))
-                    .key(to)
-                    .send()
-                    .await
-                    .map_err(|error| failed("move", &error))?;
-                self.client
-                    .delete_object()
-                    .bucket(&self.bucket)
-                    .key(from)
-                    .send()
-                    .await
-                    .map(|_| ())
-                    .map_err(|error| failed("move", &error))
-            }
-            .instrument(span("move")),
-        )
+        Box::pin(observed("move", async move {
+            self.client
+                .copy_object()
+                .bucket(&self.bucket)
+                .copy_source(format!("{}/{from}", self.bucket))
+                .key(to)
+                .send()
+                .await
+                .map_err(|error| failed("move", &error))?;
+            self.client
+                .delete_object()
+                .bucket(&self.bucket)
+                .key(from)
+                .send()
+                .await
+                .map(|_| ())
+                .map_err(|error| failed("move", &error))
+        }))
     }
 
     fn presign_get<'a>(
@@ -222,31 +211,54 @@ impl ObjectStorage for S3ObjectStorage {
         content_type: &'a str,
         ttl: Duration,
     ) -> StorageFuture<'a, String> {
-        Box::pin(
-            async move {
-                let presigning = PresigningConfig::expires_in(ttl).map_err(|error| StorageError::Failed {
-                    operation: "presign",
-                    reason: error.to_string(),
-                })?;
-                let request = self
-                    .client
-                    .get_object()
-                    .bucket(&self.bucket)
-                    .key(key)
-                    .response_content_disposition(format!("attachment; filename=\"{download_name}\""))
-                    .response_content_type(content_type)
-                    .presigned(presigning)
-                    .await
-                    .map_err(|error| failed("presign", &error))?;
-                Ok(request.uri().to_owned())
-            }
-            .instrument(span("presign")),
-        )
+        Box::pin(observed("presign", async move {
+            let presigning = PresigningConfig::expires_in(ttl).map_err(|error| StorageError::Failed {
+                operation: "presign",
+                reason: error.to_string(),
+            })?;
+            let request = self
+                .client
+                .get_object()
+                .bucket(&self.bucket)
+                .key(key)
+                .response_content_disposition(format!("attachment; filename=\"{download_name}\""))
+                .response_content_type(content_type)
+                .presigned(presigning)
+                .await
+                .map_err(|error| failed("presign", &error))?;
+            Ok(request.uri().to_owned())
+        }))
     }
 }
 
 fn span(operation: &'static str) -> tracing::Span {
     tracing::info_span!("ledgerly.s3", operation)
+}
+
+/// One call to the store as Java's `S3ObjectStorage.observe` records it: the timer and span `ledgerly.s3`,
+/// tagged with the operation and never the key, and a log span of the same name.
+async fn observed<T>(
+    operation: &'static str,
+    call: impl Future<Output = Result<T, StorageError>>,
+) -> Result<T, StorageError> {
+    let contextual_name = match operation {
+        "put" => "s3 put",
+        "open" => "s3 open",
+        "delete" => "s3 delete",
+        "move" => "s3 move",
+        _ => "s3 presign",
+    };
+    let mut observation = Observation::start("ledgerly.s3", contextual_name).with_tag("operation", operation);
+    let result = call.instrument(span(operation)).await;
+    if let Err(error) = &result {
+        // Java tags the exception's class; these are the AWS SDK's for a missing object and any other failure.
+        observation.error(match error {
+            StorageError::NotFound { .. } => "NoSuchKeyException",
+            StorageError::Failed { .. } => "S3Exception",
+        });
+    }
+    observation.stop();
+    result
 }
 
 /// The SDK's error, reduced to what may be logged: the store's error code, or the kind of failure. The SDK's

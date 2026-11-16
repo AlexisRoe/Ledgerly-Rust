@@ -176,7 +176,12 @@ impl Service<Request> for RouteService {
             Ok((endpoint, parameters)) => {
                 request.extensions_mut().insert(parameters);
                 let service = endpoint.service.clone();
-                Box::pin(service.oneshot(request))
+                let template = endpoint.template;
+                Box::pin(async move {
+                    let mut response = service.oneshot(request).await?;
+                    response.extensions_mut().insert(MatchedRoute(template));
+                    Ok(response)
+                })
             }
             Err(rejection) => {
                 let response = rejection.into_response();
@@ -185,6 +190,11 @@ impl Service<Request> for RouteService {
         }
     }
 }
+
+/// The template of the endpoint that answered, in the response's extensions, for the HTTP server metric's
+/// `http.route` (never the path itself, which holds ids).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MatchedRoute(pub &'static str);
 
 /// Why no endpoint takes the request. Java: the exceptions Spring's handler mapping throws.
 #[derive(Debug, Clone, PartialEq, Eq)]

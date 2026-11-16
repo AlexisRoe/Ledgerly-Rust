@@ -11,7 +11,7 @@ use ledgerly_shared::config::TracingConfig;
 pub use ledgerly_shared::web::TraceContext;
 use opentelemetry::KeyValue;
 use opentelemetry::propagation::{Extractor, TextMapPropagator};
-use opentelemetry::trace::{Span, SpanKind, Tracer, TracerProvider};
+use opentelemetry::trace::{FutureExt, Span, SpanKind, TraceContextExt, Tracer, TracerProvider};
 use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
@@ -49,9 +49,10 @@ impl Telemetry {
                 .map_err(TelemetryError)?;
             provider = provider.with_batch_exporter(exporter);
         }
-        Ok(Self {
-            provider: provider.build(),
-        })
+        let provider = provider.build();
+        // The observations of `ledgerly_shared::observation` start their spans on the global tracer.
+        opentelemetry::global::set_tracer_provider(provider.clone());
+        Ok(Self { provider })
     }
 
     pub(crate) fn tracer(&self) -> SdkTracer {
@@ -82,7 +83,7 @@ impl Extractor for Headers<'_> {
 /// is a valid one and starts fresh otherwise.
 pub(crate) async fn trace_request(State(tracer): State<SdkTracer>, mut request: Request, next: Next) -> Response {
     let parent = TraceContextPropagator::new().extract(&Headers(request.headers()));
-    let mut span = tracer
+    let span = tracer
         .span_builder(format!("http {}", request.method().as_str().to_ascii_lowercase()))
         .with_kind(SpanKind::Server)
         .with_attributes([KeyValue::new(
@@ -104,8 +105,12 @@ pub(crate) async fn trace_request(State(tracer): State<SdkTracer>, mut request: 
     );
     request.extensions_mut().insert(context);
 
-    let response = next.run(request).instrument(log_span).await;
+    // The request's span is the current OpenTelemetry context while it runs, so that the spans of S3 and clamd
+    // calls become its children.
+    let otel = opentelemetry::Context::current_with_span(span);
+    let response = next.run(request).instrument(log_span).with_context(otel.clone()).await;
 
+    let span = otel.span();
     span.set_attribute(KeyValue::new(
         "http.response.status_code",
         i64::from(response.status().as_u16()),

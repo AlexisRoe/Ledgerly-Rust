@@ -39,6 +39,19 @@ impl Action {
         }
     }
 
+    /// The name in lower case, as Java tags the transition counter (`action.name().toLowerCase(Locale.ROOT)`).
+    #[must_use]
+    pub const fn metric_tag(self) -> &'static str {
+        match self {
+            Self::Submit => "submit",
+            Self::Withdraw => "withdraw",
+            Self::Approve => "approve",
+            Self::Reject => "reject",
+            Self::Reopen => "reopen",
+            Self::Reimburse => "reimburse",
+        }
+    }
+
     /// The whole workflow: where this action leads from the status `from`, or `None` if it is not possible there.
     ///
     /// ```text

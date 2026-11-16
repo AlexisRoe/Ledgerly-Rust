@@ -10,6 +10,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+metrics.workspace = true
 ledgerly-shared.workspace = true
 ledgerly-expenses.workspace = true
 ledgerly-teams.workspace = true

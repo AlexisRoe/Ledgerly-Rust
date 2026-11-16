@@ -8,6 +8,7 @@
 //! The retries Java declares on the client (`@Retryable`) are in [`crate::application::ScanReceipt`], which
 //! opens the object again for each attempt; Java hands the same, partly read stream to every retry.
 
+use ledgerly_shared::observation::Observation;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::LazyLock;
@@ -104,18 +105,25 @@ impl ClamAvScanner {
 }
 
 impl MalwareScanner for ClamAvScanner {
-    /// Each attempt is a `ledgerly.clamav.scan` span with its outcome (`clean`, `infected` or `error`), never
-    /// anything of the content.
+    /// Each attempt is a `ledgerly.clamav.scan` observation (timer and span `clamav scan`) and log span with its
+    /// outcome (`clean`, `infected` or `error`), never anything of the content. Java: `ClamAvScanner.scan`.
     fn scan<'a>(&'a self, content: &'a mut ObjectReader) -> ScanFuture<'a> {
         let span = tracing::info_span!("ledgerly.clamav.scan", outcome = tracing::field::Empty);
         Box::pin(
             async move {
+                let mut observation = Observation::start("ledgerly.clamav.scan", "clamav scan");
                 let result = self.scan_once(content).await;
                 let outcome = match &result {
                     Ok(Verdict::Clean) => "clean",
                     Ok(Verdict::Infected { .. }) => "infected",
                     Err(_) => "error",
                 };
+                observation.tag("outcome", outcome);
+                if result.is_err() {
+                    // Java's `IOException`, the only failure `scanOnce` throws.
+                    observation.error("IOException");
+                }
+                observation.stop();
                 tracing::Span::current().record("outcome", outcome);
                 result
             }

@@ -10,6 +10,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
 axum.workspace = true
 chrono.workspace = true
 ledgerly-audit.workspace = true

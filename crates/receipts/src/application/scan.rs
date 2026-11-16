@@ -116,7 +116,7 @@ impl ScanReceipt {
         if !changed {
             return Ok(());
         }
-        // Java also counts it (`ledgerly.receipts.quarantined`); the metrics arrive in M10.3.
+        metrics::counter!("ledgerly.receipts.quarantined").increment(1);
         tracing::warn!("Receipt {} quarantined: scanner reported {signature}", receipt.id);
         if let Err(error) = self
             .context

@@ -236,12 +236,14 @@ impl ImportRunner {
             let count = i32::try_from(drafts.len()).unwrap_or(i32::MAX);
             persistence::add_imported(&mut transaction, job.team_id, job.id, count).await?;
         }
+        let skipped = u64::try_from(errors.len()).unwrap_or(u64::MAX);
         for (line, code, message) in errors {
             let line = i32::try_from(line).unwrap_or(i32::MAX);
             persistence::add_error(&mut transaction, job.id, line, code, &message).await?;
         }
         transaction.commit().await?;
-        // Java also counts them (`ledgerly.imports.rows.skipped`); the metrics arrive in M10.3.
+        // Java's `ImportSkipListener` counts each skipped row.
+        metrics::counter!("ledgerly.imports.rows.skipped").increment(skipped);
         Ok(())
     }
 

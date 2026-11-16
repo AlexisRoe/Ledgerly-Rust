@@ -15,6 +15,7 @@ pub mod id;
 pub mod idempotency;
 pub mod iso;
 pub mod money;
+pub mod observation;
 pub mod paging;
 pub mod ratelimit;
 pub mod role;

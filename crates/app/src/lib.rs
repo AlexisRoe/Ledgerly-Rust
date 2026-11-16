@@ -9,6 +9,7 @@ pub mod config;
 mod docs;
 pub mod logging;
 mod management;
+mod metrics;
 pub mod seed;
 mod server;
 pub mod telemetry;
@@ -222,7 +223,8 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
 
 /// `routes` behind the layers every API request passes, from the outside in:
 ///
-/// 1. tracing: a span with `traceId` and `spanId` for the request and its log lines;
+/// 1. tracing: a span with `traceId` and `spanId` for the request and its log lines, and the request's duration
+///    in the HTTP server metric;
 /// 2. problem rendering: every problem body gets `instance` and `traceId`;
 /// 3. the JSON body limit: a declared JSON body over `ledgerly.limits.max-json-body-size` is 413 before
 ///    authentication, as Java's `JsonBodyLimitFilter` runs before Spring Security;
@@ -287,6 +289,7 @@ fn layered_with(
             web::limit_json_bodies,
         ))
         .layer(axum::middleware::from_fn(web::render))
+        .layer(axum::middleware::from_fn(metrics::record_request))
         .layer(axum::middleware::from_fn_with_state(
             telemetry.tracer(),
             telemetry::trace_request,
@@ -323,6 +326,10 @@ impl App {
     /// [`StartupError::Identity`] if the signing key cannot be used, [`StartupError::Io`] if a port cannot be
     /// bound, for example because it is in use.
     pub async fn bind(config: Config, telemetry: Telemetry, pool: PgPool) -> Result<Self, StartupError> {
+        // Before anything can count: a counter used before the recorder exists counts into nothing.
+        if metrics::prometheus().is_none() {
+            tracing::warn!("Another metrics recorder was installed first; /actuator/prometheus stays empty");
+        }
         let modules = Modules::new(&config, &pool)?;
         let api = TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.server.api_port)).await?;
         let management = TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.server.management_port)).await?;
@@ -395,9 +402,11 @@ impl App {
         self.modules.ensure_bucket();
         // Delivers what earlier runs left undelivered, then each event as its transaction commits.
         let dispatcher = self.modules.outbox.start();
+        let metrics_upkeep = metrics::keep_up();
         let (api_result, management_result, ()) = tokio::join!(api_then_management, management, trigger);
         // Deliveries still running are abandoned; their publications stay open for the next start.
         dispatcher.abort();
+        metrics_upkeep.abort();
         api_result.and(management_result)
     }
 }

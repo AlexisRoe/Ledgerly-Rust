@@ -201,7 +201,6 @@ mod m10 {
     /// Java: `Api8SecurityMisconfigurationTest.actuatorLivesOnItsOwnPortAndExposesOnlyHealthInfoAndPrometheus`.
     /// The part that needs no metrics is `operational.rs::m1`.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn the_actuator_lives_on_its_own_port_and_exposes_only_health_info_and_prometheus() {
         let world = World::start().await;
         let management = world.management();
