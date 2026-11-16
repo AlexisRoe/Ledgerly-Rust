@@ -47,21 +47,6 @@ impl NewExpense {
     }
 }
 
-/// The field rules of an expense without its amount. Java: `Expense.checkFields(incurredOn, merchant, note,
-/// clock)`, which batch calls also for an item whose amount the database will refuse.
-///
-/// # Errors
-///
-/// `InvalidInput` naming the first field that breaks a rule, in the order merchant, note, date.
-pub fn check_fields(
-    incurred_on: NaiveDate,
-    merchant: &str,
-    note: Option<&str>,
-    clock: &dyn Clock,
-) -> Result<(), InvalidInput> {
-    checked_fields(incurred_on, merchant, note, clock).map(|_| ())
-}
-
 fn checked_fields(
     incurred_on: NaiveDate,
     merchant: &str,

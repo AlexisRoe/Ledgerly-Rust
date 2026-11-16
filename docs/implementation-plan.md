@@ -466,6 +466,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 
 - [ ] **M9.2 Move listeners onto the outbox**
   - Do: receipt scanning, import start and the `ExpenseDeleted` cleanup now go through the outbox.
+  - **Crashed imports (decided after M8):** an import found `RUNNING` at start-up, with no live runner, is resumed after its last committed chunk, with the same chunk-skipping as a `FAILED` restart. Java leaves it `RUNNING`.
   - Accept: the M7 "app dies before the scan" scenario recovers on restart.
 
 - [ ] **M9.3 Audit trail**

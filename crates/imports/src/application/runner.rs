@@ -26,8 +26,6 @@ enum RunFailure {
     Unreadable,
     #[error("creating the drafts failed: {0}")]
     Drafts(String),
-    #[error("the amount of a row does not fit the database")]
-    AmountOverflow,
     #[error("the committed chunks do not match the file any more")]
     CannotResume,
 }
@@ -40,7 +38,6 @@ enum Outcome {
         code: &'static str,
         message: String,
     },
-    TooLarge,
     Blank,
 }
 
@@ -154,7 +151,7 @@ impl ImportRunner {
             if skipping {
                 for outcome in &outcomes {
                     match outcome {
-                        Outcome::Ready(_) | Outcome::TooLarge => imported += 1,
+                        Outcome::Ready(_) => imported += 1,
                         Outcome::Rejected { .. } => skipped += 1,
                         Outcome::Blank => {}
                     }
@@ -188,18 +185,6 @@ impl ImportRunner {
                 Some(problem) => rejected("VALIDATION_FAILED", format!("{}: {}", problem.field, problem.message)),
                 None => Outcome::Ready(expense),
             },
-            Row::TooLarge {
-                incurred_on,
-                merchant,
-                note,
-            } => match self
-                .context
-                .drafts
-                .validate_fields(incurred_on, &merchant, note.as_deref())
-            {
-                Some(problem) => rejected("VALIDATION_FAILED", format!("{}: {}", problem.field, problem.message)),
-                None => Outcome::TooLarge,
-            },
         }
     }
 
@@ -210,8 +195,6 @@ impl ImportRunner {
         for outcome in outcomes {
             match outcome {
                 Outcome::Ready(expense) => drafts.push(expense),
-                // Java writes it, and the database refuses the amount: the chunk rolls back.
-                Outcome::TooLarge => return Err(RunFailure::AmountOverflow),
                 Outcome::Rejected { line, code, message } => errors.push((line, code, message)),
                 Outcome::Blank => {}
             }

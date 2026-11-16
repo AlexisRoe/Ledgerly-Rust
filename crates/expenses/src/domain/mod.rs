@@ -13,7 +13,7 @@ mod text;
 pub use category::Category;
 pub(crate) use error::ExpenseError;
 pub use expense::NewExpense;
-pub(crate) use expense::{Expense, Rejection, StoredExpense, check_fields};
+pub(crate) use expense::{Expense, Rejection, StoredExpense};
 pub(crate) use status::ExpenseStatus;
 pub use text::InvalidInput;
 pub(crate) use text::{Merchant, Note, RejectionReason};

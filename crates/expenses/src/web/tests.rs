@@ -739,7 +739,7 @@ fn batch_item(amount: &str, merchant: &str) -> Value {
 }
 
 #[tokio::test]
-async fn a_batch_writes_null_for_what_an_item_result_does_not_have() {
+async fn a_batch_result_leaves_out_what_it_does_not_have() {
     let world = World::new().await;
 
     let reply = world
@@ -754,39 +754,37 @@ async fn a_batch_writes_null_for_what_an_item_result_does_not_have() {
     let results = &reply.body["results"];
     assert_eq!(reply.body["created"], 1);
     assert_eq!(reply.body["rejected"], 1);
-    assert!(results[0]["problem"].is_null() && results[0].get("problem").is_some());
-    assert!(results[1]["id"].is_null() && results[1].get("id").is_some());
+    assert!(results[0].get("problem").is_none(), "{results}");
+    assert!(results[1].get("id").is_none(), "{results}");
     assert_eq!(
         results[1]["problem"],
         json!({"code": "VALIDATION_FAILED", "field": "merchant", "message": "Merchant is required"})
     );
 }
 
-/// Java's `Money` takes any size and the insert fails in the database, so the whole request fails with 500
-/// and nothing is created, also in partial mode. The item's other fields are still checked first.
+/// An amount over `numeric(19,4)` is that item's problem (the reviewer's decision after M8); in Java the insert
+/// fails and the whole request with it.
 #[tokio::test]
-async fn an_amount_too_large_for_the_database_fails_the_batch_as_in_java() {
+async fn an_amount_too_large_for_the_database_is_the_items_problem() {
     let world = World::new().await;
-    let huge = "1234567890123456.00";
 
-    let failed = world
+    let reply = world
         .batch(
             world.member,
             "",
-            json!([batch_item("1.00", "A"), batch_item(huge, "B")]),
-        )
-        .await;
-    let rejected = world
-        .batch(
-            world.member,
-            "",
-            json!([batch_item("1.00", "A"), batch_item(huge, " ")]),
+            json!([batch_item("1.00", "A"), batch_item("1234567890123456.00", "B")]),
         )
         .await;
 
-    assert_eq!(failed.status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(rejected.status, StatusCode::OK);
-    assert_eq!(rejected.body["results"][1]["problem"]["field"], "merchant");
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(
+        reply.body["results"][1]["problem"],
+        json!({
+            "code": "VALIDATION_FAILED",
+            "field": "money",
+            "message": "Amount 1234567890123456.00 has more than 15 digits before the decimal point",
+        })
+    );
     assert_eq!(world.count().await, 1);
 }
 

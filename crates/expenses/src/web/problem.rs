@@ -43,8 +43,8 @@ pub(crate) fn failure(error: &UseCaseError) -> Problem {
             "Nothing was created because some items are invalid",
         )
         .with_violations(violations.clone()),
-        UseCaseError::AmountOverflow => {
-            tracing::error!(error = "numeric field overflow", "Unhandled exception");
+        UseCaseError::DraftsMissing => {
+            tracing::error!(error = "drafts missing", "Unhandled exception");
             Problem::internal_error()
         }
         UseCaseError::Storage(PersistenceError::Conflict { .. }) => Problem::precondition_failed(),

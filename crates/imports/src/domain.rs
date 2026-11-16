@@ -11,7 +11,6 @@
 //! - a field is cut at each comma outside quotes; a field that, apart from surrounding blanks, is enclosed in
 //!   quotes loses them and `""` inside becomes `"`; any other field is kept exactly as written.
 
-use chrono::NaiveDate;
 use ledgerly_expenses::{Category, NewExpense};
 use ledgerly_shared::iso;
 use ledgerly_shared::money::{Currency, Money, MoneyError};
@@ -252,13 +251,6 @@ pub(crate) enum Row {
     Rejected { code: &'static str, message: String },
     /// An expense to check against the expense rules and create.
     Ready(NewExpense),
-    /// An amount `Money` refuses as larger than the `numeric(19,4)` column. Java's `Money` takes it, and the
-    /// chunk's insert fails in the database, which fails the import (learning log M8).
-    TooLarge {
-        incurred_on: NaiveDate,
-        merchant: String,
-        note: Option<String>,
-    },
 }
 
 /// The column checks of `RowProcessor`, in its order: column count, date, currency, amount, category. The
@@ -290,10 +282,11 @@ pub(crate) fn parse_row(fields: &[String]) -> Row {
     }
     let merchant = strip(merchant).to_owned();
     let note = note.filter(|note| !is_blank(note)).map(|note| strip(note).to_owned());
+    // An amount over `numeric(19,4)` is `Money`'s `TooLarge`, a row error here; Java's `Money` lets it through
+    // and the insert fails the import (the reviewer's decision after M8).
     let money = match Money::parse(strip(amount), &code) {
-        Ok(money) => Some(money),
+        Ok(money) => money,
         Err(MoneyError::NotADecimal) => return rejected("AMOUNT_INVALID", "amount is not a number"),
-        Err(MoneyError::TooLarge { .. }) => None,
         Err(error) => return rejected("AMOUNT_INVALID", &error.to_string()),
     };
     let Ok(category) = strip(category).to_uppercase().parse::<Category>() else {
@@ -302,20 +295,13 @@ pub(crate) fn parse_row(fields: &[String]) -> Row {
             "category must be one of TRAVEL, MEALS, OFFICE, SOFTWARE, OTHER",
         );
     };
-    match money {
-        Some(money) => Row::Ready(NewExpense {
-            money,
-            category,
-            incurred_on,
-            merchant,
-            note,
-        }),
-        None => Row::TooLarge {
-            incurred_on,
-            merchant,
-            note,
-        },
-    }
+    Row::Ready(NewExpense {
+        money,
+        category,
+        incurred_on,
+        merchant,
+        note,
+    })
 }
 
 #[cfg(test)]
@@ -444,9 +430,12 @@ mod tests {
             panic!("not ready");
         };
         assert_eq!(without.note, None);
-        assert!(matches!(
+        assert_eq!(
             row("2026-01-03,Cafe,12345678901234567.00,EUR,MEALS"),
-            Row::TooLarge { .. }
-        ));
+            Row::Rejected {
+                code: "AMOUNT_INVALID",
+                message: "Amount 12345678901234567.00 has more than 15 digits before the decimal point".to_owned()
+            }
+        );
     }
 }

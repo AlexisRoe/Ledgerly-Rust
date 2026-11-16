@@ -12,7 +12,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::body::Body as HttpBody;
 use axum::http::{Method, Request, StatusCode};
-use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
+use chrono::{TimeDelta, TimeZone, Utc};
 use ledgerly_expenses::{ExpenseRefusal, ExpensesFacade, NewExpense, ValidationProblem};
 use ledgerly_shared::clock::{Clock, FixedClock};
 use ledgerly_shared::config::Limits;
@@ -41,10 +41,6 @@ struct Flaky {
 impl Drafts for Flaky {
     fn validate(&self, expense: &NewExpense) -> Option<ValidationProblem> {
         self.real.validate(expense)
-    }
-
-    fn validate_fields(&self, incurred_on: NaiveDate, merchant: &str, note: Option<&str>) -> Option<ValidationProblem> {
-        self.real.validate_fields(incurred_on, merchant, note)
     }
 
     fn create<'a>(
@@ -405,17 +401,20 @@ async fn a_completed_import_is_neither_restarted_nor_run_again() {
     assert_eq!(world.expenses().await, 3);
 }
 
-/// Java's `Money` accepts any size, so the chunk's insert fails in the database and the import with it.
+/// An amount over `numeric(19,4)` is that row's error (the reviewer's decision after M8); in Java the insert
+/// fails and the import with it.
 #[tokio::test]
-async fn an_amount_too_large_for_the_database_fails_the_import_as_in_java() {
+async fn an_amount_too_large_for_the_database_is_a_row_error() {
     let world = World::new().await;
     let mut rows: Vec<String> = (0..150).map(good_row).collect();
     rows[120] = "2026-01-05,Cafe,12345678901234567.00,EUR,MEALS,".to_owned();
 
     let done = world.finished(world.upload(&csv(&rows)).await.id()).await;
 
-    assert_eq!(done["status"], "FAILED");
-    assert_eq!(done["importedRows"], 100);
+    assert_eq!(done["status"], "COMPLETED");
+    assert_eq!(done["importedRows"], 149);
+    assert_eq!(done["errors"][0]["line"], 122);
+    assert_eq!(done["errors"][0]["code"], "AMOUNT_INVALID");
 }
 
 /// Java: `ImportApiTest.theLimitIsPerUserAndPerTeamAndResetsTomorrow`, and the `Retry-After` until UTC midnight.

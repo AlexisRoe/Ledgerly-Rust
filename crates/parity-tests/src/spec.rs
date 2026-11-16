@@ -265,14 +265,9 @@ fn allow_known_deviations(document: &mut Value) {
 }
 
 /// Optional properties Java's generated models write as `null` when unset, where the spec does not say
-/// `nullable`: `ExpenseResponse.note` (reviewer's decision after M6), and the batch result's `id`, `problem`
-/// and `ItemProblem.field` (M8, open question; Java's `BatchAndExportApiTest` reads `id` as a JSON null).
-const KNOWN_NULLS: [&str; 4] = [
-    "/components/schemas/ExpenseResponse/properties/note",
-    "/components/schemas/BatchItemResult/properties/id",
-    "/components/schemas/BatchItemResult/properties/problem",
-    "/components/schemas/ItemProblem/properties/field",
-];
+/// `nullable`, and Rust writes them as Java does: `ExpenseResponse.note` (reviewer's decision after M6). The
+/// batch result's unset `id`, `problem` and `field` are left out instead (decision after M8).
+const KNOWN_NULLS: [&str; 1] = ["/components/schemas/ExpenseResponse/properties/note"];
 
 /// Lets the property at `pointer` also be `null`, if the spec still describes it as it did when vendored.
 fn allow_null(document: &mut Value, pointer: &str) {
@@ -503,24 +498,36 @@ mod tests {
     }
 
     #[test]
-    fn a_rejected_batch_item_may_carry_null_id_and_a_created_one_null_problem() {
-        let body = json!({
-            "created": 1,
-            "rejected": 1,
-            "results": [
-                {"index": 0, "status": "CREATED", "id": "0196f3a2-0000-7000-8000-000000000002", "problem": null},
-                {"index": 1, "status": "REJECTED", "id": null,
-                 "problem": {"code": "VALIDATION_FAILED", "field": null, "message": "x"}},
-            ],
-        })
-        .to_string()
-        .into_bytes();
-
+    fn a_batch_result_without_id_or_problem_passes_and_a_null_one_does_not() {
+        let body = |id: Value| {
+            json!({
+                "created": 0,
+                "rejected": 1,
+                "results": [{"index": 0, "status": "REJECTED", "id": id,
+                             "problem": {"code": "VALIDATION_FAILED", "message": "x"}}],
+            })
+            .to_string()
+            .into_bytes()
+        };
         let path = format!("/api/v1/teams/{TEAM}/expenses:batch");
+        let mut omitted: Value = serde_json::from_slice(&body(Value::Null)).unwrap();
+        omitted["results"][0].as_object_mut().unwrap().remove("id");
+
         assert!(
             spec()
-                .check("POST", &path, 200, Some("application/json"), &body)
+                .check(
+                    "POST",
+                    &path,
+                    200,
+                    Some("application/json"),
+                    &omitted.to_string().into_bytes()
+                )
                 .is_ok()
+        );
+        assert!(
+            spec()
+                .check("POST", &path, 200, Some("application/json"), &body(Value::Null))
+                .is_err()
         );
     }
 

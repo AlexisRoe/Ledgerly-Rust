@@ -62,23 +62,6 @@ impl ExpensesFacade {
             })
     }
 
-    /// [`ExpensesFacade::validate`] without an amount: for a row whose amount `Money` refuses as too large
-    /// for the database, which Java's `Money` lets through to the insert. Java: `Expense.checkFields`.
-    #[must_use]
-    pub fn validate_fields(
-        &self,
-        incurred_on: chrono::NaiveDate,
-        merchant: &str,
-        note: Option<&str>,
-    ) -> Option<ValidationProblem> {
-        crate::domain::check_fields(incurred_on, merchant, note, self.clock.as_ref())
-            .err()
-            .map(|invalid| ValidationProblem {
-                field: invalid.field,
-                message: invalid.message,
-            })
-    }
-
     /// Creates the drafts with `claimant` as their claimant, on `connection`: in the caller's transaction, so
     /// that either all of them are created or none is. The only way other modules create expenses (Java's
     /// decision D4).

@@ -13,7 +13,7 @@ use std::str::FromStr;
 use chrono::NaiveDate;
 use ledgerly_shared::id::ExpenseId;
 use ledgerly_shared::iso;
-use ledgerly_shared::money::{Money, MoneyError};
+use ledgerly_shared::money::Money;
 use ledgerly_shared::version::Versioned;
 use ledgerly_shared::web::{Problem, Validate, Violations};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -330,11 +330,6 @@ impl BatchItemBody {
                 merchant,
                 note: self.note,
             }),
-            Err(MoneyError::TooLarge { .. }) => Candidate::TooLarge {
-                incurred_on: incurred_on.0,
-                merchant,
-                note: self.note,
-            },
             Err(error) => Candidate::Unparseable {
                 field: "money",
                 message: error.to_string(),
@@ -343,9 +338,8 @@ impl BatchItemBody {
     }
 }
 
-/// `BatchResponse`: the counts, then one result per item. A result has `id` or `problem`, and the other is
-/// written as `null`, as Java's generated model writes unset properties (Java's test reads `id` as a JSON
-/// null).
+/// `BatchResponse`: the counts, then one result per item. A result has `id` or `problem`; the other is left
+/// out, as the spec describes it. Java writes it as `null` (the reviewer's decision after M8).
 #[derive(Debug, Serialize)]
 pub(crate) struct BatchResponse {
     pub created: usize,
@@ -357,7 +351,9 @@ pub(crate) struct BatchResponse {
 pub(crate) struct BatchItemResult {
     pub index: usize,
     pub status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<ExpenseId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub problem: Option<ItemProblemBody>,
 }
 
@@ -365,6 +361,7 @@ pub(crate) struct BatchItemResult {
 #[derive(Debug, Serialize)]
 pub(crate) struct ItemProblemBody {
     pub code: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<&'static str>,
     pub message: String,
 }

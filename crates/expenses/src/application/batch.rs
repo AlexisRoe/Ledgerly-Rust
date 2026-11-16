@@ -2,14 +2,13 @@
 
 use std::sync::Arc;
 
-use chrono::NaiveDate;
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::id::{ExpenseId, TeamId, UserId};
 use ledgerly_shared::web::{ErrorCode, FieldViolation};
 use sqlx::PgPool;
 
 use super::{MembershipLookup, UseCaseError, access};
-use crate::domain::{NewExpense, check_fields};
+use crate::domain::NewExpense;
 use crate::facade::ExpensesFacade;
 
 /// One item of the request, parsed as far as the web layer could.
@@ -17,14 +16,6 @@ use crate::facade::ExpensesFacade;
 pub(crate) enum Candidate {
     /// Ready for the expense rules.
     Ready(NewExpense),
-    /// An amount `Money` refuses as larger than the `numeric(19,4)` column. Java's `Money` has no such limit:
-    /// the item passes the checks, and the insert fails in the database, which fails the whole request with
-    /// a 500 (learning log M8). The fields are still checked, so a bad merchant is still that item's problem.
-    TooLarge {
-        incurred_on: NaiveDate,
-        merchant: String,
-        note: Option<String>,
-    },
     /// The item could not be turned into an expense at all, for example an amount that is not a number.
     Unparseable { field: &'static str, message: String },
 }
@@ -50,7 +41,6 @@ pub(crate) struct ItemResult {
 #[derive(Debug, Clone)]
 pub(crate) struct BatchCreateExpenses {
     pool: PgPool,
-    clock: Arc<dyn Clock>,
     memberships: Arc<dyn MembershipLookup>,
     facade: ExpensesFacade,
     max_batch_size: u32,
@@ -66,7 +56,6 @@ impl BatchCreateExpenses {
         let facade = ExpensesFacade::with(memberships.clone(), clock.clone(), max_batch_size);
         Self {
             pool,
-            clock,
             memberships,
             facade,
             max_batch_size,
@@ -78,7 +67,7 @@ impl BatchCreateExpenses {
     /// # Errors
     ///
     /// Not a teammate (404) before anything else; no items or more than the batch limit (400); with `atomic`,
-    /// any bad item (422 `BATCH_REJECTED`, one entry per problem); an amount too large for the database (500).
+    /// any bad item (422 `BATCH_REJECTED`, one entry per problem).
     pub(crate) async fn execute(
         &self,
         team: TeamId,
@@ -116,11 +105,8 @@ impl BatchCreateExpenses {
 
         let mut valid = Vec::new();
         for (item, problem) in items.iter().zip(&problems) {
-            match (item, problem) {
-                (Candidate::Ready(expense), None) => valid.push(expense.clone()),
-                // Java inserts it, and the database refuses the amount: the whole transaction fails.
-                (Candidate::TooLarge { .. }, None) => return Err(UseCaseError::AmountOverflow),
-                _ => {}
+            if let (Candidate::Ready(expense), None) = (item, problem) {
+                valid.push(expense.clone());
             }
         }
         let mut ids = if valid.is_empty() {
@@ -138,7 +124,7 @@ impl BatchCreateExpenses {
         for (index, problem) in problems.into_iter().enumerate() {
             let outcome = match problem {
                 Some(problem) => Err(problem),
-                None => Ok(ids.next().ok_or(UseCaseError::AmountOverflow)?),
+                None => Ok(ids.next().ok_or(UseCaseError::DraftsMissing)?),
             };
             results.push(ItemResult { index, outcome });
         }
@@ -156,13 +142,6 @@ impl BatchCreateExpenses {
             Candidate::Ready(expense) => self
                 .facade
                 .validate(expense)
-                .map(|invalid| problem(invalid.field, invalid.message)),
-            Candidate::TooLarge {
-                incurred_on,
-                merchant,
-                note,
-            } => check_fields(*incurred_on, merchant, note.as_deref(), self.clock.as_ref())
-                .err()
                 .map(|invalid| problem(invalid.field, invalid.message)),
         }
     }

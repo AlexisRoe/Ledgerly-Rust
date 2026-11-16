@@ -62,10 +62,9 @@ pub(crate) enum UseCaseError {
     /// with one violation per problem, named `items[<index>].<field>`.
     #[error("nothing was created because some items are invalid")]
     BatchRejected(Vec<ledgerly_shared::web::FieldViolation>),
-    /// An amount the `numeric(19,4)` column cannot hold reached the insert. Java's `Money` lets it through and
-    /// the database refuses it; its catch-all answers 500.
-    #[error("an amount does not fit the database")]
-    AmountOverflow,
+    /// Fewer ids came back from `create_drafts` than drafts went in: cannot happen.
+    #[error("the drafts were not all created")]
+    DraftsMissing,
     #[error(transparent)]
     Storage(#[from] PersistenceError),
 }

@@ -10,7 +10,6 @@ use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use chrono::NaiveDate;
 use ledgerly_expenses::{ExpenseRefusal, ExpensesFacade, NewExpense, ValidationProblem};
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::config::Limits;
@@ -31,8 +30,6 @@ use crate::domain::Refusal;
 pub(crate) trait Drafts: fmt::Debug + Send + Sync {
     fn validate(&self, expense: &NewExpense) -> Option<ValidationProblem>;
 
-    fn validate_fields(&self, incurred_on: NaiveDate, merchant: &str, note: Option<&str>) -> Option<ValidationProblem>;
-
     /// Creates the drafts in the caller's transaction.
     fn create<'a>(
         &'a self,
@@ -46,10 +43,6 @@ pub(crate) trait Drafts: fmt::Debug + Send + Sync {
 impl Drafts for ExpensesFacade {
     fn validate(&self, expense: &NewExpense) -> Option<ValidationProblem> {
         Self::validate(self, expense)
-    }
-
-    fn validate_fields(&self, incurred_on: NaiveDate, merchant: &str, note: Option<&str>) -> Option<ValidationProblem> {
-        Self::validate_fields(self, incurred_on, merchant, note)
     }
 
     fn create<'a>(
