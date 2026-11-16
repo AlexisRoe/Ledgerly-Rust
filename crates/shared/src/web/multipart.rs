@@ -5,8 +5,9 @@
 //! answers:
 //! - a part, or the request, over its limit: 413 `PAYLOAD_TOO_LARGE`, "The upload is larger than the limit";
 //! - no file part of that name: Spring's own 400, "Required part 'file' is not present.";
-//! - a body that is not valid multipart: Spring's `MultipartException`, which Java's catch-all answers with a
-//!   500 `INTERNAL_ERROR` and an error log line.
+//! - a body that is not valid multipart: 400 `MALFORMED_REQUEST`. Java answers 500 `INTERNAL_ERROR` and logs
+//!   an error, because its handlers do not map Spring's `MultipartException`; answering a client's mistake as
+//!   one is the reviewer's decision after M7 (learning log, M7 open question 2).
 //!
 //! Spring parses the whole request before the controller runs. Here nothing is read until the caller asks for
 //! the file, which the receipts module does only once it knows the caller may upload (plan M7.2).
@@ -42,7 +43,7 @@ impl MultipartUpload {
     ///
     /// # Errors
     ///
-    /// The `Content-Type` has no boundary: a 500, as Tomcat's parse failure is in Java.
+    /// The `Content-Type` has no boundary: 400 `MALFORMED_REQUEST`.
     pub fn new(request: Request) -> Result<Self, Problem> {
         let headers = request.headers();
         let boundary = headers
@@ -112,7 +113,7 @@ impl UploadedFile {
     ///
     /// # Errors
     ///
-    /// The part or the request grows past its limit (413), or the body breaks off or is not multipart (500).
+    /// The part or the request grows past its limit (413), or the body breaks off or is not multipart (400).
     pub async fn chunk(&mut self) -> Result<Option<Bytes>, Problem> {
         self.field.chunk().await.map_err(failure)
     }
@@ -122,11 +123,9 @@ fn too_large() -> Problem {
     Problem::payload_too_large("The upload is larger than the limit")
 }
 
-/// A body Tomcat cannot parse: Spring's `MultipartException`, which no handler of Java's maps, so its catch-all
-/// logs it and answers 500.
+/// A body that cannot be parsed as multipart. Java: a 500 from its catch-all (see the module comment).
 fn unparsable() -> Problem {
-    tracing::error!("Unhandled exception: Failed to parse multipart servlet request");
-    Problem::internal_error()
+    Problem::malformed_request()
 }
 
 fn failure(error: multer::Error) -> Problem {
@@ -245,12 +244,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_body_that_is_not_multipart_is_javas_500() {
+    async fn a_body_that_is_not_multipart_is_a_malformed_request() {
         let problem = upload(b"this is not multipart".to_vec())
             .file("file")
             .await
             .unwrap_err();
-        assert_eq!(problem.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(problem.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(problem.code(), super::super::ErrorCode::MalformedRequest);
 
         let without_boundary = Request::builder()
             .header(header::CONTENT_TYPE, "multipart/form-data")
@@ -258,7 +258,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             MultipartUpload::new(without_boundary).unwrap_err().status(),
-            StatusCode::INTERNAL_SERVER_ERROR
+            StatusCode::BAD_REQUEST
         );
     }
 }

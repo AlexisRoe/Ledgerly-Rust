@@ -476,10 +476,9 @@ async fn the_upload_must_be_multipart_with_a_file_part() {
         .header("content-type", "multipart/form-data; boundary=b0undary")
         .body(HttpBody::from("--b0undary\r\nno headers end"))
         .unwrap();
-    assert_eq!(
-        world.send(broken, world.claimant).await.status,
-        StatusCode::INTERNAL_SERVER_ERROR
-    );
+    let broken = world.send(broken, world.claimant).await;
+    assert_eq!(broken.status, StatusCode::BAD_REQUEST);
+    assert_eq!(broken.code(), "MALFORMED_REQUEST");
 }
 
 #[tokio::test]

@@ -41,7 +41,7 @@ Everything *inside* that boundary is designed afresh in idiomatic Rust: types, e
 | JWT | `jsonwebtoken` (ES256) + `p256` for keys and the RFC 7638 thumbprint | Nimbus | — |
 | Secrets in memory | `secrecy` + `zeroize` | — (new) | Redacted in `Debug`, wiped on drop |
 | Object storage | `aws-sdk-s3` (presigned GET) | AWS SDK v2 | — |
-| File type sniffing | `infer` (magic bytes) | Apache Tika | Only PDF, JPEG, PNG must be recognised |
+| File type sniffing | Tika's rules that match from the first byte, by hand (`receipts::domain::DetectedType::detect`) | Apache Tika | Only PDF, JPEG, PNG must be recognised; Tika's weaker "`%PDF-1.` within 512 bytes" rules are not copied, so such files are refused |
 | Malware scan | Own clamd `INSTREAM` client on `tokio::net::TcpStream`, with retry | Own client + `@Retryable` | Same as Java |
 | Batch and import | tokio tasks, `csv` crate, job state in `import_jobs` | Spring Batch | `BATCH_*` tables stay unused ([ADR 0006](docs/adr/0006-apply-java-migrations-unchanged-with-flyway.md)) |
 | Events | Transactional outbox in `event_publication` + in-process dispatcher, republished on restart | Spring Modulith registry | Same table, Rust's own event types ([ADR 0005](docs/adr/0005-drop-in-replacement-on-the-same-data.md)) |
