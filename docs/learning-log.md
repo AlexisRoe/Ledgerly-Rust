@@ -490,6 +490,52 @@ One section per milestone, written by the implementing agent when the milestone 
 
 ## M9 · Events and audit
 
+`J/` and `JT/` as in M8. Commits: `aa8ba6f` (M9.1), `c3d8fff` (M9.2), `1e47691` (M9.3).
+
+- **Java → Rust:**
+  - Spring Modulith's event publication registry (`spring-modulith-starter-jpa`, `republish-outstanding-events-on-restart`) and `J/shared/config/EventMaintenance.java` → `shared::events::Outbox` (`crates/shared/src/events/outbox.rs`), about 300 lines on the same `event_publication` table (V7).
+    - Publishing writes one row per interested listener in the caller's transaction, plus `pg_notify` with the row id. Postgres sends a notification only when its transaction commits, which is Spring's `AFTER_COMMIT` without a transaction synchronisation hook.
+    - The dispatcher (`Outbox::start`) listens on the channel. It delivers every open row once at start-up, re-delivers rows older than two minutes every minute, and purges completed rows older than seven days at 03:17 UTC.
+    - Rows whose `event_type` does not start with `ledgerly-rust:` are never read, changed or deleted (ADR 0005).
+  - `@ApplicationModuleListener` / tracked `@TransactionalEventListener` → the `Listener` trait (`id`, `listens_to`, `deliver(event_type, payload)`). A listener reads the payload back with the event's own `Deserialize` (`read_payload`); an `Err` leaves the publication open.
+    - The modules hand their listeners to the app (`Receipts::listeners`, `Imports::listeners`, `Audit::listeners`), and the app subscribes them all once (`Outbox::subscribe`). Two steps, because the modules need the publisher before the listeners exist.
+  - `ExpenseEvent` (`J/expenses/events/ExpenseEvent.java`, nine records) → `ExpenseEvent { …, kind: ExpenseEventKind }` (`crates/expenses/src/events.rs`), published by every expense use case in its transaction. It replaces M7's `ExpenseDeletedListener` port, which is gone.
+  - `ScanReceipt.on(ReceiptUploaded)` → `ScanListener` (`crates/receipts/src/application/listeners.rs`). It listens to the public `ReceiptUploaded` instead of Java's module-internal one (same ids, same transaction). `ExpenseDeletedCleanup` → `CleanupListener` on `ExpenseDeleted`.
+  - `ImportQueued` + `ImportRunner.on` → an internal `ImportQueued` event (`crates/imports/src/events.rs`) and `ImportQueuedListener` (`crates/imports/src/application/runner.rs`). The delivery lasts as long as the job, as Java's tracked listener does.
+  - `AuditListeners` (25 methods) + `AuditRecorder` + `AuditTrail` + `GetAuditEvents` + `AuditController` → one `AuditListener` with one mapping function per module (`crates/audit/src/listener.rs`), `trail.rs` (only `append` and `page`), and `web.rs`.
+    - Each mapping function matches every kind of its module's event, so a new kind does not compile until it says what to record.
+    - `AUDITED_EVENT_TYPES` plus a test that compares it with one sample of every kind take the place of Java's `getPermittedSubclasses()` check.
+    - Who may read the trail comes through `shared::role::TeamRoles`, the port the app fills with `TeamsFacade`, so audit does not depend on the teams facade (Java: `@teamAuthorization` by bean name).
+- **Rust features that carried the weight:**
+  - Trait objects for both sides of the outbox: `&dyn Event` with `payload()` for the publisher, `Arc<dyn Listener>` for delivery. Serde derive on every event gives the stored JSON for free.
+  - `tokio::select!` over the notification stream, an `interval` and a `sleep` reset to the next 03:17 (`Outbox::run`). A small `Wake` enum keeps the reconnect logic out of the `select!`.
+  - Drop guards (`InFlight` in the outbox, `Live` in the import runner) take an id off a set when a delivery or job ends, also by panic or abort.
+  - `OnceLock` for set-once wiring (`Outbox::subscribe`).
+  - A hand-written `Deserialize` that keeps object members in order (`crates/audit/src/details.rs`, see Parity traps).
+- **Surprises and dead ends:**
+  - No transaction "after commit" hook is needed. Postgres `NOTIFY` is transactional, and a lost connection is covered by catching up after reconnecting and by the minute's re-delivery.
+  - Only one place could run an import twice in one process: the minute's re-delivery of a job that takes longer than two minutes. Two guards stop it. The outbox never hands out a row it is delivering, and the runner keeps a live set, which also keeps an admin `restart` from racing the job.
+  - sqlx's `json` feature makes a `$n` that Postgres types as `jsonb` a `serde_json::Value` parameter, so the `cast(:details as jsonb)` of Java's SQL became a plain `$8`.
+- **Parity traps:**
+  - `details` comes back in the order Postgres prints a `jsonb` (shorter keys first, then bytewise): Java reads the text into a `LinkedHashMap`. `IMPORT_COMPLETED` is therefore `{"failed", "skippedRows", "importedRows"}`, not alphabetical. `serde_json`'s map would sort it.
+  - `EXPENSE_EDITED` is published on every successful edit, with `changedFields: []` when nothing changed. The names are in Java's order: money, category, incurredOn, merchant, note. The merchant and the note are compared as the client sent them, so `" Café"` against a stored `"Café"` counts as a change, as in Java.
+  - `ExpenseCreated` for batch and import drafts is published per draft after all of them are written, in the caller's transaction, as `ExpensesFacadeImpl.createDrafts` does.
+  - `RECEIPT_ACCEPTED` and `RECEIPT_QUARANTINED` have no actor. Team-less events (`USER_*`, `REFRESH_TOKEN_REUSE_DETECTED`) have `team_id NULL` and never appear in a team's page.
+  - The order on `GET …/audit-events`, worked out from Spring's proxies (not covered by a Java test):
+    1. argument conversion (`teamId`, `limit` that is not an integer: 400);
+    2. `@PreAuthorize` (404 not a teammate, 403 "Role X may not do this");
+    3. the spec's constraints (`limit` 1 to 100, `after` at most 200 characters) from the `@Validated` method validation, which is added behind the security advice;
+    4. `GetAuditEvents` (the configured page size, then the cursor: an undecodable one is 400 on `cursor`).
+  - The audit row's `created_at` is the write time (the page order). `occurredAt` in the response is the event's own instant, written as Jackson writes an `OffsetDateTime`.
+- **Decisions:**
+  - `actorId`, `subjectType`, `subjectId` and `nextCursor` are left out when there is none, as the spec describes them. This is the reviewer's M8 decision for batch results, applied here. Java's generated model probably writes `null`; the parity tests accept either.
+  - The scan listens to the public `ReceiptUploaded` rather than to a separate internal event, which would only repeat its ids.
+  - Within one process, an import found `RUNNING` with no live job resumes when its `ImportQueued` is delivered again (the M8 decision). With several instances, two could resume the same import, as Java's registry would deliver to both; Ledgerly runs one instance.
+  - The nightly purge runs at 03:17 UTC: chrono's local time zone is not compiled in, and the container's zone is UTC like Java's.
+- **Parity tests:** M9: 17 passed, 0 ignored, 0 failed. The suite: 249 passed, 19 ignored (M10 and M11), 0 failed. `just verify`: 654 tests passed. Bruno `00-auth` + `02-reading`: 18 of 18, including both audit-trail requests.
+- **Open questions:**
+  1. **Order of the role check and the parameter constraints on `GET …/audit-events`.** Rust answers 403/404 before a `limit` out of range or an over-long `after`, because Spring's `@Validated` method validation advice sits behind `@PreAuthorize`. No Java test pins this. A quick check against Java (`?limit=101` as an APPROVER: 403 or 400?) would settle it.
+
 ## M10 · Hardening and observability
 
 ## M11 · Ship it
