@@ -18,6 +18,7 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use ledgerly_shared::clock::Clock;
+use ledgerly_shared::config::Limits;
 use ledgerly_shared::id::UserId;
 use ledgerly_shared::id::{ExpenseId, TeamId};
 use ledgerly_shared::iso;
@@ -29,10 +30,13 @@ use ledgerly_shared::web::{
 };
 use sqlx::PgPool;
 
-use self::dto::{CreateExpenseRequest, ExpensePageResponse, ExpenseResponse, RejectRequest, UpdateExpenseRequest};
+use self::dto::{
+    BatchRequest, BatchResponse, CreateExpenseRequest, ExpensePageResponse, ExpenseResponse, RejectRequest,
+    UpdateExpenseRequest,
+};
 use crate::application::{
-    CreateExpense, CreateExpenseCommand, DeleteExpense, Filter, GetExpense, ListExpenses, ListQuery, MembershipLookup,
-    TransitionExpense, UpdateExpense, UpdateExpenseCommand,
+    BatchCreateExpenses, CreateExpense, CreateExpenseCommand, DeleteExpense, Filter, GetExpense, ListExpenses,
+    ListQuery, MembershipLookup, TransitionExpense, UpdateExpense, UpdateExpenseCommand,
 };
 use crate::deletions::ExpenseDeletedListener;
 use crate::domain::{Action, Category, Expense, ExpenseStatus, NewExpense};
@@ -50,6 +54,7 @@ pub(crate) struct ExpensesApi {
     delete: DeleteExpense,
     transition: TransitionExpense,
     list: ListExpenses,
+    batch: BatchCreateExpenses,
 }
 
 impl ExpensesApi {
@@ -59,10 +64,11 @@ impl ExpensesApi {
         memberships: &Arc<dyn MembershipLookup>,
         receipts: &Arc<dyn ReceiptChecks>,
         deleted: &Arc<dyn ExpenseDeletedListener>,
-        max_page_size: u32,
+        limits: &Limits,
     ) -> Self {
         Self {
-            list: ListExpenses::new(pool.clone(), memberships.clone(), max_page_size),
+            batch: BatchCreateExpenses::new(pool.clone(), clock.clone(), memberships.clone(), limits.max_batch_size),
+            list: ListExpenses::new(pool.clone(), memberships.clone(), limits.max_page_size),
             create: CreateExpense::new(pool.clone(), clock.clone(), memberships.clone()),
             get: GetExpense::new(pool.clone(), memberships.clone()),
             update: UpdateExpense::new(pool.clone(), clock.clone(), memberships.clone()),
@@ -85,6 +91,13 @@ impl ExpensesApi {
         let routes = Routes::new()
             .route(Method::GET, EXPENSES, Body::Ignored, list, self.clone())
             .route(Method::POST, EXPENSES, Body::Json, create, self.clone())
+            .route(
+                Method::POST,
+                "/api/v1/teams/{teamId}/expenses:batch",
+                Body::Json,
+                batch,
+                self.clone(),
+            )
             .route(Method::GET, EXPENSE, Body::Ignored, get, self.clone())
             .route(Method::PATCH, EXPENSE, Body::Json, update, self.clone())
             .route(Method::DELETE, EXPENSE, Body::Ignored, delete, self.clone());
@@ -169,6 +182,45 @@ async fn list(
 fn is_sort(sort: &str) -> bool {
     let (field, direction) = sort.split_once(',').map_or((sort, None), |(f, d)| (f, Some(d)));
     matches!(field, "incurredOn" | "createdAt" | "amount") && direction.is_none_or(|d| matches!(d, "asc" | "desc"))
+}
+
+/// `POST /teams/{teamId}/expenses:batch`: 200 with one result per item, or 422 for an atomic batch with a bad
+/// item. Spring resolves the arguments in the order Java's method declares them: the path, the body (with its
+/// Bean Validation), then `atomic`.
+async fn batch(
+    State(api): State<ExpensesApi>,
+    user: CurrentUser,
+    parameters: PathParameters,
+    query: QueryParameters,
+    request: Request,
+) -> Result<Response, Problem> {
+    let team = team(&parameters)?;
+    let body: BatchRequest = read_json(request).await?;
+    let atomic = query.convert("atomic", spring_boolean)?.flatten().unwrap_or(false);
+    let candidates = body
+        .items
+        .unwrap_or_default()
+        .into_iter()
+        .map(dto::BatchItemBody::into_candidate)
+        .collect();
+    let results = api
+        .batch
+        .execute(team, user.id(), candidates, atomic)
+        .await
+        .map_err(|e| problem::failure(&e))?;
+    Ok(axum::Json(BatchResponse::from(results)).into_response())
+}
+
+/// Spring's `StringToBooleanConverter`: trimmed (`String.trim()`), case-insensitive, `true/on/yes/1` and
+/// `false/off/no/0`; empty means no value. `None` is a type mismatch.
+fn spring_boolean(value: &str) -> Option<Option<bool>> {
+    let value = value.trim_matches(|c: char| c <= ' ').to_ascii_lowercase();
+    match value.as_str() {
+        "" => Some(None),
+        "true" | "on" | "yes" | "1" => Some(Some(true)),
+        "false" | "off" | "no" | "0" => Some(Some(false)),
+        _ => None,
+    }
 }
 
 /// `POST /teams/{teamId}/expenses`: 201 with `Location` and `ETag`.

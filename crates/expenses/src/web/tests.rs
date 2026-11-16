@@ -71,7 +71,7 @@ impl World {
             &memberships,
             &receipts,
             &crate::deletions::nobody(),
-            100,
+            &ledgerly_shared::config::Limits::default(),
         )
         .routes();
         let router = Router::new()
@@ -613,7 +613,7 @@ async fn submit_without_an_accepted_receipt_is_422() {
                 &memberships,
                 &receipts,
                 &crate::deletions::nobody(),
-                100,
+                &ledgerly_shared::config::Limits::default(),
             )
             .routes()
             .into_service(),
@@ -710,4 +710,157 @@ async fn an_idempotency_key_replays_the_same_request_and_refuses_another() {
     let unkeyed = world.create_as(world.member, lunch()).await;
     let again = world.create_as(world.member, lunch()).await;
     assert_ne!(unkeyed.body["id"], again.body["id"]);
+}
+
+// --- batch (M8.1) ---
+
+impl World {
+    async fn batch(&self, caller: UserId, query: &str, items: Value) -> Reply {
+        let path = format!("{}:batch{query}", self.expenses());
+        self.send(Some(caller), Request::post(path), Some(json!({ "items": items })))
+            .await
+    }
+
+    async fn count(&self) -> i64 {
+        sqlx::query_scalar("select count(*) from expenses")
+            .fetch_one(self._database.pool())
+            .await
+            .unwrap()
+    }
+}
+
+fn batch_item(amount: &str, merchant: &str) -> Value {
+    json!({
+        "money": {"amount": amount, "currency": "EUR"},
+        "category": "MEALS",
+        "incurredOn": "2026-11-01",
+        "merchant": merchant,
+    })
+}
+
+#[tokio::test]
+async fn a_batch_writes_null_for_what_an_item_result_does_not_have() {
+    let world = World::new().await;
+
+    let reply = world
+        .batch(
+            world.member,
+            "",
+            json!([batch_item("1.00", "A"), batch_item("1.00", " ")]),
+        )
+        .await;
+
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    let results = &reply.body["results"];
+    assert_eq!(reply.body["created"], 1);
+    assert_eq!(reply.body["rejected"], 1);
+    assert!(results[0]["problem"].is_null() && results[0].get("problem").is_some());
+    assert!(results[1]["id"].is_null() && results[1].get("id").is_some());
+    assert_eq!(
+        results[1]["problem"],
+        json!({"code": "VALIDATION_FAILED", "field": "merchant", "message": "Merchant is required"})
+    );
+}
+
+/// Java's `Money` takes any size and the insert fails in the database, so the whole request fails with 500
+/// and nothing is created, also in partial mode. The item's other fields are still checked first.
+#[tokio::test]
+async fn an_amount_too_large_for_the_database_fails_the_batch_as_in_java() {
+    let world = World::new().await;
+    let huge = "1234567890123456.00";
+
+    let failed = world
+        .batch(
+            world.member,
+            "",
+            json!([batch_item("1.00", "A"), batch_item(huge, "B")]),
+        )
+        .await;
+    let rejected = world
+        .batch(
+            world.member,
+            "",
+            json!([batch_item("1.00", "A"), batch_item(huge, " ")]),
+        )
+        .await;
+
+    assert_eq!(failed.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(rejected.status, StatusCode::OK);
+    assert_eq!(rejected.body["results"][1]["problem"]["field"], "merchant");
+    assert_eq!(world.count().await, 1);
+}
+
+#[tokio::test]
+async fn missing_item_properties_are_validation_failures_named_by_index() {
+    let world = World::new().await;
+
+    let reply = world
+        .batch(
+            world.member,
+            "",
+            json!([{"money": {"amount": "1.00"}, "category": "MEALS"}]),
+        )
+        .await;
+
+    assert_eq!(reply.code(), "VALIDATION_FAILED");
+    let fields: Vec<&str> = reply.body["errors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|error| error["field"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        fields,
+        ["items[0].money.currency", "items[0].incurredOn", "items[0].merchant"]
+    );
+}
+
+#[tokio::test]
+async fn atomic_is_read_as_spring_reads_a_boolean() {
+    let world = World::new().await;
+    let bad = json!([batch_item("x", "A")]);
+
+    assert_eq!(
+        world.batch(world.member, "?atomic=YES", bad.clone()).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        world.batch(world.member, "?atomic=0", bad.clone()).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        world.batch(world.member, "?atomic=", bad.clone()).await.status,
+        StatusCode::OK
+    );
+    let mismatch = world.batch(world.member, "?atomic=maybe", bad).await;
+    assert_eq!(mismatch.status, StatusCode::BAD_REQUEST);
+    assert_eq!(mismatch.code(), "REQUEST_REJECTED");
+}
+
+#[tokio::test]
+async fn an_atomic_rejection_names_every_problem_with_javas_detail() {
+    let world = World::new().await;
+
+    let reply = world
+        .batch(
+            world.member,
+            "?atomic=true",
+            json!([batch_item("x", "A"), batch_item("1.00", "B"), batch_item("1.00", " ")]),
+        )
+        .await;
+
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(reply.code(), "BATCH_REJECTED");
+    assert_eq!(
+        reply.body["detail"],
+        "Nothing was created because some items are invalid"
+    );
+    assert_eq!(
+        reply.body["errors"],
+        json!([
+            {"field": "items[0].money", "message": "Not a valid decimal number"},
+            {"field": "items[2].merchant", "message": "Merchant is required"},
+        ])
+    );
+    assert_eq!(world.count().await, 0);
 }

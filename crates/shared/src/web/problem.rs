@@ -429,6 +429,14 @@ impl Problem {
         }
     }
 
+    /// The same problem with field violations in `errors`, as a catalogue entry other than
+    /// `VALIDATION_FAILED` may carry them (`BATCH_REJECTED`).
+    #[must_use]
+    pub fn with_violations(mut self, violations: Vec<FieldViolation>) -> Self {
+        self.violations = violations;
+        self
+    }
+
     /// The same problem with an extra response header, such as `Allow` or `Retry-After`.
     #[must_use]
     pub fn with_header(mut self, name: HeaderName, value: HeaderValue) -> Self {

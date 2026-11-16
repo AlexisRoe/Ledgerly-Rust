@@ -44,7 +44,6 @@ mod m8 {
 
     /// Java: `Api4UnrestrictedResourceConsumptionTest.aHundredAndOneItemBatchIsA400`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_hundred_and_one_item_batch_is_a_400() {
         let world = World::start().await;
         let team = world.team().await;
@@ -62,7 +61,6 @@ mod m8 {
 
     /// Java: `Api4UnrestrictedResourceConsumptionTest.jsonBodiesOverOneMegabyteAreA413BeforeTheyAreParsed`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn json_bodies_over_one_megabyte_are_a_413_before_they_are_parsed() {
         let world = World::start().await;
         let team = world.team().await;

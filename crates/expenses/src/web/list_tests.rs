@@ -123,7 +123,10 @@ impl World {
             &memberships,
             &receipts,
             &crate::deletions::nobody(),
-            max_page_size,
+            &ledgerly_shared::config::Limits {
+                max_page_size,
+                ..Default::default()
+            },
         )
         .routes();
         let router = Router::new()

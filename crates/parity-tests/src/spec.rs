@@ -257,12 +257,32 @@ fn matches_segment(pattern: &str, actual: &str) -> bool {
 /// a note (its generated model has no `@JsonInclude`), and Rust does the same. The reviewer decided after M4 to
 /// keep Java's `null` and to declare `note` nullable in the spec, upstream in Ledgerly-Java first; after M6, to
 /// accept `null` here until then (learning log, M4 open question 4 and M6). This is the only property widened,
-/// and [`tests::the_note_exception_is_still_needed`] fails once the vendored spec no longer needs it.
+/// and [`tests::the_null_exceptions_are_still_needed`] fails once the vendored spec no longer needs one.
 fn allow_known_deviations(document: &mut Value) {
-    if let Some(note) = document.pointer_mut("/components/schemas/ExpenseResponse/properties/note")
-        && note == &json!({"type": "string"})
-    {
-        *note = json!({"type": ["string", "null"]});
+    for pointer in KNOWN_NULLS {
+        allow_null(document, pointer);
+    }
+}
+
+/// Optional properties Java's generated models write as `null` when unset, where the spec does not say
+/// `nullable`: `ExpenseResponse.note` (reviewer's decision after M6), and the batch result's `id`, `problem`
+/// and `ItemProblem.field` (M8, open question; Java's `BatchAndExportApiTest` reads `id` as a JSON null).
+const KNOWN_NULLS: [&str; 4] = [
+    "/components/schemas/ExpenseResponse/properties/note",
+    "/components/schemas/BatchItemResult/properties/id",
+    "/components/schemas/BatchItemResult/properties/problem",
+    "/components/schemas/ItemProblem/properties/field",
+];
+
+/// Lets the property at `pointer` also be `null`, if the spec still describes it as it did when vendored.
+fn allow_null(document: &mut Value, pointer: &str) {
+    let Some(property) = document.pointer_mut(pointer) else {
+        return;
+    };
+    if let Some(reference) = property.get("$ref").cloned() {
+        *property = json!({"anyOf": [{"$ref": reference}, {"type": "null"}]});
+    } else if let Some(kind) = property.get("type").and_then(Value::as_str).map(str::to_owned) {
+        property["type"] = json!([kind, "null"]);
     }
 }
 
@@ -467,11 +487,40 @@ mod tests {
     /// The vendored spec still says `note: {type: string}`. When Ledgerly-Java declares it nullable and the spec
     /// is re-vendored, this fails: then delete [`allow_known_deviations`] and this test.
     #[test]
-    fn the_note_exception_is_still_needed() {
+    fn the_null_exceptions_are_still_needed() {
         let vendored: Value = serde_saphyr::from_str(SOURCE).unwrap();
-        assert_eq!(
-            vendored.pointer("/components/schemas/ExpenseResponse/properties/note"),
-            Some(&json!({"type": "string"}))
+        for pointer in KNOWN_NULLS {
+            let property = vendored.pointer(pointer).unwrap_or_else(|| panic!("{pointer} is gone"));
+            let nullable = property.get("nullable") == Some(&json!(true))
+                || property["type"]
+                    .as_array()
+                    .is_some_and(|types| types.contains(&json!("null")));
+            assert!(
+                !nullable,
+                "{pointer} is nullable in the vendored spec now: drop the exception"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rejected_batch_item_may_carry_null_id_and_a_created_one_null_problem() {
+        let body = json!({
+            "created": 1,
+            "rejected": 1,
+            "results": [
+                {"index": 0, "status": "CREATED", "id": "0196f3a2-0000-7000-8000-000000000002", "problem": null},
+                {"index": 1, "status": "REJECTED", "id": null,
+                 "problem": {"code": "VALIDATION_FAILED", "field": null, "message": "x"}},
+            ],
+        })
+        .to_string()
+        .into_bytes();
+
+        let path = format!("/api/v1/teams/{TEAM}/expenses:batch");
+        assert!(
+            spec()
+                .check("POST", &path, 200, Some("application/json"), &body)
+                .is_ok()
         );
     }
 

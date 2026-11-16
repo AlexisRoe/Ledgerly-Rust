@@ -22,7 +22,8 @@ use ledgerly_teams::TeamsFacade;
 use sqlx::PgPool;
 
 pub use deletions::{ExpenseDeletedListener, NobodyListens};
-pub use facade::{ExpenseRefusal, ExpensesFacade};
+pub use domain::{Category, InvalidInput, NewExpense};
+pub use facade::{ExpenseRefusal, ExpensesFacade, ValidationProblem};
 pub use receipt_checks::{ReceiptChecks, ReceiptSummary, SummaryFuture};
 
 use crate::application::{MembershipLookup, TeamsMembershipLookup};
@@ -41,5 +42,5 @@ pub fn routes(
     deleted: &Arc<dyn ExpenseDeletedListener>,
 ) -> Routes {
     let memberships: Arc<dyn MembershipLookup> = Arc::new(TeamsMembershipLookup(teams));
-    web::ExpensesApi::new(pool, clock, &memberships, receipts, deleted, limits.max_page_size).routes()
+    web::ExpensesApi::new(pool, clock, &memberships, receipts, deleted, limits).routes()
 }

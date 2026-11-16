@@ -10,12 +10,14 @@ mod expense;
 mod status;
 mod text;
 
-pub(crate) use category::Category;
+pub use category::Category;
 pub(crate) use error::ExpenseError;
-pub(crate) use expense::{Expense, NewExpense, Rejection, StoredExpense};
+pub use expense::NewExpense;
+pub(crate) use expense::{Expense, Rejection, StoredExpense, check_fields};
 pub(crate) use status::ExpenseStatus;
+pub use text::InvalidInput;
 pub(crate) use text::{Merchant, Note, RejectionReason};
 pub(crate) use {action::Action, actor::Actor};
 // Only tests name these; production code meets them inside `ExpenseError`.
 #[cfg(test)]
-pub(crate) use {error::Forbidden, text::InvalidInput};
+pub(crate) use error::Forbidden;

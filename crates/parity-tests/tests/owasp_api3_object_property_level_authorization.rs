@@ -117,7 +117,6 @@ mod m8 {
 
     /// Java: `Api3BrokenObjectPropertyLevelAuthorizationTest.claimantIdCannotBeSetOnCreateEditOrBatch`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn claimant_id_cannot_be_set_on_create_edit_or_batch() {
         let world = World::start().await;
         let team = world.team().await;

@@ -65,7 +65,13 @@ where
 ///
 /// 413, `MALFORMED_REQUEST` or `VALIDATION_FAILED`, as described on [`Json`].
 pub async fn read_json<T: DeserializeOwned + Validate>(request: Request) -> Result<T, Problem> {
-    let bytes = read_body(request, MAX_JSON_BODY_SIZE).await?;
+    // The configured limit, set by the body-limit layer; the default where the layer is not in front.
+    let limit = request
+        .extensions()
+        .get::<super::JsonBodyLimit>()
+        .and_then(|limit| usize::try_from(limit.0).ok())
+        .unwrap_or(MAX_JSON_BODY_SIZE);
+    let bytes = read_body(request, limit).await?;
     let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| Problem::malformed_request())?;
     let body: T = serde_json::from_value(value).map_err(|_| Problem::malformed_request())?;
     let mut violations = Violations::default();

@@ -412,7 +412,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** a 100-item batch, CSV export and an asynchronous 10,000-row CSV import, all with Java's per-item and per-row results.
 **Rust you meet:** tasks, `JoinSet`, `Semaphore`, cancellation, `Send`/`Sync` in practice, streaming CSV, back-pressure.
 
-- [ ] **M8.1 Batch create**
+- [x] **M8.1 Batch create**
   - Do: `POST …/expenses:batch`, at most 100 items (otherwise 400). Every item is validated before any insert. By default the result is partial: 200 with per-item `{index, status, id | problem}`. With `atomic=true` it's all or nothing, and a failure answers 422. Unknown fields in items are rejected. `ExpensesFacade::create_drafts` and `validate` are the single entry points.
   - Accept: an atomic batch with one bad item writes nothing. 101 items → 400.
 

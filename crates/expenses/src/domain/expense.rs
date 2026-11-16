@@ -43,13 +43,37 @@ impl NewExpense {
     /// The merchant and note as types that can only hold valid text, once the date is known not to be in the
     /// future.
     fn checked(&self, clock: &dyn Clock) -> Result<(Merchant, Option<Note>), InvalidInput> {
-        let merchant = Merchant::new(&self.merchant)?;
-        let note = self.note.as_deref().map(Note::new).transpose()?;
-        if self.incurred_on > clock.today() {
-            return Err(InvalidInput::new("incurredOn", "incurredOn must not be in the future"));
-        }
-        Ok((merchant, note))
+        checked_fields(self.incurred_on, &self.merchant, self.note.as_deref(), clock)
     }
+}
+
+/// The field rules of an expense without its amount. Java: `Expense.checkFields(incurredOn, merchant, note,
+/// clock)`, which batch calls also for an item whose amount the database will refuse.
+///
+/// # Errors
+///
+/// `InvalidInput` naming the first field that breaks a rule, in the order merchant, note, date.
+pub fn check_fields(
+    incurred_on: NaiveDate,
+    merchant: &str,
+    note: Option<&str>,
+    clock: &dyn Clock,
+) -> Result<(), InvalidInput> {
+    checked_fields(incurred_on, merchant, note, clock).map(|_| ())
+}
+
+fn checked_fields(
+    incurred_on: NaiveDate,
+    merchant: &str,
+    note: Option<&str>,
+    clock: &dyn Clock,
+) -> Result<(Merchant, Option<Note>), InvalidInput> {
+    let merchant = Merchant::new(merchant)?;
+    let note = note.map(Note::new).transpose()?;
+    if incurred_on > clock.today() {
+        return Err(InvalidInput::new("incurredOn", "incurredOn must not be in the future"));
+    }
+    Ok((merchant, note))
 }
 
 /// One rejection of an expense. Every rejection is kept; none is overwritten.

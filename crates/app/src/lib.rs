@@ -85,7 +85,7 @@ impl Modules {
         let teams = Teams::new(&config.teams, pool, &clock, &events);
         let storage = S3ObjectStorage::new(&config.storage);
         let objects: Arc<dyn ObjectStorage> = Arc::new(storage.clone());
-        let expenses = ExpensesFacade::new(teams.facade());
+        let expenses = ExpensesFacade::new(teams.facade(), clock.clone(), &config.limits);
         let receipts = Receipts::new(
             ledgerly_receipts::Modules {
                 pool,
@@ -144,7 +144,13 @@ pub fn router(config: &Config, modules: &Modules, telemetry: &Telemetry, pool: &
         .access_tokens()
         .map(|tokens| Arc::new(tokens.clone()) as Arc<dyn TokenVerifier>);
     let authentication = Authentication::new(verifier, config.profiles.local);
-    layered_with(extra, routes(&config.limits, modules, pool), authentication, telemetry)
+    layered_with(
+        extra,
+        routes(&config.limits, modules, pool),
+        authentication,
+        telemetry,
+        config.limits.max_json_body_size,
+    )
 }
 
 /// Every endpoint the API serves, with the configured limits.
@@ -168,22 +174,40 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
 ///
 /// 1. tracing: a span with `traceId` and `spanId` for the request and its log lines;
 /// 2. problem rendering: every problem body gets `instance` and `traceId`;
-/// 3. authentication: the caller from the bearer token, or 401 for anything that is not public. Before
+/// 3. the JSON body limit: a declared JSON body over `ledgerly.limits.max-json-body-size` is 413 before
+///    authentication, as Java's `JsonBodyLimitFilter` runs before Spring Security;
+/// 4. authentication: the caller from the bearer token, or 401 for anything that is not public. Before
 ///    routing, as in Spring Security, so that only an authenticated caller learns which paths exist;
-/// 4. panic catching: a handler that panics is answered with a 500 `INTERNAL_ERROR` problem that carries only
+/// 5. panic catching: a handler that panics is answered with a 500 `INTERNAL_ERROR` problem that carries only
 ///    the `traceId`, and logged as Java logs an unhandled exception.
 ///
 /// Public so that tests can put a route of their own behind exactly these layers.
 pub fn layered(routes: Routes, authentication: Authentication, telemetry: &Telemetry) -> Router {
-    layered_with(Router::new(), routes, authentication, telemetry)
+    layered_with(
+        Router::new(),
+        routes,
+        authentication,
+        telemetry,
+        Limits::default().max_json_body_size,
+    )
 }
 
 /// [`layered`], with routes that are not part of the API (Swagger UI) tried first.
-fn layered_with(extra: Router, routes: Routes, authentication: Authentication, telemetry: &Telemetry) -> Router {
+fn layered_with(
+    extra: Router,
+    routes: Routes,
+    authentication: Authentication,
+    telemetry: &Telemetry,
+    max_json_body_size: u64,
+) -> Router {
     extra
         .fallback_service(routes.into_service())
         .layer(CatchPanicLayer::custom(unhandled_panic))
         .layer(axum::middleware::from_fn_with_state(authentication, web::authenticate))
+        .layer(axum::middleware::from_fn_with_state(
+            max_json_body_size,
+            web::limit_json_bodies,
+        ))
         .layer(axum::middleware::from_fn(web::render))
         .layer(axum::middleware::from_fn_with_state(
             telemetry.tracer(),

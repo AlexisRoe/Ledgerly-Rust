@@ -106,7 +106,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.aFullBatchOfHundredCreatesHundredDraftsForTheCaller`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_full_batch_of_hundred_creates_hundred_drafts_for_the_caller() {
         let world = World::start().await;
         let team = world.team().await;
@@ -140,7 +139,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.moreThanHundredItemsGets400AndCreatesNothing`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn more_than_hundred_items_gets_400_and_creates_nothing() {
         let world = World::start().await;
         let team = world.team().await;
@@ -159,7 +157,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.anEmptyBatchGets400`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn an_empty_batch_gets_400() {
         let world = World::start().await;
         let team = world.team().await;
@@ -174,7 +171,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.invalidItemsAreRejectedIndividuallyAndTheRestAreCreated`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn invalid_items_are_rejected_individually_and_the_rest_are_created() {
         let world = World::start().await;
         let team = world.team().await;
@@ -226,7 +222,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.anAtomicBatchWithOneBadItemCreatesNothing`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn an_atomic_batch_with_one_bad_item_creates_nothing() {
         let world = World::start().await;
         let team = world.team().await;
@@ -249,7 +244,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.anAtomicBatchListsEveryProblem`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn an_atomic_batch_lists_every_problem() {
         let world = World::start().await;
         let team = world.team().await;
@@ -274,7 +268,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.anAtomicBatchOfValidItemsCreatesAll`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn an_atomic_batch_of_valid_items_creates_all() {
         let world = World::start().await;
         let team = world.team().await;
@@ -296,7 +289,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.anItemCannotSetStatusOrClaimant_API3`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn an_item_cannot_set_status_or_claimant() {
         let world = World::start().await;
         let team = world.team().await;
@@ -312,7 +304,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.aNonTeammateGets404AndAnonymousGets401`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_non_teammate_gets_404_and_anonymous_gets_401() {
         let world = World::start().await;
         let team = world.team().await;
@@ -330,7 +321,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.aHugeJsonBodyIsRefusedWith413BeforeItIsParsed_API4`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_huge_json_body_is_refused_with_413_before_it_is_parsed() {
         let world = World::start().await;
         let team = world.team().await;
@@ -351,7 +341,6 @@ mod m8 {
 
     /// Java: `BatchAndExportApiTest.theBodyLimitAppliesBeforeAuthenticationToo`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn the_body_limit_applies_before_authentication_too() {
         let world = World::start().await;
         let team = world.team().await;

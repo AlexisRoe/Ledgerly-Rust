@@ -11,14 +11,15 @@
 use std::str::FromStr;
 
 use chrono::NaiveDate;
+use ledgerly_shared::id::ExpenseId;
 use ledgerly_shared::iso;
-use ledgerly_shared::money::Money;
+use ledgerly_shared::money::{Money, MoneyError};
 use ledgerly_shared::version::Versioned;
 use ledgerly_shared::web::{Problem, Validate, Violations};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::application::ExpensePage;
-use crate::domain::{Category, Expense};
+use crate::application::{Candidate, ExpensePage, ItemResult};
+use crate::domain::{Category, Expense, NewExpense};
 
 const AMOUNT_PATTERN: &str = r"^[0-9]{1,15}(\.[0-9]{1,4})?$";
 const CURRENCY_PATTERN: &str = "^[A-Z]{3}$";
@@ -249,6 +250,153 @@ mod tests {
             "12.50\n",
         ] {
             assert!(!is_amount(bad), "{bad}");
+        }
+    }
+}
+
+/// `BatchRequest`: 1 to 100 items, each checked on its own (`@Size` and `@Valid` on the list).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BatchRequest {
+    pub items: Option<Vec<BatchItemBody>>,
+}
+
+/// `BatchExpenseItem`: four required properties, no further constraints in the spec, so that one bad item is
+/// that item's problem and not the whole request's. Unknown properties are still a 400 for the request
+/// (Java's `fail-on-unknown-properties`), so an item cannot set its status or claimant.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub(crate) struct BatchItemBody {
+    pub money: Option<BatchMoneyBody>,
+    pub category: Option<CategoryBody>,
+    pub incurred_on: Option<DateBody>,
+    pub merchant: Option<String>,
+    pub note: Option<String>,
+}
+
+/// `BatchItemMoney`: two required strings, deliberately unconstrained.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BatchMoneyBody {
+    pub amount: Option<String>,
+    pub currency: Option<String>,
+}
+
+impl Validate for BatchRequest {
+    /// The `items` constraints, then each item's `@NotNull`s, named as Spring names nested fields
+    /// (`items[2].money.amount`).
+    fn validate(&self, violations: &mut Violations) {
+        violations.require("items", self.items.as_ref());
+        let Some(items) = &self.items else {
+            return;
+        };
+        if !(1..=100).contains(&items.len()) {
+            violations.add("items", "size must be between 1 and 100");
+        }
+        for (index, item) in items.iter().enumerate() {
+            let field = |name: &str| format!("items[{index}].{name}");
+            violations.require(&field("money"), item.money.as_ref());
+            if let Some(money) = &item.money {
+                violations.require(&field("money.amount"), money.amount.as_ref());
+                violations.require(&field("money.currency"), money.currency.as_ref());
+            }
+            violations.require(&field("category"), item.category.as_ref());
+            violations.require(&field("incurredOn"), item.incurred_on.as_ref());
+            violations.require(&field("merchant"), item.merchant.as_ref());
+        }
+    }
+}
+
+impl BatchItemBody {
+    /// Parses the item as far as it goes. Java: `ExpenseMapper.toCandidate`: `new BigDecimal(amount)` and
+    /// `Currency.getInstance(code)`, whose failures become the item's `money` problem.
+    pub(crate) fn into_candidate(self) -> Candidate {
+        let (Some(money), Some(category), Some(incurred_on), Some(merchant)) =
+            (self.money, self.category, self.incurred_on, self.merchant)
+        else {
+            // Validation has required all four.
+            return Candidate::Unparseable {
+                field: "item",
+                message: "must not be null".to_owned(),
+            };
+        };
+        let amount = money.amount.unwrap_or_default();
+        let currency = money.currency.unwrap_or_default();
+        match Money::parse(&amount, &currency) {
+            Ok(money) => Candidate::Ready(NewExpense {
+                money,
+                category: category.0,
+                incurred_on: incurred_on.0,
+                merchant,
+                note: self.note,
+            }),
+            Err(MoneyError::TooLarge { .. }) => Candidate::TooLarge {
+                incurred_on: incurred_on.0,
+                merchant,
+                note: self.note,
+            },
+            Err(error) => Candidate::Unparseable {
+                field: "money",
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
+/// `BatchResponse`: the counts, then one result per item. A result has `id` or `problem`, and the other is
+/// written as `null`, as Java's generated model writes unset properties (Java's test reads `id` as a JSON
+/// null).
+#[derive(Debug, Serialize)]
+pub(crate) struct BatchResponse {
+    pub created: usize,
+    pub rejected: usize,
+    pub results: Vec<BatchItemResult>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct BatchItemResult {
+    pub index: usize,
+    pub status: &'static str,
+    pub id: Option<ExpenseId>,
+    pub problem: Option<ItemProblemBody>,
+}
+
+/// `ItemProblem`: Java's generated model writes `code`, `field`, `message` in the spec's order.
+#[derive(Debug, Serialize)]
+pub(crate) struct ItemProblemBody {
+    pub code: &'static str,
+    pub field: Option<&'static str>,
+    pub message: String,
+}
+
+impl From<Vec<ItemResult>> for BatchResponse {
+    fn from(results: Vec<ItemResult>) -> Self {
+        let created = results.iter().filter(|result| result.outcome.is_ok()).count();
+        let results: Vec<BatchItemResult> = results
+            .into_iter()
+            .map(|result| match result.outcome {
+                Ok(id) => BatchItemResult {
+                    index: result.index,
+                    status: "CREATED",
+                    id: Some(id),
+                    problem: None,
+                },
+                Err(problem) => BatchItemResult {
+                    index: result.index,
+                    status: "REJECTED",
+                    id: None,
+                    problem: Some(ItemProblemBody {
+                        code: problem.code,
+                        field: problem.field,
+                        message: problem.message,
+                    }),
+                },
+            })
+            .collect();
+        Self {
+            created,
+            rejected: results.len() - created,
+            results,
         }
     }
 }

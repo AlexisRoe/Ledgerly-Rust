@@ -5,6 +5,7 @@
 //! the `Idempotency-Key` (M3.5), events (M9) and the transition metric (M10).
 
 pub(crate) mod access;
+mod batch;
 mod create_expense;
 mod delete_expense;
 #[cfg(test)]
@@ -19,6 +20,7 @@ mod transition_expense;
 mod update_expense;
 
 pub(crate) use {
+    batch::{BatchCreateExpenses, Candidate, ItemResult},
     create_expense::{CreateExpense, CreateExpenseCommand},
     delete_expense::DeleteExpense,
     filters::Filter,
@@ -54,6 +56,14 @@ pub(crate) enum UseCaseError {
     /// The domain refused: a field rule, a transition, a role. Nothing was written.
     #[error(transparent)]
     Refused(#[from] ExpenseError),
+    /// An atomic batch with at least one bad item: nothing was created. Java: `Unprocessable(BATCH_REJECTED)`
+    /// with one violation per problem, named `items[<index>].<field>`.
+    #[error("nothing was created because some items are invalid")]
+    BatchRejected(Vec<ledgerly_shared::web::FieldViolation>),
+    /// An amount the `numeric(19,4)` column cannot hold reached the insert. Java's `Money` lets it through and
+    /// the database refuses it; its catch-all answers 500.
+    #[error("an amount does not fit the database")]
+    AmountOverflow,
     #[error(transparent)]
     Storage(#[from] PersistenceError),
 }

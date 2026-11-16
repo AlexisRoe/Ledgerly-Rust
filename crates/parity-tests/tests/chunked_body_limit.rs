@@ -52,7 +52,6 @@ mod m8 {
 
     /// Java: `ChunkedBodyLimitTest.aChunkedBodyOverTheLimitIsRefusedWith413`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_chunked_body_over_the_limit_is_refused_with_413() {
         let huge = format!(
             r#"{{"email":"a@example.com","password":"{}"}}"#,

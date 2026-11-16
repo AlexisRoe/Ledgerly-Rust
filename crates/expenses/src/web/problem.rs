@@ -38,6 +38,15 @@ pub(crate) fn failure(error: &UseCaseError) -> Problem {
         UseCaseError::IdempotencyInProgress(detail) => Problem::new(ErrorCode::IdempotencyInProgress, *detail),
         UseCaseError::Invalid { field, message } => Problem::invalid_request(*field, message.clone()),
         UseCaseError::Refused(refused) => refusal(refused),
+        UseCaseError::BatchRejected(violations) => Problem::new(
+            ErrorCode::BatchRejected,
+            "Nothing was created because some items are invalid",
+        )
+        .with_violations(violations.clone()),
+        UseCaseError::AmountOverflow => {
+            tracing::error!(error = "numeric field overflow", "Unhandled exception");
+            Problem::internal_error()
+        }
         UseCaseError::Storage(PersistenceError::Conflict { .. }) => Problem::precondition_failed(),
         UseCaseError::Storage(storage @ (PersistenceError::Corrupt { .. } | PersistenceError::Database(_))) => {
             tracing::error!(error = %storage, "Unhandled exception");
