@@ -12,6 +12,7 @@ use std::time::Duration;
 use ledgerly_app::App;
 use ledgerly_app::config::Config;
 use ledgerly_app::telemetry::Telemetry;
+use ledgerly_shared::database::TestDatabase;
 use serde_json::{Value, json};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -25,8 +26,19 @@ struct Running {
     served: JoinHandle<std::io::Result<()>>,
 }
 
-/// Starts the app on ports the operating system picks, as Java's test does with `management.server.port=0`.
+/// Starts the app on ports the operating system picks, as Java's test does with `management.server.port=0`,
+/// with a pool that cannot reach a database and gives up on a connection after one second. Only
+/// `/actuator/health` asks the database (Spring Boot's `db` indicator).
 async fn start() -> Running {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(Duration::from_secs(1))
+        .connect_lazy("postgres://ledgerly@127.0.0.1:9/ledgerly")
+        .unwrap();
+    start_with(pool).await
+}
+
+/// [`start`] with a database.
+async fn start_with(pool: sqlx::PgPool) -> Running {
     let environment = HashMap::from([
         ("SPRING_PROFILES_ACTIVE", "local"),
         ("SPRING_DATASOURCE_URL", "jdbc:postgresql://localhost:5432/ledgerly"),
@@ -37,10 +49,6 @@ async fn start() -> Running {
     ]);
     let config = Config::from_environment(&environment).unwrap();
     let telemetry = Telemetry::new(&config.tracing).unwrap();
-    // The probes never touch the database: a pool that has not connected is enough.
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .connect_lazy("postgres://ledgerly@127.0.0.1:9/ledgerly")
-        .unwrap();
     let app = App::bind(config, telemetry, pool).await.unwrap();
     let port = |address: SocketAddr| SocketAddr::from(([127, 0, 0, 1], address.port()));
     let api = port(app.api_address().unwrap());
@@ -74,7 +82,8 @@ async fn get_json(address: SocketAddr, path: &str) -> (u16, Option<String>, Valu
 
 #[tokio::test]
 async fn health_is_up_on_the_management_port() {
-    let app = start().await;
+    let database = TestDatabase::new().await.unwrap();
+    let app = start_with(database.pool().clone()).await;
 
     let (status, content_type, body) = get(app.management, "/actuator/health").await;
 
@@ -86,6 +95,21 @@ async fn health_is_up_on_the_management_port() {
         serde_json::from_str::<Value>(&body).unwrap(),
         json!({"status": "UP", "groups": ["liveness", "readiness"]})
     );
+}
+
+/// Spring Boot's `db` indicator: without a database the overall health is 503 `DOWN`; the probes leave the
+/// database out.
+#[tokio::test]
+async fn without_a_database_health_is_down_and_the_probes_are_up() {
+    let app = start().await;
+
+    let (status, content_type, body) = get_json(app.management, "/actuator/health").await;
+
+    assert_eq!((status, content_type.as_deref()), (503, Some(ACTUATOR_V3)));
+    assert_eq!(body, json!({"status": "DOWN", "groups": ["liveness", "readiness"]}));
+    for path in ["/actuator/health/liveness", "/actuator/health/readiness"] {
+        assert_eq!(get_json(app.management, path).await.0, 200, "{path}");
+    }
 }
 
 #[tokio::test]
@@ -168,7 +192,7 @@ async fn the_actuator_is_not_served_on_the_api_port_and_the_api_not_on_the_manag
 #[tokio::test]
 async fn stopping_shuts_both_listeners_down() {
     let app = start().await;
-    assert_eq!(get(app.management, "/actuator/health").await.0, 200);
+    assert_eq!(get(app.management, "/actuator/health/liveness").await.0, 200);
 
     app.stop.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(10), app.served)

@@ -10,3 +10,8 @@ serial = { max-threads = 1 }
 [[profile.default.overrides]]
 filter = 'binary(=owasp_metrics)'
 test-group = 'serial'
+
+# The database-health test stops Postgres; each health check then waits as long as the pool does (30 s).
+[[profile.default.overrides]]
+filter = 'binary(=database_health)'
+slow-timeout = { period = "60s", terminate-after = 5 }

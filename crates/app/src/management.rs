@@ -12,6 +12,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
+use sqlx::PgPool;
 
 use crate::server::Shutdown;
 
@@ -41,10 +42,12 @@ impl BuildInfo {
 struct Management {
     shutdown: Shutdown,
     build: BuildInfo,
+    /// For Spring Boot's `db` indicator.
+    pool: PgPool,
 }
 
 /// The router of the management listener. Anything it does not name is a 404.
-pub(crate) fn router(shutdown: Shutdown, build: BuildInfo) -> Router {
+pub(crate) fn router(shutdown: Shutdown, build: BuildInfo, pool: PgPool) -> Router {
     Router::new()
         .route("/actuator/health", get(health))
         .route("/actuator/health/liveness", get(liveness))
@@ -52,7 +55,7 @@ pub(crate) fn router(shutdown: Shutdown, build: BuildInfo) -> Router {
         .route("/actuator/info", get(info))
         .route("/actuator/prometheus", get(prometheus))
         .fallback(not_found)
-        .with_state(Management { shutdown, build })
+        .with_state(Management { shutdown, build, pool })
         // The `actuatorSecurity` chain writes Spring Security's default headers.
         .layer(axum::middleware::from_fn(ledgerly_shared::web::management_headers))
 }
@@ -85,9 +88,28 @@ fn actuator(status: StatusCode, body: &Value) -> Response {
         .into_response()
 }
 
-/// The overall health: the worst of its parts, with the names of the probe groups and no details.
+/// Spring Boot's `DataSourceHealthIndicator`: a connection from the pool that answers a query. With Postgres
+/// gone this takes as long as the pool waits for a connection (30 s, Hikari's `connectionTimeout` in Java).
+async fn database_status(pool: &PgPool) -> &'static str {
+    match sqlx::query("SELECT 1").execute(pool).await {
+        Ok(_) => "UP",
+        Err(_) => {
+            // Spring's `AbstractHealthIndicator` logs this line with the exception; the error itself is left out
+            // here, as everywhere else that logs a failure by kind.
+            tracing::warn!("DataSource health check failed");
+            "DOWN"
+        }
+    }
+}
+
+/// The overall health: the worst of its parts (`DOWN` before `OUT_OF_SERVICE` before `UP`, Spring's order),
+/// with the names of the probe groups and no details. The parts are the database and the readiness state; the
+/// liveness and readiness groups leave the database out, as Spring Boot's do.
 async fn health(State(state): State<Management>) -> Response {
-    let status = readiness_status(&state);
+    let status = match database_status(&state.pool).await {
+        "DOWN" => "DOWN",
+        _ => readiness_status(&state),
+    };
     actuator(
         status_code(status),
         &json!({"status": status, "groups": ["liveness", "readiness"]}),

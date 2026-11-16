@@ -94,6 +94,13 @@ pub const GROUPS: &[Group] = &[
         environment: &[("LEDGERLY_LIMITS_REQUESTS_PER_MINUTE", "250")],
         stopped_services: &[],
     },
+    // Plan M10.6: the test stops Postgres and starts it again, so nothing else may run meanwhile.
+    Group {
+        name: "database-down",
+        files: &["database_health"],
+        environment: &[],
+        stopped_services: &[],
+    },
     // `FakeMalwareScanner.unavailable = true`: the scanner gives no answer.
     Group {
         name: "scanner-down",

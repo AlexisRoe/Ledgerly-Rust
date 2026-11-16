@@ -503,7 +503,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: `just parity` captures the app container's logs for the whole run and asserts that no email, password, token, cookie, `Bearer`, merchant/note value, `password_hash` or `$argon2id` appears (inventory: `LogHygieneTest`).
   - Accept: passes. Logging an email on purpose makes it fail.
 
-- [ ] **M10.6 Database health**
+- [x] **M10.6 Database health**
   - Do: `/actuator/health` includes Spring Boot's `db` indicator: with Postgres unreachable it answers `DOWN` with 503. Liveness and readiness don't include it, as in Spring (decided after M2).
   - Accept: a parity test that stops Postgres sees `/actuator/health` turn 503 `DOWN` while liveness stays `UP`, and `UP` again after Postgres is back.
 

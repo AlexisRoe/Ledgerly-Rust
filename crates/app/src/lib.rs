@@ -383,7 +383,7 @@ impl App {
         );
         let management = server::serve(
             self.management,
-            management::router(api_shutdown.clone(), BuildInfo::current()),
+            management::router(api_shutdown.clone(), BuildInfo::current(), self.pool.clone()),
             management_shutdown.clone(),
             drain,
         );
