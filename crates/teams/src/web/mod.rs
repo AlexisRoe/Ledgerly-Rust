@@ -15,7 +15,9 @@ use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use ledgerly_shared::id::{InvitationId, TeamId, UserId};
 use ledgerly_shared::role::Role;
-use ledgerly_shared::web::{Body, CurrentUser, ErrorCode, PathParameters, Problem, Routes, read_json, uuid_parameter};
+use ledgerly_shared::web::{
+    Body, CurrentUser, ErrorCode, PathParameters, Problem, Routes, accept, read_json, uuid_parameter,
+};
 
 use crate::application::{
     AcceptInvitation, ChangeMemberRole, CreateTeam, DeclineInvitation, GetMe, InviteMember, LeaveTeam, RemoveMember,
@@ -53,6 +55,7 @@ impl TeamsApi {
                 leave,
                 self.clone(),
             )
+            .producing(accept::PROBLEM)
             .route(
                 Method::POST,
                 "/api/v1/teams/{teamId}/invitations",
@@ -67,6 +70,7 @@ impl TeamsApi {
                 revoke,
                 self.clone(),
             )
+            .producing(accept::PROBLEM)
             .route(
                 Method::PATCH,
                 "/api/v1/teams/{teamId}/members/{userId}",
@@ -81,6 +85,7 @@ impl TeamsApi {
                 remove,
                 self.clone(),
             )
+            .producing(accept::PROBLEM)
             .route(
                 Method::POST,
                 "/api/v1/invitations/{invitationId}:accept",
@@ -95,6 +100,7 @@ impl TeamsApi {
                 decline,
                 self,
             )
+            .producing(accept::PROBLEM)
     }
 }
 

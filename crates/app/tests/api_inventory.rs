@@ -46,8 +46,54 @@ fn documented() -> Operations {
     operations
 }
 
+/// Every response media type of each documented operation, in the spec's order: what the generated Java
+/// interface declares as `produces`.
+fn documented_produces() -> BTreeSet<(String, String, Vec<String>)> {
+    let spec: Value = serde_saphyr::from_str(SPEC).expect("api/openapi.yaml is valid YAML");
+    let shared = &spec["components"]["responses"];
+    let mut operations = BTreeSet::new();
+    for (path, item) in spec["paths"].as_object().expect("the spec has paths") {
+        let base = item["servers"][0]["url"]
+            .as_str()
+            .map_or("/api/v1".to_owned(), |url| url.trim_end_matches('/').to_owned());
+        for method in METHODS {
+            let Some(operation) = item.get(method) else { continue };
+            let mut types: Vec<String> = Vec::new();
+            for response in operation["responses"]
+                .as_object()
+                .expect("an operation has responses")
+                .values()
+            {
+                let response = match response["$ref"].as_str() {
+                    Some(reference) => &shared[reference.rsplit('/').next().expect("a reference has a name")],
+                    None => response,
+                };
+                for media_type in response["content"]
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|content| content.keys())
+                {
+                    if !types.contains(media_type) {
+                        types.push(media_type.clone());
+                    }
+                }
+            }
+            operations.insert((method.to_ascii_uppercase(), format!("{base}{path}"), types));
+        }
+    }
+    operations
+}
+
 /// `(METHOD, template)` of every endpoint in the route table.
 async fn served() -> Operations {
+    routes()
+        .await
+        .operations()
+        .map(|(method, template)| (method.as_str().to_owned(), template.to_owned()))
+        .collect()
+}
+
+async fn routes() -> ledgerly_shared::web::Routes {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_lazy("postgres://ledgerly@127.0.0.1:9/ledgerly")
         .expect("a lazy pool needs no database");
@@ -66,9 +112,6 @@ async fn served() -> Operations {
     let config = Config::from_environment(&environment).expect("the test profile's settings are complete");
     let modules = Modules::new(&config, &pool).expect("the test profile generates a signing key");
     ledgerly_app::routes(&Limits::default(), &modules, &pool)
-        .operations()
-        .map(|(method, template)| (method.as_str().to_owned(), template.to_owned()))
-        .collect()
 }
 
 /// What is served but undocumented, and what is documented but not served.
@@ -102,6 +145,25 @@ async fn every_served_endpoint_is_documented_and_every_documented_one_is_served_
         unserved, scheduled,
         "documented but not served, versus the operations scheduled for later"
     );
+}
+
+/// Spring answers 406 when the `Accept` header allows none of an operation's `produces`, which the generator
+/// fills with the media types of all its documented responses. Each endpoint declares the same list.
+#[tokio::test]
+async fn every_endpoint_produces_the_media_types_of_its_documented_responses() {
+    let served: BTreeSet<(String, String, Vec<String>)> = routes()
+        .await
+        .produces()
+        .map(|(method, template, produces)| {
+            (
+                method.as_str().to_owned(),
+                template.to_owned(),
+                produces.iter().map(|media_type| (*media_type).to_owned()).collect(),
+            )
+        })
+        .collect();
+
+    assert_eq!(served, documented_produces());
 }
 
 /// Java: `Api9ImproperInventoryManagementTest.theComparisonDetectsDriftInBothDirections`.

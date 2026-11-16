@@ -14,7 +14,7 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chrono::TimeDelta;
 use ledgerly_shared::text::utf16_len;
-use ledgerly_shared::web::{Body, Problem, Routes, Violations, read_json};
+use ledgerly_shared::web::{Body, Problem, Routes, Violations, accept, read_json};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 
@@ -51,6 +51,7 @@ impl AuthApi {
                 self.clone(),
             )
             .route(Method::POST, "/api/v1/auth/verify", Body::Json, verify, self.clone())
+            .producing(accept::PROBLEM)
             .route(Method::POST, "/api/v1/auth/login", Body::Json, login, self.clone())
             .route(
                 Method::POST,
@@ -60,6 +61,7 @@ impl AuthApi {
                 self.clone(),
             )
             .route(Method::POST, "/api/v1/auth/logout", Body::Ignored, logout, self.clone())
+            .producing(accept::PROBLEM)
             .route(Method::GET, JWKS, Body::Ignored, jwks, self.tokens)
     }
 }

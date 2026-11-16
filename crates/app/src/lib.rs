@@ -33,7 +33,7 @@ use ledgerly_shared::database::SchemaError;
 use ledgerly_shared::events::{Outbox, Publisher};
 use ledgerly_shared::ratelimit::{InvalidRateLimit, RateLimiter};
 use ledgerly_shared::storage::{ObjectStorage, S3ObjectStorage};
-use ledgerly_shared::web::{self, Authentication, Problem, RequestLimits, Routes, TokenVerifier};
+use ledgerly_shared::web::{self, Authentication, Cors, Problem, RequestLimits, Routes, TokenVerifier};
 use ledgerly_teams::Teams;
 use sqlx::PgPool;
 use tokio::net::TcpListener;
@@ -179,14 +179,26 @@ pub fn router(config: &Config, modules: &Modules, telemetry: &Telemetry, pool: &
         .access_tokens()
         .map(|tokens| Arc::new(tokens.clone()) as Arc<dyn TokenVerifier>);
     let authentication = Authentication::new(verifier, config.profiles.local);
+    let browsers = Browsers {
+        cors: Cors::new(&config.security.allowed_origins, config.server.forward_headers),
+        local_docs: config.profiles.local,
+    };
     layered_with(
         extra,
         routes(&config.limits, modules, pool),
         authentication,
+        browsers,
         modules.request_limits.clone(),
         telemetry,
         config.limits.max_json_body_size,
     )
+}
+
+/// What the browser-facing layers need: the CORS allowlist, and whether Swagger UI is served.
+#[derive(Debug, Clone)]
+pub struct Browsers {
+    pub cors: Cors,
+    pub local_docs: bool,
 }
 
 /// Every endpoint the API serves, with the configured limits.
@@ -214,17 +226,21 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
 /// 2. problem rendering: every problem body gets `instance` and `traceId`;
 /// 3. the JSON body limit: a declared JSON body over `ledgerly.limits.max-json-body-size` is 413 before
 ///    authentication, as Java's `JsonBodyLimitFilter` runs before Spring Security;
-/// 4. the budget per client address on `/api/v1/auth/**` (429), before the token is checked;
-/// 5. authentication: the caller from the bearer token, or 401 for anything that is not public. Before
+/// 4. the security headers, on every response from here inward (Spring Security's `HeaderWriterFilter`);
+/// 5. CORS: a cross-origin request from an origin not on the allowlist is 403, an allowed preflight is
+///    answered (Spring's `CorsFilter`);
+/// 6. the budget per client address on `/api/v1/auth/**` (429), before the token is checked;
+/// 7. authentication: the caller from the bearer token, or 401 for anything that is not public. Before
 ///    routing, as in Spring Security, so that only an authenticated caller learns which paths exist;
-/// 6. the budget per signed-in user (429), right after the token check, so it counts unknown paths too;
-/// 7. panic catching: a handler that panics is answered with a 500 `INTERNAL_ERROR` problem that carries only
+/// 8. the budget per signed-in user (429), right after the token check, so it counts unknown paths too;
+/// 9. panic catching: a handler that panics is answered with a 500 `INTERNAL_ERROR` problem that carries only
 ///    the `traceId`, and logged as Java logs an unhandled exception.
 ///
 /// Public so that tests can put a route of their own behind exactly these layers.
 pub fn layered(
     routes: Routes,
     authentication: Authentication,
+    browsers: Browsers,
     request_limits: RequestLimits,
     telemetry: &Telemetry,
 ) -> Router {
@@ -232,6 +248,7 @@ pub fn layered(
         Router::new(),
         routes,
         authentication,
+        browsers,
         request_limits,
         telemetry,
         Limits::default().max_json_body_size,
@@ -243,6 +260,7 @@ fn layered_with(
     extra: Router,
     routes: Routes,
     authentication: Authentication,
+    browsers: Browsers,
     request_limits: RequestLimits,
     telemetry: &Telemetry,
     max_json_body_size: u64,
@@ -258,6 +276,11 @@ fn layered_with(
         .layer(axum::middleware::from_fn_with_state(
             request_limits,
             web::limit_by_client_address,
+        ))
+        .layer(axum::middleware::from_fn_with_state(browsers.cors, web::cors))
+        .layer(axum::middleware::from_fn_with_state(
+            browsers.local_docs,
+            web::secure_headers,
         ))
         .layer(axum::middleware::from_fn_with_state(
             max_json_body_size,

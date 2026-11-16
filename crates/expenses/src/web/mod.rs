@@ -26,7 +26,7 @@ use ledgerly_shared::iso;
 use ledgerly_shared::text::strip;
 use ledgerly_shared::version::{Version, Versioned};
 use ledgerly_shared::web::{
-    Body, CurrentUser, PathParameters, Problem, QueryParameters, Routes, Violations, header_text, read_json,
+    Body, CurrentUser, PathParameters, Problem, QueryParameters, Routes, Violations, accept, header_text, read_json,
     uuid_parameter,
 };
 use sqlx::PgPool;
@@ -112,6 +112,7 @@ impl ExpensesApi {
                 export,
                 self.clone(),
             )
+            .producing(accept::CSV)
             .route(Method::POST, EXPENSES, Body::Json, create, self.clone())
             .route(
                 Method::POST,
@@ -122,7 +123,8 @@ impl ExpensesApi {
             )
             .route(Method::GET, EXPENSE, Body::Ignored, get, self.clone())
             .route(Method::PATCH, EXPENSE, Body::Json, update, self.clone())
-            .route(Method::DELETE, EXPENSE, Body::Ignored, delete, self.clone());
+            .route(Method::DELETE, EXPENSE, Body::Ignored, delete, self.clone())
+            .producing(accept::PROBLEM);
         [
             (Action::Submit, "/api/v1/teams/{teamId}/expenses/{expenseId}:submit"),
             (Action::Withdraw, "/api/v1/teams/{teamId}/expenses/{expenseId}:withdraw"),

@@ -90,7 +90,6 @@ mod m10 {
 
     /// Java: `Api8SecurityMisconfigurationTest.everyResponseCarriesTheSecurityHeaders`.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn every_response_carries_the_security_headers() {
         let world = World::start().await;
         let user = world.user().await;
@@ -143,7 +142,6 @@ mod m10 {
 
     /// Java: `Api8SecurityMisconfigurationTest.anAllowlistedOriginMayCallFromABrowser`.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn an_allowlisted_origin_may_call_from_a_browser() {
         let world = World::start().await;
         let user = world.user().await;
@@ -174,7 +172,6 @@ mod m10 {
 
     /// Java: `Api8SecurityMisconfigurationTest.anyOtherOriginIsRefusedAndNeverGetsAWildcard`.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn any_other_origin_is_refused_and_never_gets_a_wildcard() {
         let world = World::start().await;
         let user = world.user().await;

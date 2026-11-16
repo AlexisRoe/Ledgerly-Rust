@@ -885,8 +885,12 @@ The spec defines statuses per operation, the `Problem` shape (`code` is a free s
 **Cache-Control on login and download**
 - On login (M5) the value is **exactly `no-store`**, an equality check (`AuthApiTest.loginReturnsAccessTokenAndHardenedRefreshCookie`).
 - On the receipt download link it is `no-store` (`ReceiptsApiTest`).
-- So the global M10 value must stay exactly `no-store`. Spring's default is
-  `no-cache, no-store, max-age=0, must-revalidate`, which would fail the equality check.
+- Everywhere else it is Spring Security's default, `no-cache, no-store, max-age=0, must-revalidate`, with
+  `Pragma: no-cache` and `Expires: 0`. Spring's `CacheControlHeadersWriter` writes these only when the response
+  has none of `Cache-Control`, `Expires` and `Pragma` yet, so the login and download keep their exact `no-store`
+  (and get no `Pragma`/`Expires`).
+- Spring Security's defaults also add `X-XSS-Protection: 0`, and the HSTS value is written
+  `max-age=31536000 ; includeSubDomains` (with a space before each `;`).
 
 **CORS** (`Api8`; `SecurityConfig.java:127` sets max-age 3600)
 - The allowlist holds exact origins.

@@ -486,7 +486,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: per user (`requests-per-minute`, 600) on authenticated routes, and per client address (`auth-requests-per-minute`, 60) on the token-free routes, kept in memory and evicted after 2 hours idle. The login limiter is keyed by email. A 429 problem with `Retry-After` **computed as Bucket4j does** (the seconds until the next token; check Java's code). Honour `SERVER_FORWARD_HEADERS_STRATEGY=native`.
   - Accept: Api4 parity tests in their run group (30/min, 12/min for auth).
 
-- [ ] **M10.2 Headers and CORS**
+- [x] **M10.2 Headers and CORS**
   - Do: Java's exact security headers on every response, including errors and 404s (inventory §4.3). The CORS exact-origin allowlist from `LEDGERLY_SECURITY_ALLOWED_ORIGINS`: a wildcard or a path refuses startup, and a disallowed origin on a real request gets 403 as Java does.
     - Also Spring's implicit answers the route table does not give yet (decided after M3): `OPTIONS` on a known path is 200 with `Allow` (and a CORS preflight where allowed), and an `Accept` the endpoint cannot produce is 406.
   - Accept: Api8 parity tests and Bruno `05-security`.

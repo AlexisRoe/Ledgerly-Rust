@@ -8,8 +8,9 @@
 //! - `{name}` captures one whole segment, `{name}:suffix` a segment that ends in the suffix, minus the suffix.
 //! - Of all patterns that match, the most specific wins: fewer captures first, then more literal characters.
 //!   So `abc:approve` goes to `{expenseId}:approve`, not to `{expenseId}`.
-//! - No pattern matches: 404. A pattern matches, but not with this method: 405 with `Allow`. The endpoint
-//!   needs a JSON (or multipart) body and the request is something else: 415.
+//! - No pattern matches: 404. A pattern matches, but not with this method: 405 with `Allow`, or for `OPTIONS`
+//!   200 with `Allow` (Spring's `HttpOptionsHandler`). The endpoint needs a JSON (or multipart) body and the
+//!   request is something else: 415. The endpoint produces no media type the `Accept` header allows: 406.
 //! - `HEAD` is answered by the `GET` endpoint.
 
 use std::convert::Infallible;
@@ -20,11 +21,12 @@ use std::task::{Context, Poll};
 use axum::extract::{FromRequestParts, Request};
 use axum::handler::Handler;
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use tower::util::BoxCloneSyncService;
 use tower::{Service, ServiceExt};
 
+use super::accept;
 use super::problem::Problem;
 
 /// Every endpoint of the API, built up by the modules and turned into one service by the app.
@@ -39,6 +41,8 @@ struct Endpoint {
     template: &'static str,
     pattern: Pattern,
     body: Body,
+    /// The media types of the operation's responses ([`accept::JSON`] unless set otherwise).
+    produces: &'static [&'static str],
     service: BoxCloneSyncService<Request, Response, Infallible>,
 }
 
@@ -84,8 +88,19 @@ impl Routes {
             template,
             pattern: Pattern::parse(template),
             body,
+            produces: accept::JSON,
             service: BoxCloneSyncService::new(handler.with_state(state)),
         });
+        self
+    }
+
+    /// Sets what the endpoint added last produces: [`accept::PROBLEM`] for an operation without a response body,
+    /// [`accept::CSV`] for the export. The default is [`accept::JSON`].
+    #[must_use]
+    pub fn producing(mut self, produces: &'static [&'static str]) -> Self {
+        if let Some(endpoint) = self.endpoints.last_mut() {
+            endpoint.produces = produces;
+        }
         self
     }
 
@@ -102,6 +117,13 @@ impl Routes {
         self.endpoints
             .iter()
             .map(|endpoint| (&endpoint.method, endpoint.template))
+    }
+
+    /// Method, path template and produced media types of every endpoint. A test compares them with the spec.
+    pub fn produces(&self) -> impl Iterator<Item = (&Method, &'static str, &'static [&'static str])> {
+        self.endpoints
+            .iter()
+            .map(|endpoint| (&endpoint.method, endpoint.template, endpoint.produces))
     }
 
     /// The table as one service. A request no endpoint takes is answered with the [`RouteRejection`]'s
@@ -178,6 +200,16 @@ pub enum RouteRejection {
         content_type: String,
         accepted: &'static str,
     },
+    /// The endpoint produces nothing the `Accept` header allows. Java: `HttpMediaTypeNotAcceptableException`,
+    /// whose `Accept` header names what the endpoint produces.
+    NotAcceptable { produces: &'static [&'static str] },
+    /// Not a rejection: `OPTIONS` on a path that exists. Java: `HttpOptionsHandler`, which answers 200 with the
+    /// path's methods in `Allow` (`HEAD` after `GET`, `OPTIONS` last) and, if one of them is a `PATCH` that reads
+    /// a body, `Accept-Patch`.
+    Options {
+        allowed: Vec<Method>,
+        accept_patch: Option<&'static str>,
+    },
 }
 
 /// The problem bodies Spring writes for these, with `code: REQUEST_REJECTED` (`ProblemFactory.enrich`).
@@ -205,6 +237,36 @@ impl IntoResponse for RouteRejection {
                 format!("Content-Type '{content_type}' is not supported."),
             )
             .with_header(header::ACCEPT, HeaderValue::from_static(accepted)),
+            Self::NotAcceptable { produces } => {
+                let problem = Problem::rejected(
+                    StatusCode::NOT_ACCEPTABLE,
+                    format!("Acceptable representations: [{}].", produces.join(", ")),
+                );
+                match HeaderValue::from_str(&produces.join(", ")) {
+                    Ok(accept) => problem.with_header(header::ACCEPT, accept),
+                    Err(_) => problem,
+                }
+            }
+            Self::Options { allowed, accept_patch } => {
+                let mut methods: Vec<&str> = Vec::new();
+                for method in &allowed {
+                    methods.push(method.as_str());
+                    if *method == Method::GET {
+                        methods.push(Method::HEAD.as_str());
+                    }
+                }
+                methods.push(Method::OPTIONS.as_str());
+                let mut response = StatusCode::OK.into_response();
+                if let Ok(allow) = HeaderValue::from_str(&methods.join(",")) {
+                    response.headers_mut().insert(header::ALLOW, allow);
+                }
+                if let Some(patch) = accept_patch {
+                    response
+                        .headers_mut()
+                        .insert(HeaderName::from_static("accept-patch"), HeaderValue::from_static(patch));
+                }
+                return response;
+            }
         };
         problem.into_response()
     }
@@ -240,6 +302,13 @@ fn select<'a>(
                 allowed.push(endpoint.method.clone());
             }
         }
+        if method == Method::OPTIONS {
+            let accept_patch = matching
+                .iter()
+                .find(|(endpoint, _)| endpoint.method == Method::PATCH)
+                .and_then(|(endpoint, _)| endpoint.body.media_type());
+            return Err(RouteRejection::Options { allowed, accept_patch });
+        }
         return Err(RouteRejection::MethodNotAllowed {
             method: method.clone(),
             allowed,
@@ -250,6 +319,11 @@ fn select<'a>(
         if content_type.split(';').next() != Some(accepted) {
             return Err(RouteRejection::UnsupportedMediaType { content_type, accepted });
         }
+    }
+    if !accept::accepts(headers, endpoint.produces) {
+        return Err(RouteRejection::NotAcceptable {
+            produces: endpoint.produces,
+        });
     }
     Ok((endpoint, parameters.clone()))
 }
@@ -425,6 +499,7 @@ mod tests {
             .route(Method::GET, EXPENSE, Body::Ignored, named("get"), ())
             .route(Method::PATCH, EXPENSE, Body::Json, named("patch"), ())
             .route(Method::DELETE, EXPENSE, Body::Ignored, named("delete"), ())
+            .producing(accept::PROBLEM)
             .route(Method::POST, APPROVE, Body::Ignored, named("approve"), ())
             .route(
                 Method::POST,
@@ -515,6 +590,63 @@ mod tests {
         let (status, headers, _) = send(Method::POST, "/api/v1/teams/t1/expenses/e1:nope", None).await;
         assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
         assert_eq!(headers[header::ALLOW], "GET,PATCH,DELETE");
+    }
+
+    #[tokio::test]
+    async fn options_on_a_known_path_lists_the_methods_as_spring_does() {
+        let (status, headers, body) = send(Method::OPTIONS, "/api/v1/teams/t1/expenses/e1", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers[header::ALLOW], "GET,HEAD,PATCH,DELETE,OPTIONS");
+        assert_eq!(headers["accept-patch"], "application/json");
+        assert_eq!(body, "");
+
+        // Both `{expenseId}` and `{expenseId}:approve` match, and Spring lists the methods of every match.
+        let (status, headers, _) = send(Method::OPTIONS, "/api/v1/teams/t1/expenses/e1:approve", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers[header::ALLOW], "GET,HEAD,PATCH,DELETE,POST,OPTIONS");
+
+        let (status, headers, _) = send(Method::OPTIONS, "/api/v1/teams/t1:leave", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers[header::ALLOW], "POST,OPTIONS");
+        assert!(!headers.contains_key("accept-patch"));
+
+        let (status, ..) = send(Method::OPTIONS, "/api/v1/nope", None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn an_accept_the_endpoint_cannot_produce_is_406() {
+        let request = |method: Method, accept: &'static str| {
+            axum::http::Request::builder()
+                .method(method)
+                .uri("/api/v1/teams/t1/expenses/e1")
+                .header(header::ACCEPT, accept)
+                .body(HttpBody::empty())
+                .unwrap()
+        };
+
+        let refused = table().oneshot(request(Method::GET, "text/html")).await.unwrap();
+        assert_eq!(refused.status(), StatusCode::NOT_ACCEPTABLE);
+        assert_eq!(
+            refused.headers()[header::ACCEPT],
+            "application/json, application/problem+json"
+        );
+        // An operation without a body produces only problems: plain `application/json` is not among them.
+        let delete = table()
+            .oneshot(request(Method::DELETE, "application/json"))
+            .await
+            .unwrap();
+        assert_eq!(delete.status(), StatusCode::NOT_ACCEPTABLE);
+        assert_eq!(delete.headers()[header::ACCEPT], "application/problem+json");
+
+        for (method, accept) in [
+            (Method::GET, "application/json"),
+            (Method::DELETE, "*/*"),
+            (Method::HEAD, "application/*"),
+        ] {
+            let response = table().oneshot(request(method.clone(), accept)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{method} {accept}");
+        }
     }
 
     #[tokio::test]

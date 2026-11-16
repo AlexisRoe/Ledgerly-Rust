@@ -15,7 +15,7 @@ use axum::response::{IntoResponse, Response};
 use ledgerly_shared::id::{ExpenseId, ReceiptId, TeamId};
 use ledgerly_shared::iso::format_instant;
 use ledgerly_shared::web::{
-    Body, CurrentUser, ErrorCode, MultipartUpload, PathParameters, Problem, Routes, uuid_parameter,
+    Body, CurrentUser, ErrorCode, MultipartUpload, PathParameters, Problem, Routes, accept, uuid_parameter,
 };
 
 use self::dto::{DownloadLink, ReceiptResponse};
@@ -40,6 +40,7 @@ impl ReceiptsApi {
             .route(Method::GET, RECEIPTS, Body::Ignored, list, self.clone())
             .route(Method::POST, RECEIPTS, Body::Multipart, upload, self.clone())
             .route(Method::DELETE, RECEIPT, Body::Ignored, delete, self.clone())
+            .producing(accept::PROBLEM)
             .route(Method::GET, DOWNLOAD, Body::Ignored, download, self)
     }
 }

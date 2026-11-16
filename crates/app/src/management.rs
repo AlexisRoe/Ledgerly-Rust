@@ -52,6 +52,8 @@ pub(crate) fn router(shutdown: Shutdown, build: BuildInfo) -> Router {
         .route("/actuator/info", get(info))
         .fallback(not_found)
         .with_state(Management { shutdown, build })
+        // The `actuatorSecurity` chain writes Spring Security's default headers.
+        .layer(axum::middleware::from_fn(ledgerly_shared::web::management_headers))
 }
 
 /// Spring's availability states as health statuses. Liveness is `UP` for as long as the process can answer.

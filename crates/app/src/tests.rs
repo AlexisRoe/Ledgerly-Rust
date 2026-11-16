@@ -52,9 +52,14 @@ fn app() -> Router {
         ledgerly_shared::config::ForwardHeaders::None,
     )
     .unwrap();
+    let browsers = Browsers {
+        cors: Cors::new(&[], ledgerly_shared::config::ForwardHeaders::None),
+        local_docs: false,
+    };
     layered(
         routes,
         Authentication::new(Some(Arc::new(TestTokens)), false),
+        browsers,
         limits,
         &telemetry,
     )
