@@ -37,6 +37,12 @@ impl Merchant {
     /// The longest merchant accepted, counted like Java's `String.length()`.
     pub const MAX_LEN: usize = 200;
 
+    /// The text as it is stored, without any check or stripping: the rules ran when it was written. Java
+    /// reads the column as it is.
+    pub(crate) fn stored(text: &str) -> Self {
+        Self(text.to_owned())
+    }
+
     /// # Errors
     ///
     /// `InvalidInput` for field `merchant` if the text is blank, or longer than the cap after stripping.
@@ -70,6 +76,11 @@ impl Note {
     /// The longest note accepted, counted like Java's `String.length()`.
     pub const MAX_LEN: usize = 2000;
 
+    /// The text as it is stored, without any check: the rules ran when it was written.
+    pub(crate) fn stored(text: &str) -> Self {
+        Self(text.to_owned())
+    }
+
     /// # Errors
     ///
     /// `InvalidInput` for field `note` if the text is longer than the cap.
@@ -97,6 +108,11 @@ pub struct RejectionReason(String);
 impl RejectionReason {
     /// The longest reason accepted, counted like Java's `String.length()`.
     pub const MAX_LEN: usize = 1000;
+
+    /// The text as it is stored, without any check: the rules ran when it was written.
+    pub(crate) fn stored(text: &str) -> Self {
+        Self(text.to_owned())
+    }
 
     /// # Errors
     ///

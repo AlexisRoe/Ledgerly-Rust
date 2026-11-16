@@ -282,3 +282,34 @@ async fn a_lost_update_is_impossible_even_when_the_second_writer_never_read() {
     let outcome = update(&mut connection, &expense, Version::from_stored(5), at(11)).await;
     assert!(matches!(outcome, Err(PersistenceError::Conflict { .. })), "{outcome:?}");
 }
+
+/// Text written by Java (or by SQL) is read back exactly as stored: the rules ran when it was written, and
+/// Java's entity hands the column out as it is. A leading tab must reach the CSV export, which neutralises it.
+#[tokio::test]
+async fn stored_text_is_read_back_unchanged() {
+    let database = TestDatabase::new().await.unwrap();
+    let mut connection = database.pool().acquire().await.unwrap();
+    let team = TeamId::new_v7();
+    let expense = draft(team, claimant());
+    insert(&mut connection, &expense, at(9)).await.unwrap();
+    sqlx::query("update expenses set merchant = $1, note = $2 where id = $3")
+        .bind("\tTabbed ")
+        .bind("  spaced  ")
+        .bind(expense.id().as_uuid())
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+    sqlx::query("insert into expense_rejections (expense_id, position, rejected_by, reason) values ($1, 0, $2, $3)")
+        .bind(expense.id().as_uuid())
+        .bind(UserId::new_v7().as_uuid())
+        .bind(" blurry ")
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+
+    let loaded = load(&mut connection, team, expense.id()).await.value;
+
+    assert_eq!(loaded.merchant().as_str(), "\tTabbed ");
+    assert_eq!(loaded.note().map(|note| note.as_str()), Some("  spaced  "));
+    assert_eq!(loaded.rejections()[0].reason().as_str(), " blurry ");
+}

@@ -362,11 +362,9 @@ impl TryFrom<ExpenseRow> for Versioned<Expense> {
             .iter()
             .zip(&row.rejection_reasons)
             .map(|(rejected_by, reason)| {
-                RejectionReason::new(reason)
-                    .map(|reason| Rejection::restore(UserId::from_uuid(*rejected_by), reason))
-                    .map_err(|_| corrupt("rejection reason"))
+                Rejection::restore(UserId::from_uuid(*rejected_by), RejectionReason::stored(reason))
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect();
         let stored = StoredExpense {
             id: ExpenseId::from_uuid(row.id),
             team_id: TeamId::from_uuid(row.team_id),
@@ -374,13 +372,9 @@ impl TryFrom<ExpenseRow> for Versioned<Expense> {
             money,
             category: row.category.parse::<Category>().map_err(|_| corrupt("category"))?,
             incurred_on: row.incurred_on,
-            merchant: Merchant::new(&row.merchant).map_err(|_| corrupt("merchant"))?,
-            note: row
-                .note
-                .as_deref()
-                .map(Note::new)
-                .transpose()
-                .map_err(|_| corrupt("note"))?,
+            // As stored: the rules ran when it was written (by Rust or Java); reading never changes text.
+            merchant: Merchant::stored(&row.merchant),
+            note: row.note.as_deref().map(Note::stored),
             status: row.status.parse::<ExpenseStatus>().map_err(|_| corrupt("status"))?,
             rejections,
         };
