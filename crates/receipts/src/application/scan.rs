@@ -22,9 +22,9 @@ pub(crate) const RETRY_DELAYS: [Duration; 3] = [
 /// Scans a stored receipt: `PENDING_SCAN` becomes `ACCEPTED` or `QUARANTINED`, or stays when the scanner
 /// cannot answer.
 ///
-/// Until the outbox (M9.2), it runs in a task the upload starts once its transaction has committed. If the
-/// process stops before the scan has finished, the receipt stays `PENDING_SCAN` until M9 delivers the upload
-/// again; Java's event registry already does.
+/// The outbox delivers the upload to it once the upload has committed ([`super::ScanListener`]). A scan that
+/// fails, or a process that stops meanwhile, leaves the publication open, and the upload is delivered again:
+/// at the next start, or after two minutes.
 #[derive(Debug, Clone)]
 pub(crate) struct ScanReceipt {
     context: Context,
@@ -50,15 +50,6 @@ impl ScanReceipt {
             scanner,
             delays,
         }
-    }
-
-    /// Starts the scan in a task of its own and returns at once.
-    pub(crate) fn start(&self, team: TeamId, receipt: ReceiptId) {
-        let scan = self.clone();
-        tokio::spawn(async move {
-            // The failure is logged where it happens; the receipt stays pending.
-            let _ = scan.execute(team, receipt).await;
-        });
     }
 
     /// Scans the receipt if it is still pending, and does nothing otherwise, so running it twice for one

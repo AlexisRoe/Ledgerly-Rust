@@ -6,8 +6,8 @@
 #![forbid(unsafe_code)]
 
 mod application;
-mod deletions;
 mod domain;
+mod events;
 mod facade;
 mod persistence;
 mod receipt_checks;
@@ -17,12 +17,13 @@ use std::sync::Arc;
 
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::config::Limits;
+use ledgerly_shared::events::Publisher;
 use ledgerly_shared::web::Routes;
 use ledgerly_teams::TeamsFacade;
 use sqlx::PgPool;
 
-pub use deletions::{ExpenseDeletedListener, NobodyListens};
 pub use domain::{Category, InvalidInput, NewExpense};
+pub use events::{EXPENSE_DELETED, ExpenseEvent, ExpenseEventKind};
 pub use facade::{ExpenseRefusal, ExpensesFacade, ValidationProblem};
 pub use receipt_checks::{ReceiptChecks, ReceiptSummary, SummaryFuture};
 
@@ -30,8 +31,9 @@ use crate::application::{MembershipLookup, TeamsMembershipLookup};
 
 /// The expense endpoints, ready to be merged into the API's route table.
 ///
-/// Roles come from `teams` on every call. A submit asks `receipts` for the expense's receipts; a deletion is
-/// told to `deleted` once it has committed. Lists are capped at `limits.max_page_size`.
+/// Roles come from `teams` on every call. A submit asks `receipts` for the expense's receipts. Every change
+/// publishes an [`ExpenseEvent`] through `events`, in its transaction. Lists are capped at
+/// `limits.max_page_size`.
 #[must_use]
 pub fn routes(
     pool: &PgPool,
@@ -39,8 +41,8 @@ pub fn routes(
     limits: &Limits,
     teams: TeamsFacade,
     receipts: &Arc<dyn ReceiptChecks>,
-    deleted: &Arc<dyn ExpenseDeletedListener>,
+    events: &Arc<dyn Publisher>,
 ) -> Routes {
     let memberships: Arc<dyn MembershipLookup> = Arc::new(TeamsMembershipLookup(teams));
-    web::ExpensesApi::new(pool, clock, &memberships, receipts, deleted, limits).routes()
+    web::ExpensesApi::new(pool, clock, &memberships, receipts, events, limits).routes()
 }

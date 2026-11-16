@@ -8,6 +8,7 @@ mod checks;
 mod delete;
 mod download;
 mod list;
+mod listeners;
 mod scan;
 mod upload;
 
@@ -22,6 +23,7 @@ use ledgerly_shared::events::Publisher;
 use ledgerly_shared::storage::{ObjectStorage, StorageError};
 use ledgerly_shared::web::Problem;
 pub(crate) use list::ListReceipts;
+pub(crate) use listeners::{CleanupListener, ScanListener};
 pub(crate) use scan::{RETRY_DELAYS, ScanReceipt};
 use sqlx::PgPool;
 pub(crate) use upload::UploadReceipt;

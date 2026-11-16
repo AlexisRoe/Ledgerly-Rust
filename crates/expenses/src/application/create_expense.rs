@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use ledgerly_shared::clock::Clock;
+use ledgerly_shared::events::Publisher;
 use ledgerly_shared::id::{ExpenseId, TeamId, UserId};
 use ledgerly_shared::idempotency::{self, Entry, SaveError};
 use ledgerly_shared::version::Versioned;
@@ -10,6 +11,7 @@ use sqlx::PgPool;
 
 use super::{MembershipLookup, UseCaseError, access};
 use crate::domain::{Expense, ExpenseError, NewExpense};
+use crate::events::{ExpenseEvent, ExpenseEventKind};
 use crate::persistence;
 
 /// What the caller asks for. The claimant is always the caller; nothing in here can set a status or a version.
@@ -54,14 +56,21 @@ pub(crate) struct CreateExpense {
     pool: PgPool,
     clock: Arc<dyn Clock>,
     memberships: Arc<dyn MembershipLookup>,
+    events: Arc<dyn Publisher>,
 }
 
 impl CreateExpense {
-    pub(crate) fn new(pool: PgPool, clock: Arc<dyn Clock>, memberships: Arc<dyn MembershipLookup>) -> Self {
+    pub(crate) fn new(
+        pool: PgPool,
+        clock: Arc<dyn Clock>,
+        memberships: Arc<dyn MembershipLookup>,
+        events: Arc<dyn Publisher>,
+    ) -> Self {
         Self {
             pool,
             clock,
             memberships,
+            events,
         }
     }
 
@@ -107,6 +116,14 @@ impl CreateExpense {
         let expense = Expense::draft(command.team, command.claimant, &command.expense, self.clock.as_ref())
             .map_err(ExpenseError::from)?;
         let version = persistence::insert(&mut transaction, &expense, self.clock.now()).await?;
+        let created = ExpenseEvent::new(
+            command.team,
+            expense.id(),
+            command.claimant,
+            self.clock.now(),
+            ExpenseEventKind::Created,
+        );
+        self.events.publish(&mut transaction, &created).await?;
         if let Some(key) = idempotency_key {
             let entry = Entry {
                 request_hash: hash,

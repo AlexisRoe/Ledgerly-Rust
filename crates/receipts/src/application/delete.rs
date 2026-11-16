@@ -1,6 +1,5 @@
 //! Java counterpart: `receipts/internal/application/DeleteReceipt.java` and `ExpenseDeletedCleanup.java`.
 
-use ledgerly_expenses::ExpenseDeletedListener;
 use ledgerly_shared::id::{ExpenseId, ReceiptId, TeamId, UserId};
 
 use super::{Context, UseCaseError};
@@ -54,8 +53,8 @@ impl DeleteReceipt {
     }
 }
 
-/// When an expense is deleted, removes its receipts and their files. Java's `@ApplicationModuleListener`
-/// runs after the deletion commits, in a transaction of its own; this one runs in a task the deletion starts.
+/// When an expense is deleted, removes its receipts and their files. Java's `@ApplicationModuleListener`;
+/// delivered by the outbox after the deletion commits ([`super::CleanupListener`]).
 #[derive(Debug, Clone)]
 pub(crate) struct ExpenseDeletedCleanup {
     context: Context,
@@ -77,16 +76,5 @@ impl ExpenseDeletedCleanup {
             }
         }
         Ok(())
-    }
-}
-
-impl ExpenseDeletedListener for ExpenseDeletedCleanup {
-    fn expense_deleted(&self, team: TeamId, expense: ExpenseId) {
-        let cleanup = self.clone();
-        tokio::spawn(async move {
-            if let Err(error) = cleanup.execute(team, expense).await {
-                tracing::warn!("The receipts of deleted expense {expense} could not be removed: {error}");
-            }
-        });
     }
 }

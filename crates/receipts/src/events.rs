@@ -1,8 +1,8 @@
 //! The receipts module's events. Ids only, never a file name or content (Java's ADR 0001).
 //!
 //! Java counterpart: `receipts/events/ReceiptEvent.java` (the sealed `ReceiptEvent` and its four records).
-//! Java's module-internal `ReceiptUploaded`, which starts the scan, has no counterpart here: until the outbox
-//! (M9.2), the upload starts the scan itself once it has committed.
+//! Java's module-internal `ReceiptUploaded`, which starts the scan, has no counterpart here: the scan listens to
+//! the public `Uploaded`, which carries the same ids.
 
 use chrono::{DateTime, Utc};
 use ledgerly_shared::events::Event;
@@ -36,6 +36,9 @@ pub enum ReceiptEventKind {
     /// A user removed the receipt. Java: `Deleted`.
     Deleted { actor_id: UserId },
 }
+
+/// The `event_type` of [`ReceiptEventKind::Uploaded`], which starts the scan.
+pub const RECEIPT_UPLOADED: &str = "ledgerly-rust:receipts.ReceiptUploaded";
 
 impl ReceiptEvent {
     pub(crate) fn new(
@@ -76,7 +79,7 @@ impl Event for ReceiptEvent {
 
     fn event_type(&self) -> &'static str {
         match self.kind {
-            ReceiptEventKind::Uploaded { .. } => "ledgerly-rust:receipts.ReceiptUploaded",
+            ReceiptEventKind::Uploaded { .. } => RECEIPT_UPLOADED,
             ReceiptEventKind::Accepted => "ledgerly-rust:receipts.ReceiptAccepted",
             ReceiptEventKind::Quarantined => "ledgerly-rust:receipts.ReceiptQuarantined",
             ReceiptEventKind::Deleted { .. } => "ledgerly-rust:receipts.ReceiptDeleted",

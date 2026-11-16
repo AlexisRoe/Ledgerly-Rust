@@ -16,14 +16,14 @@ use std::sync::Arc;
 use ledgerly_expenses::ExpensesFacade;
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::config::Limits;
-use ledgerly_shared::events::Publisher;
+use ledgerly_shared::events::{Listener, Publisher};
 use ledgerly_shared::id::{ImportId, TeamId};
 use ledgerly_shared::storage::ObjectStorage;
 use ledgerly_shared::web::Routes;
 use ledgerly_teams::TeamsFacade;
 use sqlx::PgPool;
 
-use crate::application::{Context, Drafts, GetImport, ImportRunner, UploadImport};
+use crate::application::{Context, Drafts, GetImport, ImportQueuedListener, ImportRunner, UploadImport};
 use crate::web::ImportsApi;
 
 /// The imports module as the app wires it.
@@ -62,7 +62,7 @@ impl Imports {
         let runner = ImportRunner::new(context.clone());
         Self {
             api: ImportsApi {
-                upload: UploadImport::new(context.clone(), runner.clone()),
+                upload: UploadImport::new(context.clone()),
                 get: GetImport::new(context),
             },
             runner,
@@ -74,6 +74,13 @@ impl Imports {
     /// admin tool; no endpoint calls it.
     pub async fn restart(&self, team: TeamId, id: ImportId) -> bool {
         self.runner.restart(team, id).await
+    }
+
+    /// The outbox listener that runs the job of each queued import, and resumes one a stopped process left
+    /// behind. Java: `ImportRunner.on`.
+    #[must_use]
+    pub fn listeners(&self) -> Vec<Arc<dyn Listener>> {
+        vec![Arc::new(ImportQueuedListener(self.runner.clone()))]
     }
 
     /// The imports endpoints.

@@ -14,10 +14,11 @@ use ledgerly_shared::role::Role;
 use ledgerly_shared::version::{Version, Versioned};
 use sqlx::PgPool;
 
-use super::doubles::{FixedReceipts, Memberships};
+use super::doubles::{FixedReceipts, Memberships, Recorded};
 use super::*;
 use crate::ReceiptSummary;
 use crate::domain::{Action, Category, Expense, ExpenseStatus, InvalidInput, NewExpense};
+use crate::events::ExpenseEventKind;
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 5, 10, 0, 0).unwrap()
@@ -46,6 +47,7 @@ struct World {
     approver: UserId,
     owner: UserId,
     memberships: Arc<dyn MembershipLookup>,
+    events: Recorded,
 }
 
 impl World {
@@ -66,11 +68,12 @@ impl World {
             approver,
             owner,
             memberships: Arc::new(memberships),
+            events: Recorded::default(),
         }
     }
 
     fn create(&self) -> CreateExpense {
-        CreateExpense::new(self.pool.clone(), clock(), self.memberships.clone())
+        CreateExpense::new(self.pool.clone(), clock(), self.memberships.clone(), self.publisher())
     }
 
     fn get(&self) -> GetExpense {
@@ -78,11 +81,11 @@ impl World {
     }
 
     fn update(&self) -> UpdateExpense {
-        UpdateExpense::new(self.pool.clone(), clock(), self.memberships.clone())
+        UpdateExpense::new(self.pool.clone(), clock(), self.memberships.clone(), self.publisher())
     }
 
     fn delete(&self) -> DeleteExpense {
-        DeleteExpense::new(self.pool.clone(), self.memberships.clone(), crate::deletions::nobody())
+        DeleteExpense::new(self.pool.clone(), clock(), self.memberships.clone(), self.publisher())
     }
 
     fn transition(&self, accepted_receipts: u32) -> TransitionExpense {
@@ -91,7 +94,16 @@ impl World {
             clock(),
             self.memberships.clone(),
             Arc::new(FixedReceipts(ReceiptSummary::new(accepted_receipts, 0))),
+            self.publisher(),
         )
+    }
+
+    fn publisher(&self) -> Arc<dyn ledgerly_shared::events::Publisher> {
+        Arc::new(self.events.clone())
+    }
+
+    fn kinds(&self) -> Vec<ExpenseEventKind> {
+        self.events.events().into_iter().map(|event| event.kind).collect()
     }
 
     async fn draft(&self) -> Versioned<Expense> {
@@ -353,6 +365,7 @@ async fn an_edit_that_changes_nothing_writes_nothing() {
         world.pool.clone(),
         Arc::new(FixedClock::at(now() + chrono::TimeDelta::hours(1))),
         world.memberships.clone(),
+        world.publisher(),
     );
 
     for command in [
@@ -368,6 +381,103 @@ async fn an_edit_that_changes_nothing_writes_nothing() {
         assert_eq!(outcome.version, Version::INITIAL);
     }
     assert_eq!(world.updated_at(id).await, now());
+}
+
+/// Java: `UpdateExpense` and `AuditApiTest.anEditRecordsWhichFieldsChangedButNeverTheirValues`: the names of
+/// the changed fields in Java's order, never the values; an edit that changes nothing still publishes.
+#[tokio::test]
+async fn an_edit_publishes_the_names_of_the_changed_fields_in_javas_order() {
+    let database = TestDatabase::new().await.unwrap();
+    let world = World::new(&database);
+    let created = world.draft().await;
+    let id = created.value.id();
+
+    let edited = world
+        .update()
+        .execute(UpdateExpenseCommand {
+            note: Some("private".to_owned()),
+            merchant: Some("Bakery".to_owned()),
+            incurred_on: Some(NaiveDate::from_ymd_opt(2026, 11, 4).unwrap()),
+            money: Some(Money::parse("13", "EUR").unwrap()),
+            ..world.edit(id, world.member, created.version)
+        })
+        .await
+        .unwrap();
+    world
+        .update()
+        .execute(world.edit(id, world.member, edited.version))
+        .await
+        .unwrap();
+    // Refused: no event.
+    world
+        .update()
+        .execute(world.edit(id, world.member, created.version))
+        .await
+        .unwrap_err();
+
+    let events = world.events.events();
+    let kinds: Vec<_> = events.iter().map(|event| event.kind.clone()).collect();
+    let names = |fields: &[&str]| ExpenseEventKind::Edited {
+        changed_fields: fields.iter().map(|field| (*field).to_owned()).collect(),
+    };
+    assert_eq!(
+        kinds,
+        [
+            ExpenseEventKind::Created,
+            names(&["money", "incurredOn", "merchant", "note"]),
+            names(&[]),
+        ]
+    );
+    let edit = &events[1];
+    assert_eq!((edit.team_id, edit.expense_id, edit.actor_id), (world.team, id, world.member));
+    assert_eq!(edit.occurred_at, now());
+}
+
+/// Java: `TransitionExpense` and `DeleteExpense`: one event per change, by the caller.
+#[tokio::test]
+async fn transitions_and_deletes_publish_one_event_each() {
+    let database = TestDatabase::new().await.unwrap();
+    let world = World::new(&database);
+    let id = world.draft().await.value.id();
+    let transition = world.transition(1);
+    for (action, caller) in [
+        (Action::Submit, world.member),
+        (Action::Reject, world.approver),
+        (Action::Reopen, world.member),
+        (Action::Submit, world.member),
+        (Action::Withdraw, world.member),
+        (Action::Submit, world.member),
+        (Action::Approve, world.approver),
+        (Action::Reimburse, world.owner),
+    ] {
+        transition
+            .execute(action, world.team, id, caller, Some("blurry"))
+            .await
+            .unwrap();
+    }
+    // A refused transition publishes nothing.
+    transition
+        .execute(Action::Approve, world.team, id, world.approver, None)
+        .await
+        .unwrap_err();
+    let other = world.draft().await;
+    world
+        .delete()
+        .execute(world.team, other.value.id(), world.member, other.version)
+        .await
+        .unwrap();
+
+    use ExpenseEventKind::{Approved, Created, Deleted, Reimbursed, Rejected, Reopened, Submitted, Withdrawn};
+    assert_eq!(
+        world.kinds(),
+        [
+            Created, Submitted, Rejected, Reopened, Submitted, Withdrawn, Submitted, Approved, Reimbursed, Created,
+            Deleted
+        ]
+    );
+    let events = world.events.events();
+    assert_eq!(events[7].actor_id, world.approver);
+    assert_eq!(events[10].expense_id, other.value.id());
 }
 
 /// Java: `UpdateExpenseTest` (stale version, non-claimant owner, outsider, future date change nothing).
@@ -672,7 +782,7 @@ async fn a_key_expires_after_24_hours() {
     let database = TestDatabase::new().await.unwrap();
     let world = World::new(&database);
     let clock = Arc::new(FixedClock::at(now()));
-    let create = CreateExpense::new(world.pool.clone(), clock.clone(), world.memberships.clone());
+    let create = CreateExpense::new(world.pool.clone(), clock.clone(), world.memberships.clone(), world.publisher());
     world
         .create_with_key(&create, world.member, lunch(), "key-expiring")
         .await
@@ -754,13 +864,14 @@ async fn a_removed_claimant_loses_access_but_approvers_still_decide() {
             .unwrap();
     }
     let memberships: Arc<dyn MembershipLookup> = Arc::new(TeamsMembershipLookup(ledgerly_teams::TeamsFacade));
-    let create = CreateExpense::new(pool.clone(), clock(), memberships.clone());
+    let create = CreateExpense::new(pool.clone(), clock(), memberships.clone(), Arc::new(Recorded::default()));
     let get = GetExpense::new(pool.clone(), memberships.clone());
     let transition = TransitionExpense::new(
         pool.clone(),
         clock(),
         memberships,
         Arc::new(FixedReceipts(ReceiptSummary::new(1, 0))),
+        Arc::new(Recorded::default()),
     );
     let mut submitted = Vec::new();
     for _ in 0..2 {

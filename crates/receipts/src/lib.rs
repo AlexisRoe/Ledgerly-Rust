@@ -15,17 +15,17 @@ mod web;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ledgerly_expenses::{ExpenseDeletedListener, ExpensesFacade, ReceiptChecks};
+use ledgerly_expenses::{ExpensesFacade, ReceiptChecks};
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::config::{ClamavConfig, Limits};
-use ledgerly_shared::events::Publisher;
+use ledgerly_shared::events::{Listener, Publisher};
 use ledgerly_shared::storage::ObjectStorage;
 use ledgerly_shared::web::Routes;
 use sqlx::PgPool;
 
 use crate::application::{
-    Context, DeleteReceipt, DownloadReceipt, ExpenseDeletedCleanup, ListReceipts, RETRY_DELAYS, ReceiptCounts,
-    ScanReceipt, UploadReceipt,
+    CleanupListener, Context, DeleteReceipt, DownloadReceipt, ExpenseDeletedCleanup, ListReceipts, RETRY_DELAYS,
+    ReceiptCounts, ScanListener, ScanReceipt, UploadReceipt,
 };
 use crate::scanner::{ClamAvScanner, MalwareScanner};
 use crate::web::ReceiptsApi;
@@ -44,6 +44,7 @@ pub struct Modules<'a> {
 #[derive(Debug, Clone)]
 pub struct Receipts {
     api: ReceiptsApi,
+    scan: ScanReceipt,
     cleanup: ExpenseDeletedCleanup,
 }
 
@@ -73,11 +74,12 @@ impl Receipts {
         let scan = ScanReceipt::new(context.clone(), scanner, retry_delays);
         Self {
             api: ReceiptsApi {
-                upload: UploadReceipt::new(context.clone(), scan, limits.max_upload_size),
+                upload: UploadReceipt::new(context.clone(), limits.max_upload_size),
                 list: ListReceipts::new(context.clone()),
                 download: DownloadReceipt::new(context.clone()),
                 delete: DeleteReceipt::new(context.clone()),
             },
+            scan,
             cleanup: ExpenseDeletedCleanup::new(context),
         }
     }
@@ -94,9 +96,13 @@ impl Receipts {
         Arc::new(ReceiptCounts)
     }
 
-    /// Removes the receipts of a deleted expense, for the expenses module. Java: `ExpenseDeletedCleanup`.
+    /// The outbox listeners: the malware scan of an uploaded receipt, and the removal of a deleted expense's
+    /// receipts. Java: `ScanReceipt.on` and `ExpenseDeletedCleanup`.
     #[must_use]
-    pub fn cleanup(&self) -> Arc<dyn ExpenseDeletedListener> {
-        Arc::new(self.cleanup.clone())
+    pub fn listeners(&self) -> Vec<Arc<dyn Listener>> {
+        vec![
+            Arc::new(ScanListener(self.scan.clone())),
+            Arc::new(CleanupListener(self.cleanup.clone())),
+        ]
     }
 }

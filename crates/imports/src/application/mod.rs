@@ -21,7 +21,7 @@ use ledgerly_teams::TeamsFacade;
 use sqlx::{PgConnection, PgPool};
 
 pub(crate) use get::{GetImport, ImportView};
-pub(crate) use runner::ImportRunner;
+pub(crate) use runner::{ImportQueuedListener, ImportRunner};
 pub(crate) use upload::UploadImport;
 
 use crate::domain::Refusal;

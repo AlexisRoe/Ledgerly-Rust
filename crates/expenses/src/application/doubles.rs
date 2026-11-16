@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use ledgerly_shared::events::{Event, Publisher};
 use ledgerly_shared::id::{ExpenseId, TeamId, UserId};
 use ledgerly_shared::role::Role;
 use sqlx::PgConnection;
@@ -32,6 +33,28 @@ impl MembershipLookup for Memberships {
     ) -> BoxFuture<'a, Result<Option<Role>, sqlx::Error>> {
         let role = self.0.lock().unwrap().get(&(team, user)).copied();
         Box::pin(std::future::ready(Ok(role)))
+    }
+}
+
+/// Keeps every published event as its type and payload. Clones share them.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Recorded(Arc<Mutex<Vec<crate::ExpenseEvent>>>);
+
+impl Recorded {
+    pub(crate) fn events(&self) -> Vec<crate::ExpenseEvent> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl Publisher for Recorded {
+    fn publish<'a>(
+        &'a self,
+        _connection: &'a mut PgConnection,
+        event: &'a dyn Event,
+    ) -> std::pin::Pin<Box<dyn Future<Output = sqlx::Result<()>> + Send + 'a>> {
+        let event: crate::ExpenseEvent = serde_json::from_str(&event.payload().unwrap()).unwrap();
+        self.0.lock().unwrap().push(event);
+        Box::pin(std::future::ready(Ok(())))
     }
 }
 

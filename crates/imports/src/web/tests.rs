@@ -17,7 +17,7 @@ use ledgerly_expenses::{ExpenseRefusal, ExpensesFacade, NewExpense, ValidationPr
 use ledgerly_shared::clock::{Clock, FixedClock};
 use ledgerly_shared::config::Limits;
 use ledgerly_shared::database::TestDatabase;
-use ledgerly_shared::events::Discard;
+use ledgerly_shared::events::{Discard, Outbox};
 use ledgerly_shared::id::{ExpenseId, ImportId, TeamId, UserId};
 use ledgerly_shared::storage::testing::InMemoryStorage;
 use ledgerly_shared::web::{CurrentUser, render};
@@ -65,6 +65,7 @@ struct World {
     storage: InMemoryStorage,
     flaky: Arc<Flaky>,
     imports: Imports,
+    dispatcher: tokio::task::JoinHandle<()>,
     router: Router,
     team: TeamId,
     importer: UserId,
@@ -98,6 +99,12 @@ fn good_row(n: usize) -> String {
     format!("2026-01-{:02},Merchant {n},12.50,EUR,MEALS,", 1 + n % 28)
 }
 
+impl Drop for World {
+    fn drop(&mut self) {
+        self.dispatcher.abort();
+    }
+}
+
 impl World {
     async fn new() -> Self {
         let database = TestDatabase::new().await.unwrap();
@@ -106,19 +113,22 @@ impl World {
         let limits = Limits::default();
         let storage = InMemoryStorage::default();
         let flaky = Arc::new(Flaky {
-            real: ExpensesFacade::new(TeamsFacade, shared.clone(), &limits),
+            real: ExpensesFacade::new(TeamsFacade, shared.clone(), Arc::new(Discard), &limits),
             calls: AtomicUsize::new(0),
             fail_on: AtomicUsize::new(0),
         });
+        let outbox = Outbox::new(database.pool().clone(), shared.clone());
         let imports = Imports::with(Context {
             pool: database.pool().clone(),
             clock: shared,
-            events: Arc::new(Discard),
+            events: Arc::new(outbox.clone()),
             storage: Arc::new(storage.clone()),
             teams: TeamsFacade,
             drafts: flaky.clone(),
             limits,
         });
+        outbox.subscribe(imports.listeners()).unwrap();
+        let dispatcher = outbox.start();
         let router = Router::new()
             .fallback_service(imports.routes().into_service())
             .layer(axum::middleware::from_fn(render));
@@ -128,6 +138,7 @@ impl World {
             storage,
             flaky,
             imports,
+            dispatcher,
             router,
             team: TeamId::new_v7(),
             importer: UserId::new_v7(),
@@ -396,9 +407,57 @@ async fn a_completed_import_is_neither_restarted_nor_run_again() {
 
     assert!(!world.imports.restart(world.team, id).await);
     assert!(!world.imports.restart(world.team, ImportId::new_v4()).await);
-    world.imports.runner.run(world.team, id).await;
+    world.imports.runner.run(world.team, id).await.unwrap();
 
     assert_eq!(world.expenses().await, 3);
+}
+
+/// Decided after M8: the process died while the job ran, so the import is left `RUNNING` and its `ImportQueued`
+/// publication open. The next start delivers it again, and the job resumes after the last committed chunk.
+/// Java leaves such an import `RUNNING`.
+#[tokio::test]
+async fn an_import_left_running_by_a_stopped_process_resumes_at_the_next_start() {
+    let world = World::new().await;
+    let rows: Vec<String> = (0..450).map(good_row).collect();
+    world.flaky.fail_on.store(3, Ordering::SeqCst);
+    let id = world.upload(&csv(&rows)).await.id();
+    assert_eq!(world.finished(id).await["status"], "FAILED");
+    // As the dead process left it: two chunks committed, still RUNNING, the delivery never finished.
+    world.dispatcher.abort();
+    sqlx::query("update import_jobs set status = 'RUNNING', finished_at = null where id = $1")
+        .bind(id.as_uuid())
+        .execute(world.pool())
+        .await
+        .unwrap();
+    sqlx::query("update event_publication set completion_date = null, status = 'PUBLISHED'")
+        .execute(world.pool())
+        .await
+        .unwrap();
+    world.flaky.fail_on.store(0, Ordering::SeqCst);
+
+    let restarted = Outbox::new(world.pool().clone(), world.clock.clone());
+    restarted.subscribe(world.imports.listeners()).unwrap();
+    let dispatcher = restarted.start();
+    let done = world.finished(id).await;
+
+    assert_eq!(done["status"], "COMPLETED");
+    assert_eq!(done["importedRows"], 450);
+    assert_eq!(world.expenses().await, 450);
+    dispatcher.abort();
+}
+
+/// A `RUNNING` import whose job runs in this process is not started a second time.
+#[tokio::test]
+async fn a_running_job_is_not_started_twice_in_one_process() {
+    let world = World::new().await;
+    let rows: Vec<String> = (0..300).map(good_row).collect();
+    let id = world.upload(&csv(&rows)).await.id();
+    // Delivered again while it may still run (the minute's re-delivery): either it is live and left alone,
+    // or it is finished and left alone.
+    world.imports.runner.run(world.team, id).await.unwrap();
+    world.finished(id).await;
+
+    assert_eq!(world.expenses().await, 300);
 }
 
 /// An amount over `numeric(19,4)` is that row's error (the reviewer's decision after M8); in Java the insert

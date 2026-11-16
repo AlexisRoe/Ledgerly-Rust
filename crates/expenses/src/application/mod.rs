@@ -1,8 +1,8 @@
 //! The use cases of the expenses module: each opens one transaction, asks the domain, and writes through
 //! persistence.
 //!
-//! Java counterpart: `expenses/internal/application/`. What Java's use cases also do arrives with later steps:
-//! the `Idempotency-Key` (M3.5), events (M9) and the transition metric (M10).
+//! Java counterpart: `expenses/internal/application/`. Every change publishes an `ExpenseEvent` in its
+//! transaction (M9); the transition metric arrives in M10.
 
 pub(crate) mod access;
 mod batch;

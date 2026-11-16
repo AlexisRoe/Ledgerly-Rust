@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use ledgerly_shared::clock::{Clock, SystemClock};
 use ledgerly_shared::config::Limits;
+use ledgerly_shared::events::{Discard, Publisher};
 use ledgerly_shared::id::{ExpenseId, TeamId, UserId};
 use ledgerly_shared::web::Problem;
 use ledgerly_teams::TeamsFacade;
@@ -15,6 +16,7 @@ use sqlx::PgConnection;
 
 use crate::application::{MembershipLookup, TeamsMembershipLookup, UseCaseError, access};
 use crate::domain::{Expense, ExpenseError, NewExpense};
+use crate::events::{ExpenseEvent, ExpenseEventKind};
 use crate::persistence;
 use crate::web::problem::failure;
 
@@ -23,6 +25,7 @@ use crate::web::problem::failure;
 pub struct ExpensesFacade {
     memberships: Arc<dyn MembershipLookup>,
     clock: Arc<dyn Clock>,
+    events: Arc<dyn Publisher>,
     max_batch_size: u32,
 }
 
@@ -35,16 +38,27 @@ pub struct ValidationProblem {
 
 impl ExpensesFacade {
     /// Roles come from `teams` on every call; "today" from `clock`; at most `limits.max_batch_size` drafts
-    /// at a time.
+    /// at a time. Each draft created publishes `ExpenseCreated` through `events`.
     #[must_use]
-    pub fn new(teams: TeamsFacade, clock: Arc<dyn Clock>, limits: &Limits) -> Self {
-        Self::with(Arc::new(TeamsMembershipLookup(teams)), clock, limits.max_batch_size)
+    pub fn new(teams: TeamsFacade, clock: Arc<dyn Clock>, events: Arc<dyn Publisher>, limits: &Limits) -> Self {
+        Self::with(
+            Arc::new(TeamsMembershipLookup(teams)),
+            clock,
+            events,
+            limits.max_batch_size,
+        )
     }
 
-    pub(crate) fn with(memberships: Arc<dyn MembershipLookup>, clock: Arc<dyn Clock>, max_batch_size: u32) -> Self {
+    pub(crate) fn with(
+        memberships: Arc<dyn MembershipLookup>,
+        clock: Arc<dyn Clock>,
+        events: Arc<dyn Publisher>,
+        max_batch_size: u32,
+    ) -> Self {
         Self {
             memberships,
             clock,
+            events,
             max_batch_size,
         }
     }
@@ -92,6 +106,15 @@ impl ExpensesFacade {
                 .map_err(UseCaseError::from)?;
             ids.push(expense.id());
         }
+        // Java: one `ExpenseEvent.Created` per draft, after all of them are written.
+        let now = self.clock.now();
+        for id in &ids {
+            let created = ExpenseEvent::new(team, *id, claimant, now, ExpenseEventKind::Created);
+            self.events
+                .publish(connection, &created)
+                .await
+                .map_err(UseCaseError::from)?;
+        }
         Ok(ids)
     }
 
@@ -137,7 +160,7 @@ impl ExpensesFacade {
 /// The facade on the teams module's memberships, as the app wires it.
 impl Default for ExpensesFacade {
     fn default() -> Self {
-        Self::new(TeamsFacade, Arc::new(SystemClock), &Limits::default())
+        Self::new(TeamsFacade, Arc::new(SystemClock), Arc::new(Discard), &Limits::default())
     }
 }
 

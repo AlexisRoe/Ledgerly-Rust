@@ -16,7 +16,7 @@ use ledgerly_expenses::ExpensesFacade;
 use ledgerly_shared::clock::{Clock, FixedClock};
 use ledgerly_shared::config::Limits;
 use ledgerly_shared::database::TestDatabase;
-use ledgerly_shared::events::{Event, Publisher};
+use ledgerly_shared::events::{Event, Listener, Outbox, Publisher};
 use ledgerly_shared::id::{ExpenseId, TeamId, UserId};
 use ledgerly_shared::storage::ObjectStorage;
 use ledgerly_shared::storage::testing::InMemoryStorage;
@@ -32,18 +32,19 @@ use crate::{Modules, Receipts};
 pub(crate) const PDF: &[u8] = b"%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n";
 const EXE: &[u8] = b"MZ\x90\0\x03\0\0\0\x04\0\0\0\xff\xff\0\0";
 
-/// Keeps the type of every event, in order.
-#[derive(Debug, Default)]
-pub(crate) struct Recorded(pub Mutex<Vec<&'static str>>);
+/// Keeps the type of every event, in order, and hands it on to the outbox, whose dispatcher delivers it to
+/// the module's listeners as in the app.
+#[derive(Debug)]
+pub(crate) struct Recorded(pub Mutex<Vec<&'static str>>, pub Outbox);
 
 impl Publisher for Recorded {
     fn publish<'a>(
         &'a self,
-        _connection: &'a mut sqlx::PgConnection,
+        connection: &'a mut sqlx::PgConnection,
         event: &'a dyn Event,
     ) -> Pin<Box<dyn Future<Output = sqlx::Result<()>> + Send + 'a>> {
         self.0.lock().unwrap().push(event.event_type());
-        Box::pin(std::future::ready(Ok(())))
+        self.1.publish(connection, event)
     }
 }
 
@@ -102,6 +103,12 @@ impl MalwareScanner for FakeScanner {
     }
 }
 
+impl Drop for World {
+    fn drop(&mut self) {
+        self.dispatcher.abort();
+    }
+}
+
 /// A team with a claimant and a colleague (both MEMBER) and an APPROVER, as Java's test sets it up.
 pub(crate) struct World {
     database: TestDatabase,
@@ -109,6 +116,10 @@ pub(crate) struct World {
     pub storage: InMemoryStorage,
     pub events: Arc<Recorded>,
     pub scanner: Arc<FakeScanner>,
+    pub outbox: Outbox,
+    dispatcher: tokio::task::JoinHandle<()>,
+    pub listeners: Vec<Arc<dyn Listener>>,
+    pub clock: Arc<dyn Clock>,
     pub team: TeamId,
     pub claimant: UserId,
     pub colleague: UserId,
@@ -123,7 +134,8 @@ impl World {
     pub(crate) async fn with_limit(max_upload_size: u64) -> Self {
         let database = TestDatabase::new().await.unwrap();
         let clock: Arc<dyn Clock> = Arc::new(FixedClock::at(Utc.with_ymd_and_hms(2026, 11, 16, 12, 0, 0).unwrap()));
-        let events = Arc::new(Recorded::default());
+        let outbox = Outbox::new(database.pool().clone(), clock.clone());
+        let events = Arc::new(Recorded(Mutex::default(), outbox.clone()));
         let publisher: Arc<dyn Publisher> = events.clone();
         let storage = InMemoryStorage::default();
         let objects: Arc<dyn ObjectStorage> = Arc::new(storage.clone());
@@ -147,6 +159,9 @@ impl World {
             [std::time::Duration::ZERO; 3],
             &limits,
         );
+        let listeners = receipts.listeners();
+        outbox.subscribe(listeners.clone()).unwrap();
+        let dispatcher = outbox.start();
         let router = Router::new()
             .fallback_service(receipts.routes().into_service())
             .layer(axum::middleware::from_fn(render));
@@ -156,6 +171,10 @@ impl World {
             storage,
             events,
             scanner,
+            outbox,
+            dispatcher,
+            listeners,
+            clock,
             team: TeamId::new_v7(),
             claimant: UserId::new_v7(),
             colleague: UserId::new_v7(),
@@ -174,6 +193,28 @@ impl World {
             world.member(world.team, user, role).await;
         }
         world
+    }
+
+    /// The process dies: the dispatcher stops, deliveries in progress are abandoned.
+    pub(crate) fn kill_dispatcher(&self) {
+        self.dispatcher.abort();
+    }
+
+    /// A new process starts: a fresh outbox with the same listeners delivers what is open.
+    pub(crate) fn restart(&self) -> tokio::task::JoinHandle<()> {
+        let outbox = Outbox::new(self.pool().clone(), self.clock.clone());
+        outbox.subscribe(self.listeners.clone()).unwrap();
+        outbox.start()
+    }
+
+    pub(crate) async fn open_publications(&self) -> Vec<(String, String)> {
+        sqlx::query_as(
+            "select listener_id, coalesce(status, '') from event_publication where completion_date is null \
+             order by publication_date",
+        )
+        .fetch_all(self.pool())
+        .await
+        .unwrap()
     }
 
     pub(crate) fn pool(&self) -> &PgPool {
@@ -443,6 +484,76 @@ async fn while_the_scanner_is_down_the_receipt_stays_pending_after_four_whole_at
     let (status, _) = world.settled(reply.body["id"].as_str().unwrap(), |_| true).await;
     assert_eq!(status, "PENDING_SCAN");
     assert_eq!(world.events(), ["ledgerly-rust:receipts.ReceiptUploaded"]);
+}
+
+/// The plan's acceptance test for M9.2, and Java's `EventRegistryRecoveryTest`: the scanner is down, so the
+/// receipt waits as `PENDING_SCAN` with an open publication; the application dies; after the restart the
+/// upload is delivered again, the receipt becomes `ACCEPTED` and the publication is completed.
+#[tokio::test]
+async fn a_scan_that_never_finished_is_done_after_a_restart() {
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+    world.scanner.set(Behaviour::Unavailable);
+    let reply = world.upload(expense, world.claimant, "a.pdf", PDF).await;
+    let receipt = reply.body["id"].as_str().unwrap().to_owned();
+    for _ in 0..200 {
+        if world.open_publications().await == [("ledgerly-rust:receipts.ScanReceipt".to_owned(), "FAILED".to_owned())] {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        world.open_publications().await,
+        [("ledgerly-rust:receipts.ScanReceipt".to_owned(), "FAILED".to_owned())]
+    );
+    world.kill_dispatcher();
+
+    world.scanner.set(Behaviour::Real);
+    let restarted = world.restart();
+
+    let (status, _) = world.settled(&receipt, |status| status != "PENDING_SCAN").await;
+    assert_eq!(status, "ACCEPTED");
+    for _ in 0..200 {
+        if world.open_publications().await.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(world.open_publications().await.is_empty());
+    restarted.abort();
+}
+
+/// Java: `ExpenseDeletedCleanup` listens to `ExpenseEvent.Deleted`: once the deletion is delivered, the
+/// expense's receipts and files are gone, and nobody else's.
+#[tokio::test]
+async fn an_expense_deleted_event_removes_its_receipts() {
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+    let other = world.expense("DRAFT").await;
+    world.accepted(expense, "a.pdf", PDF).await;
+    let kept = world.accepted(other, "c.pdf", PDF).await;
+
+    let deleted = ledgerly_expenses::ExpenseEvent {
+        event_id: Uuid::now_v7(),
+        team_id: world.team,
+        expense_id: expense,
+        actor_id: world.claimant,
+        occurred_at: Utc::now(),
+        kind: ledgerly_expenses::ExpenseEventKind::Deleted,
+    };
+    let mut transaction = world.pool().begin().await.unwrap();
+    world.outbox.publish(&mut transaction, &deleted).await.unwrap();
+    transaction.commit().await.unwrap();
+
+    for _ in 0..200 {
+        if world.rows().await == 1 && world.open_publications().await.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(world.rows().await, 1);
+    assert_eq!(world.storage.keys(), [world.key_of(&kept).await]);
+    assert!(world.open_publications().await.is_empty());
 }
 
 #[tokio::test]

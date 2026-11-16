@@ -70,7 +70,7 @@ impl World {
             &clock,
             &memberships,
             &receipts,
-            &crate::deletions::nobody(),
+            &(Arc::new(ledgerly_shared::events::Discard) as Arc<dyn ledgerly_shared::events::Publisher>),
             &ledgerly_shared::config::Limits::default(),
         )
         .routes();
@@ -612,7 +612,7 @@ async fn submit_without_an_accepted_receipt_is_422() {
                 &clock,
                 &memberships,
                 &receipts,
-                &crate::deletions::nobody(),
+                &(Arc::new(ledgerly_shared::events::Discard) as Arc<dyn ledgerly_shared::events::Publisher>),
                 &ledgerly_shared::config::Limits::default(),
             )
             .routes()

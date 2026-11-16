@@ -122,7 +122,7 @@ impl World {
             &clock,
             &memberships,
             &receipts,
-            &crate::deletions::nobody(),
+            &(Arc::new(ledgerly_shared::events::Discard) as Arc<dyn ledgerly_shared::events::Publisher>),
             &ledgerly_shared::config::Limits {
                 max_page_size,
                 ..Default::default()

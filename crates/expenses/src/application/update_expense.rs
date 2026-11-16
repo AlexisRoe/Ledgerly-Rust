@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use chrono::NaiveDate;
 use ledgerly_shared::clock::Clock;
+use ledgerly_shared::events::Publisher;
 use ledgerly_shared::id::{ExpenseId, TeamId, UserId};
 use ledgerly_shared::money::Money;
 use ledgerly_shared::text::is_blank;
@@ -12,6 +13,7 @@ use sqlx::PgPool;
 
 use super::{MembershipLookup, UseCaseError, access};
 use crate::domain::{Category, Expense, NewExpense};
+use crate::events::{ExpenseEvent, ExpenseEventKind};
 use crate::persistence;
 
 /// A partial edit: `None` leaves a field as it is. A blank `note` clears the note.
@@ -34,14 +36,21 @@ pub(crate) struct UpdateExpense {
     pool: PgPool,
     clock: Arc<dyn Clock>,
     memberships: Arc<dyn MembershipLookup>,
+    events: Arc<dyn Publisher>,
 }
 
 impl UpdateExpense {
-    pub(crate) fn new(pool: PgPool, clock: Arc<dyn Clock>, memberships: Arc<dyn MembershipLookup>) -> Self {
+    pub(crate) fn new(
+        pool: PgPool,
+        clock: Arc<dyn Clock>,
+        memberships: Arc<dyn MembershipLookup>,
+        events: Arc<dyn Publisher>,
+    ) -> Self {
         Self {
             pool,
             clock,
             memberships,
+            events,
         }
     }
 
@@ -80,8 +89,18 @@ impl UpdateExpense {
                 .unwrap_or_else(|| current.merchant().as_str().to_owned()),
             note,
         };
+        let changed_fields = changed_fields(current, &wanted);
         let mut edited = current.clone();
         edited.edit(actor, &wanted, self.clock.as_ref())?;
+        // Java publishes on every successful edit, also when nothing changed (an empty list).
+        let event = ExpenseEvent::new(
+            command.team,
+            command.id,
+            command.caller,
+            self.clock.now(),
+            ExpenseEventKind::Edited { changed_fields },
+        );
+        self.events.publish(&mut transaction, &event).await?;
         if edited == found.value {
             transaction.commit().await?;
             return Ok(found);
@@ -90,4 +109,26 @@ impl UpdateExpense {
         transaction.commit().await?;
         Ok(Versioned { value: edited, version })
     }
+}
+
+/// The names of the fields `wanted` changes, in Java's order. As in Java, the merchant and the note are compared
+/// as the client sent them (a blank note being no note), before the domain tidies them.
+fn changed_fields(current: &Expense, wanted: &NewExpense) -> Vec<String> {
+    let mut changed = Vec::new();
+    if wanted.money != current.money() {
+        changed.push("money");
+    }
+    if wanted.category != current.category() {
+        changed.push("category");
+    }
+    if wanted.incurred_on != current.incurred_on() {
+        changed.push("incurredOn");
+    }
+    if wanted.merchant != current.merchant().as_str() {
+        changed.push("merchant");
+    }
+    if wanted.note.as_deref() != current.note().map(|note| note.as_str()) {
+        changed.push("note");
+    }
+    changed.into_iter().map(str::to_owned).collect()
 }

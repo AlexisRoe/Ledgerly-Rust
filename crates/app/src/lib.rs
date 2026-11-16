@@ -70,6 +70,7 @@ pub struct Modules {
     imports: Imports,
     storage: S3ObjectStorage,
     outbox: Outbox,
+    events: Arc<dyn Publisher>,
 }
 
 impl Modules {
@@ -88,7 +89,7 @@ impl Modules {
         let teams = Teams::new(&config.teams, pool, &clock, &events);
         let storage = S3ObjectStorage::new(&config.storage);
         let objects: Arc<dyn ObjectStorage> = Arc::new(storage.clone());
-        let expenses = ExpensesFacade::new(teams.facade(), clock.clone(), &config.limits);
+        let expenses = ExpensesFacade::new(teams.facade(), clock.clone(), events.clone(), &config.limits);
         let imports = Imports::new(
             pool,
             &clock,
@@ -109,8 +110,8 @@ impl Modules {
             &config.clamav,
             &config.limits,
         );
-        // Nobody listens yet (M9.2 and M9.3 add the listeners), so publishing writes no rows.
-        if outbox.subscribe(Vec::new()).is_err() {
+        let listeners = [receipts.listeners(), imports.listeners()].concat();
+        if outbox.subscribe(listeners).is_err() {
             tracing::warn!("The outbox's listeners were set twice");
         }
         Ok(Self {
@@ -121,6 +122,7 @@ impl Modules {
             imports,
             storage,
             outbox,
+            events,
         })
     }
 
@@ -183,7 +185,7 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
             limits,
             modules.teams.facade(),
             &Receipts::checks(),
-            &modules.receipts.cleanup(),
+            &modules.events,
         ))
         .merge(modules.receipts.routes())
         .merge(modules.imports.routes())

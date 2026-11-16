@@ -39,7 +39,7 @@ use crate::application::{
     BatchCreateExpenses, CreateExpense, CreateExpenseCommand, DeleteExpense, ExportExpenses, ExportPages, Filter,
     GetExpense, ListExpenses, ListQuery, MembershipLookup, TransitionExpense, UpdateExpense, UpdateExpenseCommand,
 };
-use crate::deletions::ExpenseDeletedListener;
+use ledgerly_shared::events::Publisher;
 use crate::domain::{Action, Category, Expense, ExpenseStatus, NewExpense};
 use crate::receipt_checks::ReceiptChecks;
 
@@ -65,18 +65,30 @@ impl ExpensesApi {
         clock: &Arc<dyn Clock>,
         memberships: &Arc<dyn MembershipLookup>,
         receipts: &Arc<dyn ReceiptChecks>,
-        deleted: &Arc<dyn ExpenseDeletedListener>,
+        events: &Arc<dyn Publisher>,
         limits: &Limits,
     ) -> Self {
         Self {
-            batch: BatchCreateExpenses::new(pool.clone(), clock.clone(), memberships.clone(), limits.max_batch_size),
+            batch: BatchCreateExpenses::new(
+                pool.clone(),
+                clock.clone(),
+                memberships.clone(),
+                events.clone(),
+                limits.max_batch_size,
+            ),
             export: ExportExpenses::new(pool.clone(), memberships.clone(), limits.max_export_rows),
             list: ListExpenses::new(pool.clone(), memberships.clone(), limits.max_page_size),
-            create: CreateExpense::new(pool.clone(), clock.clone(), memberships.clone()),
+            create: CreateExpense::new(pool.clone(), clock.clone(), memberships.clone(), events.clone()),
             get: GetExpense::new(pool.clone(), memberships.clone()),
-            update: UpdateExpense::new(pool.clone(), clock.clone(), memberships.clone()),
-            delete: DeleteExpense::new(pool.clone(), memberships.clone(), deleted.clone()),
-            transition: TransitionExpense::new(pool.clone(), clock.clone(), memberships.clone(), receipts.clone()),
+            update: UpdateExpense::new(pool.clone(), clock.clone(), memberships.clone(), events.clone()),
+            delete: DeleteExpense::new(pool.clone(), clock.clone(), memberships.clone(), events.clone()),
+            transition: TransitionExpense::new(
+                pool.clone(),
+                clock.clone(),
+                memberships.clone(),
+                receipts.clone(),
+                events.clone(),
+            ),
         }
     }
 

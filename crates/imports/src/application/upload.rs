@@ -7,24 +7,25 @@ use ledgerly_shared::web::MultipartUpload;
 use sqlx::PgConnection;
 use tokio::io::AsyncWriteExt;
 
-use super::{Context, ImportRunner, UseCaseError};
+use super::{Context, UseCaseError};
 use crate::domain::{self, ImportStatus};
+use crate::events::ImportQueued;
 use crate::persistence::{self, Job};
 
 const MEBIBYTE: u64 = 1024 * 1024;
 
 /// Accepts a CSV for import. Everything that can be refused cheaply is refused before a job exists: not a
 /// teammate, the daily limit used up, too big, not text, the wrong header, too many rows. Only then is the
-/// file stored and a `QUEUED` import saved; the job starts once that has committed.
+/// file stored and a `QUEUED` import saved, with `ImportQueued`; the outbox starts the job once that has
+/// committed.
 #[derive(Debug, Clone)]
 pub(crate) struct UploadImport {
     context: Context,
-    runner: ImportRunner,
 }
 
 impl UploadImport {
-    pub(crate) const fn new(context: Context, runner: ImportRunner) -> Self {
-        Self { context, runner }
+    pub(crate) const fn new(context: Context) -> Self {
+        Self { context }
     }
 
     /// The new import's id.
@@ -85,7 +86,6 @@ impl UploadImport {
             }
             return Err(error);
         }
-        self.runner.start(team, job.id);
         Ok(job.id)
     }
 
@@ -102,13 +102,20 @@ impl UploadImport {
         Ok(())
     }
 
-    /// Under the per-user lock: the deciding daily-limit check, then the `QUEUED` row.
+    /// Under the per-user lock: the deciding daily-limit check, then the `QUEUED` row and `ImportQueued`.
     async fn record(&self, job: &Job) -> Result<(), UseCaseError> {
         let mut transaction = self.context.pool.begin().await?;
         persistence::lock_user_in_team(&mut transaction, job.team_id, job.user_id).await?;
         self.require_under_daily_limit(&mut transaction, job.team_id, job.user_id)
             .await?;
         persistence::insert(&mut transaction, job).await?;
+        let queued = ImportQueued {
+            event_id: uuid::Uuid::now_v7(),
+            team_id: job.team_id,
+            import_id: job.id,
+            occurred_at: self.context.clock.now(),
+        };
+        self.context.events.publish(&mut transaction, &queued).await?;
         transaction.commit().await?;
         Ok(())
     }

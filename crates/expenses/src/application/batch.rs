@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use ledgerly_shared::clock::Clock;
+use ledgerly_shared::events::Publisher;
 use ledgerly_shared::id::{ExpenseId, TeamId, UserId};
 use ledgerly_shared::web::{ErrorCode, FieldViolation};
 use sqlx::PgPool;
@@ -51,9 +52,10 @@ impl BatchCreateExpenses {
         pool: PgPool,
         clock: Arc<dyn Clock>,
         memberships: Arc<dyn MembershipLookup>,
+        events: Arc<dyn Publisher>,
         max_batch_size: u32,
     ) -> Self {
-        let facade = ExpensesFacade::with(memberships.clone(), clock.clone(), max_batch_size);
+        let facade = ExpensesFacade::with(memberships.clone(), clock.clone(), events, max_batch_size);
         Self {
             pool,
             memberships,

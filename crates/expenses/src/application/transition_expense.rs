@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use ledgerly_shared::clock::Clock;
+use ledgerly_shared::events::Publisher;
 use ledgerly_shared::id::{ExpenseId, TeamId, UserId};
 use ledgerly_shared::version::Versioned;
 use sqlx::PgPool;
@@ -10,6 +11,7 @@ use sqlx::PgPool;
 use super::{MembershipLookup, UseCaseError, access};
 use crate::ReceiptChecks;
 use crate::domain::{Action, Expense};
+use crate::events::{ExpenseEvent, ExpenseEventKind};
 use crate::persistence;
 
 /// The six workflow transitions. Transitions take no `If-Match`, as in Java; two at once still cannot both
@@ -20,6 +22,7 @@ pub(crate) struct TransitionExpense {
     clock: Arc<dyn Clock>,
     memberships: Arc<dyn MembershipLookup>,
     receipts: Arc<dyn ReceiptChecks>,
+    events: Arc<dyn Publisher>,
 }
 
 impl TransitionExpense {
@@ -28,12 +31,14 @@ impl TransitionExpense {
         clock: Arc<dyn Clock>,
         memberships: Arc<dyn MembershipLookup>,
         receipts: Arc<dyn ReceiptChecks>,
+        events: Arc<dyn Publisher>,
     ) -> Self {
         Self {
             pool,
             clock,
             memberships,
             receipts,
+            events,
         }
     }
 
@@ -67,6 +72,17 @@ impl TransitionExpense {
             Action::Reimburse => expense.reimburse(actor)?,
         }
         let version = persistence::update(&mut transaction, &expense, found.version, self.clock.now()).await?;
+        // In the same transaction as the change: either both happen or neither does.
+        let kind = match action {
+            Action::Submit => ExpenseEventKind::Submitted,
+            Action::Withdraw => ExpenseEventKind::Withdrawn,
+            Action::Approve => ExpenseEventKind::Approved,
+            Action::Reject => ExpenseEventKind::Rejected,
+            Action::Reopen => ExpenseEventKind::Reopened,
+            Action::Reimburse => ExpenseEventKind::Reimbursed,
+        };
+        let event = ExpenseEvent::new(team, id, caller, self.clock.now(), kind);
+        self.events.publish(&mut transaction, &event).await?;
         transaction.commit().await?;
         Ok(Versioned {
             value: expense,

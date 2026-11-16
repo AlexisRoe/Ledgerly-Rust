@@ -3,16 +3,23 @@
 //!
 //! Each chunk of 100 records is one transaction: its drafts, its row errors and the growth of
 //! `imported_rows` commit together or not at all, so progress is visible chunk by chunk and a failure leaves
-//! whole chunks behind. Until the outbox (M9.2) the job runs in a task the upload starts after its commit; if
-//! the process stops meanwhile, the import stays `QUEUED` or `RUNNING`, as in Java before its registry
-//! delivers the event again.
+//! whole chunks behind.
+//!
+//! The job runs when the outbox delivers `ImportQueued` ([`ImportQueuedListener`]), and the publication stays
+//! open until the job has ended. If the process stops meanwhile, the next start delivers it again: a `QUEUED`
+//! import starts, and one left `RUNNING` with no live runner resumes after its last committed chunk (decided
+//! after M8; Java leaves it `RUNNING`).
 
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex, PoisonError};
+
+use ledgerly_shared::events::{Delivery, DeliveryFailed, Listener, read_payload};
 use ledgerly_shared::id::{ImportId, TeamId};
 use tokio::io::AsyncReadExt;
 
 use super::Context;
 use crate::domain::{self, ImportStatus, Record, Row};
-use crate::events::ImportCompleted;
+use crate::events::{IMPORT_QUEUED, ImportCompleted, ImportQueued};
 use crate::persistence::{self, Job};
 
 /// Why a run stopped before the end. The import is marked `FAILED`.
@@ -45,37 +52,49 @@ enum Outcome {
 #[derive(Debug, Clone)]
 pub(crate) struct ImportRunner {
     context: Context,
+    /// The imports whose job runs in this process right now.
+    live: Arc<Mutex<HashSet<ImportId>>>,
+}
+
+/// Takes an import off the live set when its job ends, also when it panicked.
+struct Live {
+    set: Arc<Mutex<HashSet<ImportId>>>,
+    id: ImportId,
+}
+
+impl Drop for Live {
+    fn drop(&mut self) {
+        self.set.lock().unwrap_or_else(PoisonError::into_inner).remove(&self.id);
+    }
 }
 
 impl ImportRunner {
-    pub(crate) const fn new(context: Context) -> Self {
-        Self { context }
-    }
-
-    /// Starts the job in a task of its own and returns at once.
-    pub(crate) fn start(&self, team: TeamId, id: ImportId) {
-        let runner = self.clone();
-        tokio::spawn(async move { runner.run(team, id).await });
+    pub(crate) fn new(context: Context) -> Self {
+        Self {
+            context,
+            live: Arc::default(),
+        }
     }
 
     /// Runs the job to its end. Safe to call again for the same import: a `QUEUED` one starts, a `FAILED` one
-    /// resumes, a running or finished one is left alone. Java: `ImportRunner.run`.
-    pub(crate) async fn run(&self, team: TeamId, id: ImportId) {
-        let job = match self.find(team, id).await {
-            Ok(Some(job)) => job,
-            Ok(None) => return,
-            Err(error) => {
-                tracing::error!("Import {id} could not be started: {error}");
-                return;
-            }
+    /// resumes, a `RUNNING` one resumes unless its job runs in this process, a finished one is left alone.
+    /// Java: `ImportRunner.run`, which leaves a `RUNNING` one alone.
+    ///
+    /// # Errors
+    ///
+    /// The database error if the import cannot be read; the job's own failures end as `FAILED` instead.
+    pub(crate) async fn run(&self, team: TeamId, id: ImportId) -> sqlx::Result<()> {
+        let Some(job) = self.find(team, id).await? else {
+            return Ok(());
         };
         match job.status {
             ImportStatus::Queued => self.execute(job, false).await,
-            ImportStatus::Failed => self.execute(job, true).await,
-            ImportStatus::Running | ImportStatus::Completed => {
+            ImportStatus::Failed | ImportStatus::Running => self.execute(job, true).await,
+            ImportStatus::Completed => {
                 tracing::info!("Import {id} is {}; nothing to start", job.status.as_str());
             }
         }
+        Ok(())
     }
 
     /// Resumes a `FAILED` import after its last committed chunk: rows already imported are not written again.
@@ -99,6 +118,14 @@ impl ImportRunner {
     /// restart), and `ImportCompleted` either way.
     async fn execute(&self, job: Job, resume: bool) {
         let (team, id) = (job.team_id, job.id);
+        if !self.live.lock().unwrap_or_else(PoisonError::into_inner).insert(id) {
+            tracing::info!("Import {id} is running; nothing to start");
+            return;
+        }
+        let _live = Live {
+            set: self.live.clone(),
+            id,
+        };
         let outcome = async {
             let mut connection = self.context.pool.acquire().await?;
             persistence::mark_running(&mut connection, team, id, self.context.clock.now()).await?;
@@ -247,5 +274,32 @@ impl ImportRunner {
             tracing::warn!("Could not delete the file of import {id}: {error}");
         }
         Ok(())
+    }
+}
+
+/// Runs the job of a queued import. Java: `ImportRunner.on(ImportQueued)`, a tracked `@Async
+/// @TransactionalEventListener`, not an `@ApplicationModuleListener`, so that the job is not one big
+/// transaction. The delivery ends with the job, `COMPLETED` or `FAILED` alike; it fails only if the import
+/// could not even be read, and is then delivered again.
+#[derive(Debug, Clone)]
+pub(crate) struct ImportQueuedListener(pub ImportRunner);
+
+impl Listener for ImportQueuedListener {
+    fn id(&self) -> &'static str {
+        "ledgerly-rust:imports.ImportRunner"
+    }
+
+    fn listens_to(&self, event_type: &str) -> bool {
+        event_type == IMPORT_QUEUED
+    }
+
+    fn deliver<'a>(&'a self, event_type: &'a str, payload: &'a str) -> Delivery<'a> {
+        Box::pin(async move {
+            let queued: ImportQueued = read_payload(event_type, payload)?;
+            self.0
+                .run(queued.team_id, queued.import_id)
+                .await
+                .map_err(|_| DeliveryFailed(format!("import {} could not be read: database", queued.import_id)))
+        })
     }
 }
