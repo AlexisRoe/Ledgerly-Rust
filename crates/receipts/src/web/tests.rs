@@ -27,7 +27,8 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use crate::Receipts;
+use crate::scanner::{MalwareScanner, ScanError, ScanFuture, Verdict};
+use crate::{Modules, Receipts};
 
 pub(crate) const PDF: &[u8] = b"%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n";
 const EXE: &[u8] = b"MZ\x90\0\x03\0\0\0\x04\0\0\0\xff\xff\0\0";
@@ -59,12 +60,56 @@ impl Reply {
     }
 }
 
+/// What the fake scanner answers. Java: `FakeMalwareScanner`, which finds the EICAR string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Behaviour {
+    /// Infected if the content contains `EICAR`, clean otherwise.
+    Real,
+    /// The scanner cannot be reached.
+    Unavailable,
+}
+
+/// Records the content of every attempt.
+#[derive(Debug)]
+pub(crate) struct FakeScanner {
+    behaviour: Mutex<Behaviour>,
+    pub attempts: Mutex<Vec<Vec<u8>>>,
+}
+
+impl FakeScanner {
+    pub(crate) fn set(&self, behaviour: Behaviour) {
+        *self.behaviour.lock().unwrap() = behaviour;
+    }
+
+    pub(crate) fn attempts(&self) -> Vec<Vec<u8>> {
+        self.attempts.lock().unwrap().clone()
+    }
+}
+
+impl MalwareScanner for FakeScanner {
+    fn scan<'a>(&'a self, content: &'a mut ledgerly_shared::storage::ObjectReader) -> ScanFuture<'a> {
+        Box::pin(async move {
+            let mut bytes = Vec::new();
+            tokio::io::AsyncReadExt::read_to_end(content, &mut bytes).await.unwrap();
+            self.attempts.lock().unwrap().push(bytes.clone());
+            match *self.behaviour.lock().unwrap() {
+                Behaviour::Unavailable => Err(ScanError::Unreachable(std::io::Error::other("down"))),
+                Behaviour::Real if bytes.windows(5).any(|w| w == b"EICAR") => Ok(Verdict::Infected {
+                    signature: "Eicar-Test-Signature".to_owned(),
+                }),
+                Behaviour::Real => Ok(Verdict::Clean),
+            }
+        })
+    }
+}
+
 /// A team with a claimant and a colleague (both MEMBER) and an APPROVER, as Java's test sets it up.
 pub(crate) struct World {
     database: TestDatabase,
     router: Router,
     pub storage: InMemoryStorage,
     pub events: Arc<Recorded>,
+    pub scanner: Arc<FakeScanner>,
     pub team: TeamId,
     pub claimant: UserId,
     pub colleague: UserId,
@@ -87,12 +132,20 @@ impl World {
             max_upload_size,
             ..Limits::default()
         };
-        let receipts = Receipts::new(
-            database.pool(),
-            &clock,
-            &publisher,
+        let scanner = Arc::new(FakeScanner {
+            behaviour: Mutex::new(Behaviour::Real),
+            attempts: Mutex::new(Vec::new()),
+        });
+        let receipts = Receipts::assemble(
+            Modules {
+                pool: database.pool(),
+                clock: &clock,
+                events: &publisher,
+                expenses: ExpensesFacade::new(TeamsFacade),
+            },
             &objects,
-            ExpensesFacade::new(TeamsFacade),
+            scanner.clone(),
+            [std::time::Duration::ZERO; 3],
             &limits,
         );
         let router = Router::new()
@@ -103,6 +156,7 @@ impl World {
             router,
             storage,
             events,
+            scanner,
             team: TeamId::new_v7(),
             claimant: UserId::new_v7(),
             colleague: UserId::new_v7(),
@@ -194,6 +248,24 @@ impl World {
     pub(crate) fn events(&self) -> Vec<&'static str> {
         self.events.0.lock().unwrap().clone()
     }
+
+    /// The receipt's status and key once `done` says the scan task has got far enough, within 10 seconds.
+    pub(crate) async fn settled(&self, receipt: &str, done: impl Fn(&str) -> bool) -> (String, String) {
+        let id: Uuid = receipt.parse().unwrap();
+        for _ in 0..200 {
+            let (status, key): (String, String) =
+                sqlx::query_as("select scan_status, storage_key from receipts where id = $1")
+                    .bind(id)
+                    .fetch_one(self.pool())
+                    .await
+                    .unwrap();
+            if done(&status) {
+                return (status, key);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        panic!("the scan of {receipt} did not settle");
+    }
 }
 
 /// A `multipart/form-data` POST with one file part.
@@ -258,7 +330,7 @@ async fn an_upload_is_stored_under_a_random_key_and_listed_as_pending() {
     assert_eq!(object.content_type, "application/pdf");
     assert_eq!(sha256.len(), 64);
     assert!(sha256.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
-    assert_eq!(world.events(), ["ledgerly-rust:receipts.ReceiptUploaded"]);
+    assert_eq!(world.events()[0], "ledgerly-rust:receipts.ReceiptUploaded");
 
     let list = world.list(expense, world.claimant).await;
     assert_eq!(list.status, StatusCode::OK);
@@ -297,6 +369,81 @@ async fn whoever_may_not_upload_is_refused_before_the_body_is_read() {
         "Only the claimant may change receipts"
     );
     assert!(world.storage.keys().is_empty());
+}
+
+#[tokio::test]
+async fn a_clean_file_is_accepted_once_scanned() {
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+
+    let reply = world.upload(expense, world.claimant, "a.pdf", PDF).await;
+
+    let receipt = reply.body["id"].as_str().unwrap();
+    let (status, key) = world.settled(receipt, |status| status != "PENDING_SCAN").await;
+    assert_eq!(status, "ACCEPTED");
+    assert!(key.starts_with("receipts/"));
+    assert_eq!(world.scanner.attempts(), [PDF.to_vec()]);
+    assert_eq!(
+        world.events(),
+        [
+            "ledgerly-rust:receipts.ReceiptUploaded",
+            "ledgerly-rust:receipts.ReceiptAccepted"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn an_infected_file_is_quarantined_and_its_object_moved() {
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+    let infected = [PDF, b"EICAR".as_slice()].concat();
+
+    let reply = world.upload(expense, world.claimant, "a.pdf", &infected).await;
+
+    let receipt = reply.body["id"].as_str().unwrap();
+    let (status, key) = world.settled(receipt, |status| status != "PENDING_SCAN").await;
+    assert_eq!(status, "QUARANTINED");
+    let suffix = key.strip_prefix("quarantine/").unwrap();
+    assert!(suffix.parse::<Uuid>().is_ok(), "{key}");
+    // The move follows the row's change.
+    for _ in 0..100 {
+        if world.storage.keys() == [key.clone()] {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(world.storage.keys(), std::slice::from_ref(&key));
+    assert_eq!(world.storage.get(&key).unwrap().content, infected);
+    assert_eq!(
+        world.events(),
+        [
+            "ledgerly-rust:receipts.ReceiptUploaded",
+            "ledgerly-rust:receipts.ReceiptQuarantined"
+        ]
+    );
+}
+
+/// Four attempts, each with the whole file (Java hands the half-read stream to its retries), then the receipt
+/// stays pending.
+#[tokio::test]
+async fn while_the_scanner_is_down_the_receipt_stays_pending_after_four_whole_attempts() {
+    let world = World::new().await;
+    let expense = world.expense("DRAFT").await;
+    world.scanner.set(Behaviour::Unavailable);
+
+    let reply = world.upload(expense, world.claimant, "a.pdf", PDF).await;
+
+    for _ in 0..200 {
+        if world.scanner.attempts().len() == 4 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(world.scanner.attempts(), vec![PDF.to_vec(); 4]);
+    let (status, _) = world.settled(reply.body["id"].as_str().unwrap(), |_| true).await;
+    assert_eq!(status, "PENDING_SCAN");
+    assert_eq!(world.events(), ["ledgerly-rust:receipts.ReceiptUploaded"]);
 }
 
 #[tokio::test]

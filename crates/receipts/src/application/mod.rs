@@ -5,6 +5,7 @@
 //! decides that itself.
 
 mod list;
+mod scan;
 mod upload;
 
 use std::sync::Arc;
@@ -15,6 +16,7 @@ use ledgerly_shared::events::Publisher;
 use ledgerly_shared::storage::{ObjectStorage, StorageError};
 use ledgerly_shared::web::Problem;
 pub(crate) use list::ListReceipts;
+pub(crate) use scan::{RETRY_DELAYS, ScanReceipt};
 use sqlx::PgPool;
 pub(crate) use upload::UploadReceipt;
 

@@ -146,3 +146,50 @@ impl TryFrom<Row> for Receipt {
         })
     }
 }
+
+/// One receipt of the team. The scan finds its receipt by id, with the team it was uploaded to.
+pub(crate) async fn find(connection: &mut PgConnection, team: TeamId, id: ReceiptId) -> sqlx::Result<Option<Receipt>> {
+    let row = sqlx::query_as!(
+        Row,
+        "select id, team_id, expense_id, storage_key, original_name, detected_type, size_bytes, sha256, scan_status, \
+         possible_duplicate, uploaded_by, created_at \
+         from receipts where team_id = $1 and id = $2",
+        team.as_uuid(),
+        id.as_uuid(),
+    )
+    .fetch_optional(connection)
+    .await?;
+    row.map(Receipt::try_from).transpose()
+}
+
+/// `PENDING_SCAN` → `ACCEPTED`. `false` if the receipt is gone or no longer pending.
+pub(crate) async fn mark_accepted(connection: &mut PgConnection, team: TeamId, id: ReceiptId) -> sqlx::Result<bool> {
+    let updated = sqlx::query!(
+        "update receipts set scan_status = 'ACCEPTED' where team_id = $1 and id = $2 and scan_status = 'PENDING_SCAN'",
+        team.as_uuid(),
+        id.as_uuid(),
+    )
+    .execute(connection)
+    .await?;
+    Ok(updated.rows_affected() == 1)
+}
+
+/// `PENDING_SCAN` → `QUARANTINED`, with the key the object is moved to. `false` if the receipt is gone or no
+/// longer pending.
+pub(crate) async fn mark_quarantined(
+    connection: &mut PgConnection,
+    team: TeamId,
+    id: ReceiptId,
+    quarantine_key: &str,
+) -> sqlx::Result<bool> {
+    let updated = sqlx::query!(
+        "update receipts set scan_status = 'QUARANTINED', storage_key = $3 \
+         where team_id = $1 and id = $2 and scan_status = 'PENDING_SCAN'",
+        team.as_uuid(),
+        id.as_uuid(),
+        quarantine_key,
+    )
+    .execute(connection)
+    .await?;
+    Ok(updated.rows_affected() == 1)
+}

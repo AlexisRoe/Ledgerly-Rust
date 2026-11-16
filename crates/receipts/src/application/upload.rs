@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 use tokio::io::AsyncWriteExt;
 
-use super::{Context, UseCaseError};
+use super::{Context, ScanReceipt, UseCaseError};
 use crate::domain::{DETECTION_WINDOW, DetectedType, Receipt, ScanStatus, display_name};
 use crate::events::{ReceiptEvent, ReceiptEventKind};
 use crate::persistence::{self, InsertError};
@@ -19,6 +19,7 @@ const MEBIBYTE: u64 = 1024 * 1024;
 #[derive(Debug, Clone)]
 pub(crate) struct UploadReceipt {
     context: Context,
+    scan: ScanReceipt,
     max_upload_size: u64,
 }
 
@@ -32,14 +33,15 @@ struct Staged {
 
 impl UploadReceipt {
     /// `max_upload_size`: `ledgerly.limits.max-upload-size`, in bytes.
-    pub(crate) const fn new(context: Context, max_upload_size: u64) -> Self {
+    pub(crate) const fn new(context: Context, scan: ScanReceipt, max_upload_size: u64) -> Self {
         Self {
             context,
+            scan,
             max_upload_size,
         }
     }
 
-    /// Stores the file and returns the receipt in `PENDING_SCAN`.
+    /// Stores the file and returns the receipt in `PENDING_SCAN`; its scan starts once it is recorded.
     ///
     /// Nothing of the body is read before the expenses module has said that the caller may change this
     /// expense's receipts (plan M7.2; Spring reads the whole request before Java's controller runs).
@@ -97,7 +99,10 @@ impl UploadReceipt {
             created_at: self.context.clock.now(),
         };
         match self.record(&receipt).await {
-            Ok(()) => Ok(receipt),
+            Ok(()) => {
+                self.scan.start(receipt.team_id, receipt.id);
+                Ok(receipt)
+            }
             Err(error) => {
                 self.remove_object(&receipt.storage_key).await;
                 Err(error)

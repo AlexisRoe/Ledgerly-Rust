@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update receipts set scan_status = 'ACCEPTED' where team_id = $1 and id = $2 and scan_status = 'PENDING_SCAN'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c94aa29f7d0736218b0346e14823e6f6131a849504a1764000b2bb082890e672"
+}

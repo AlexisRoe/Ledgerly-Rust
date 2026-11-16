@@ -58,13 +58,15 @@ fn run(existing_deployment: Option<&str>) -> Result<bool, String> {
                 eprintln!("parity: group `{}`: starting the app", group.name);
                 let container = start_app(group)?;
                 compose(&["stop"], group.stopped_services);
-                let result = wait_until_ready().and_then(|()| {
-                    run_tests(
-                        &files,
-                        &format!("http://127.0.0.1:{API_PORT}"),
-                        Some((&format!("http://127.0.0.1:{MANAGEMENT_PORT}"), &container)),
-                    )
-                });
+                let result = wait_until_ready()
+                    .and_then(|()| wait_for_dependencies(group))
+                    .and_then(|()| {
+                        run_tests(
+                            &files,
+                            &format!("http://127.0.0.1:{API_PORT}"),
+                            Some((&format!("http://127.0.0.1:{MANAGEMENT_PORT}"), &container)),
+                        )
+                    });
                 if result.is_err() {
                     print_logs(&container);
                 }
@@ -209,7 +211,59 @@ fn print_logs(container: &str) {
 /// Waits for the readiness probe of the container just started, for at most a minute.
 fn wait_until_ready() -> Result<(), String> {
     let url = format!("http://127.0.0.1:{MANAGEMENT_PORT}/actuator/health/readiness");
-    let deadline = Instant::now() + Duration::from_secs(60);
+    wait_for(&url, Duration::from_secs(60), |status| status == 200)
+}
+
+/// Waits until the services the app reaches in the background answer: the object store has the app's bucket
+/// (the app creates it once the store is up, which takes SeaweedFS some seconds), and clamd answers `PING`
+/// unless the group stops it. The first start of ClamAV downloads its signatures and, under emulation on Apple
+/// Silicon, can take minutes. Java's tests use a fake scanner and a directory instead, and need neither.
+fn wait_for_dependencies(group: &Group) -> Result<(), String> {
+    let variable = |name: &str, default: &str| {
+        std::env::var(name)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| default.to_owned())
+    };
+    let bucket = format!(
+        "{}/{}",
+        variable("PARITY_S3_ENDPOINT", "http://127.0.0.1:8333").trim_end_matches('/'),
+        variable("PARITY_S3_BUCKET", "ledgerly-files")
+    );
+    wait_for(&bucket, Duration::from_secs(120), |status| status == 200)?;
+    if group.stopped_services.contains(&"clamav") {
+        return Ok(());
+    }
+    let deadline = Instant::now() + Duration::from_secs(600);
+    let mut announced = false;
+    while !clamd_answers() {
+        if Instant::now() > deadline {
+            return Err("ClamAV did not answer PING within 10 minutes (127.0.0.1:3310)".to_owned());
+        }
+        if !announced {
+            eprintln!("parity: waiting for ClamAV (its first start downloads the signatures)");
+            announced = true;
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    Ok(())
+}
+
+/// clamd's `zPING\0`, answered with `PONG\0` once its signatures are loaded.
+fn clamd_answers() -> bool {
+    use std::io::{Read, Write};
+    let Ok(mut socket) = std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], 3310).into(), Duration::from_secs(2))
+    else {
+        return false;
+    };
+    let _ = socket.set_read_timeout(Some(Duration::from_secs(5)));
+    let mut reply = [0_u8; 5];
+    socket.write_all(b"zPING\0").is_ok() && socket.read_exact(&mut reply).is_ok() && &reply == b"PONG\0"
+}
+
+/// Polls `url` with `GET` until `accepted` likes the status, for at most `limit`.
+fn wait_for(url: &str, limit: Duration, accepted: impl Fn(u16) -> bool) -> Result<(), String> {
+    let deadline = Instant::now() + limit;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -217,12 +271,12 @@ fn wait_until_ready() -> Result<(), String> {
     loop {
         let ready = runtime.block_on(async {
             match reqwest::Client::new()
-                .get(&url)
+                .get(url)
                 .timeout(Duration::from_secs(2))
                 .send()
                 .await
             {
-                Ok(response) => response.status().as_u16() == 200,
+                Ok(response) => accepted(response.status().as_u16()),
                 Err(_) => false,
             }
         });
@@ -230,7 +284,7 @@ fn wait_until_ready() -> Result<(), String> {
             return Ok(());
         }
         if Instant::now() > deadline {
-            return Err(format!("the app was not ready after 60 s ({url})"));
+            return Err(format!("{url} did not answer as expected within {} s", limit.as_secs()));
         }
         std::thread::sleep(Duration::from_millis(500));
     }

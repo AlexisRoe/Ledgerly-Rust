@@ -390,7 +390,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     On failure, delete the object. The temp file is always removed. Display names and download names are sanitised exactly as Java's `FileNames` does.
   - Accept: the M7 abuse list from Java's plan (`.exe` renamed `.pdf`, 10 MB + 1, `../../etc/passwd`, uploading to a SUBMITTED expense, the same file twice).
 
-- [ ] **M7.3 Scanning**
+- [x] **M7.3 Scanning**
   - Do: a clamd `INSTREAM` client (port spec §5.3: `zINSTREAM\0`, 4-byte length-prefixed chunks, the reply grammar, 2 s connect and 30 s read timeouts). Retries with delays of 500, 1000 and 2000 ms, **reopening the object on each attempt** (fixing Java's quirk, which a client can't observe).
     - Clean → ACCEPTED.
     - Infected → QUARANTINED: key changed to `quarantine/<v4>`, object moved, counter incremented, warn log with the signature.

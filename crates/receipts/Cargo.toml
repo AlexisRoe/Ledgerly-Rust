@@ -14,12 +14,13 @@ ledgerly-shared.workspace = true
 ledgerly-expenses.workspace = true
 axum.workspace = true
 chrono.workspace = true
+regex.workspace = true
 serde.workspace = true
 sha2.workspace = true
 sqlx = { workspace = true, features = ["macros"] }
 tempfile.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["fs", "io-util"] }
+tokio = { workspace = true, features = ["fs", "io-util", "net", "rt", "time"] }
 tracing.workspace = true
 uuid.workspace = true
 

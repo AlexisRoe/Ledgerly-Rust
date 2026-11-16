@@ -86,7 +86,17 @@ impl Modules {
         let storage = S3ObjectStorage::new(&config.storage);
         let objects: Arc<dyn ObjectStorage> = Arc::new(storage.clone());
         let expenses = ExpensesFacade::new(teams.facade());
-        let receipts = Receipts::new(pool, &clock, &events, &objects, expenses, &config.limits);
+        let receipts = Receipts::new(
+            ledgerly_receipts::Modules {
+                pool,
+                clock: &clock,
+                events: &events,
+                expenses,
+            },
+            &objects,
+            &config.clamav,
+            &config.limits,
+        );
         Ok(Self {
             clock,
             identity,
@@ -97,13 +107,20 @@ impl Modules {
     }
 
     /// Creates the object store's bucket if it is missing, in the background. Java does this once the
-    /// application is ready, so that a slow or absent store does not delay the start; uploads fail with a clear
-    /// error until the store is reachable.
+    /// application is ready, so that a slow or absent store does not delay the start. Java tries once and relies
+    /// on its `put` creating the bucket on S3's `NoSuchBucket`; SeaweedFS answers a missing bucket with
+    /// `AccessDenied` instead, so here the attempt is repeated every few seconds until the store answers. The
+    /// warning is logged once.
     fn ensure_bucket(&self) {
         let storage = self.storage.clone();
         tokio::spawn(async move {
-            if let Err(error) = storage.ensure_bucket().await {
-                tracing::warn!("Object store not reachable at start-up ({error}); receipts cannot be stored yet");
+            let mut warned = false;
+            while let Err(error) = storage.ensure_bucket().await {
+                if !warned {
+                    tracing::warn!("Object store not reachable at start-up ({error}); receipts cannot be stored yet");
+                    warned = true;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
         });
     }

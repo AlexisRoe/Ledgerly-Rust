@@ -9,20 +9,33 @@ mod application;
 mod domain;
 pub mod events;
 mod persistence;
+mod scanner;
 mod web;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use ledgerly_expenses::ExpensesFacade;
 use ledgerly_shared::clock::Clock;
-use ledgerly_shared::config::Limits;
+use ledgerly_shared::config::{ClamavConfig, Limits};
 use ledgerly_shared::events::Publisher;
 use ledgerly_shared::storage::ObjectStorage;
 use ledgerly_shared::web::Routes;
 use sqlx::PgPool;
 
-use crate::application::{Context, ListReceipts, UploadReceipt};
+use crate::application::{Context, ListReceipts, RETRY_DELAYS, ScanReceipt, UploadReceipt};
+use crate::scanner::{ClamAvScanner, MalwareScanner};
 use crate::web::ReceiptsApi;
+
+/// What the receipts module takes from the rest of the app.
+#[derive(Debug, Clone)]
+pub struct Modules<'a> {
+    pub pool: &'a PgPool,
+    pub clock: &'a Arc<dyn Clock>,
+    pub events: &'a Arc<dyn Publisher>,
+    /// Who may see an expense and change its receipts.
+    pub expenses: ExpensesFacade,
+}
 
 /// The receipts module as the app wires it.
 #[derive(Debug, Clone)]
@@ -31,27 +44,32 @@ pub struct Receipts {
 }
 
 impl Receipts {
-    /// Files go to `storage`; who may do what is asked of `expenses`. Uploads are capped at
-    /// `limits.max_upload_size`.
+    /// Files go to `storage` and are scanned by the clamd at `clamav`; who may do what is asked of
+    /// `expenses`. Uploads are capped at `limits.max_upload_size`.
     #[must_use]
-    pub fn new(
-        pool: &PgPool,
-        clock: &Arc<dyn Clock>,
-        events: &Arc<dyn Publisher>,
+    pub fn new(modules: Modules<'_>, storage: &Arc<dyn ObjectStorage>, clamav: &ClamavConfig, limits: &Limits) -> Self {
+        let scanner: Arc<dyn MalwareScanner> = Arc::new(ClamAvScanner::new(clamav.clone()));
+        Self::assemble(modules, storage, scanner, RETRY_DELAYS, limits)
+    }
+
+    fn assemble(
+        modules: Modules<'_>,
         storage: &Arc<dyn ObjectStorage>,
-        expenses: ExpensesFacade,
+        scanner: Arc<dyn MalwareScanner>,
+        retry_delays: [Duration; 3],
         limits: &Limits,
     ) -> Self {
         let context = Context {
-            pool: pool.clone(),
-            clock: clock.clone(),
-            events: events.clone(),
+            pool: modules.pool.clone(),
+            clock: modules.clock.clone(),
+            events: modules.events.clone(),
             storage: storage.clone(),
-            expenses,
+            expenses: modules.expenses,
         };
+        let scan = ScanReceipt::new(context.clone(), scanner, retry_delays);
         Self {
             api: ReceiptsApi {
-                upload: UploadReceipt::new(context.clone(), limits.max_upload_size),
+                upload: UploadReceipt::new(context.clone(), scan, limits.max_upload_size),
                 list: ListReceipts::new(context),
             },
         }

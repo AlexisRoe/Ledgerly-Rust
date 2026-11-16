@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update receipts set scan_status = 'QUARANTINED', storage_key = $3 where team_id = $1 and id = $2 and scan_status = 'PENDING_SCAN'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "70d88e8d1326a5fe388d6cb2ec74a21297fc732d4b8087c36c7ee4e5aaa332e4"
+}
