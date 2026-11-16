@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update import_jobs set status = $3, finished_at = $4 where team_id = $1 and id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e93929bce31c8b0be914df086804b9509b92a40bcaf716ea2a1237e2fa41aeb4"
+}

@@ -79,7 +79,6 @@ mod m8 {
 
     /// Java: `Api4UnrestrictedResourceConsumptionTest.aSixthImportOfTheDayIsA429`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_sixth_import_of_the_day_is_a_429() {
         let world = World::start().await;
         let team = world.team().await;

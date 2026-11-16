@@ -24,6 +24,7 @@ use axum::Router;
 use axum::response::IntoResponse;
 use ledgerly_expenses::ExpensesFacade;
 use ledgerly_identity::{Identity, IdentityError};
+use ledgerly_imports::Imports;
 use ledgerly_receipts::Receipts;
 use ledgerly_shared::clock::{Clock, SystemClock};
 use ledgerly_shared::config::Limits;
@@ -66,6 +67,7 @@ pub struct Modules {
     identity: Identity,
     teams: Teams,
     receipts: Receipts,
+    imports: Imports,
     storage: S3ObjectStorage,
 }
 
@@ -86,6 +88,15 @@ impl Modules {
         let storage = S3ObjectStorage::new(&config.storage);
         let objects: Arc<dyn ObjectStorage> = Arc::new(storage.clone());
         let expenses = ExpensesFacade::new(teams.facade(), clock.clone(), &config.limits);
+        let imports = Imports::new(
+            pool,
+            &clock,
+            &events,
+            &objects,
+            teams.facade(),
+            expenses.clone(),
+            &config.limits,
+        );
         let receipts = Receipts::new(
             ledgerly_receipts::Modules {
                 pool,
@@ -102,6 +113,7 @@ impl Modules {
             identity,
             teams,
             receipts,
+            imports,
             storage,
         })
     }
@@ -168,6 +180,7 @@ pub fn routes(limits: &Limits, modules: &Modules, pool: &PgPool) -> Routes {
             &modules.receipts.cleanup(),
         ))
         .merge(modules.receipts.routes())
+        .merge(modules.imports.routes())
 }
 
 /// `routes` behind the layers every API request passes, from the outside in:

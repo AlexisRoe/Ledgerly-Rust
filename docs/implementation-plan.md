@@ -420,7 +420,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: `GET …/expenses.csv` with the list's filters and no paging, capped at `max-export-rows` (10,000), with `X-Total-Count` and `X-Truncated`. Java's header row and CRLF line endings. Neutralise cells that start with `=`, `+`, `-`, `@`, tab or CR. Stream the response.
   - Accept: the export parity tests, run in the `max-export-rows=1200` group, and a formula-injection row.
 
-- [ ] **M8.3 Import upload**
+- [x] **M8.3 Import upload**
   - Do: Java's checks **in Java's order and with its messages** (port spec §5.4):
     1. Teammate check (404 if not).
     2. Daily limit: 5 per user per team per UTC day → 429 with `Retry-After` set to the seconds until UTC midnight.
@@ -431,7 +431,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     7. Answer 202 with `Location`.
   - Accept: one parity test per message. The 6th import → 429 (a clock test in-process for the UTC-midnight boundary).
 
-- [ ] **M8.4 Import job**
+- [x] **M8.4 Import job**
   - Do: a job runner (a tokio task) that processes chunks of 100 rows, each **committed in its own transaction**:
     - Row validation with Java's codes and messages (`COLUMN_COUNT`, `DATE_INVALID`, …, `PARSE_ERROR`).
     - Errors go to `import_row_errors` (`on conflict do nothing`, message truncated to 500 characters) and increment the metric.
@@ -443,7 +443,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     **Resume after failure (decided 2026-11-12):** on restart of a FAILED job, re-read the CSV and re-validate chunk by chunk **without writing**, until the cumulative imported and skipped counts equal what's stored. Continue with the next chunk. `BATCH_*` tables are not used.
   - Accept: 10,000 rows with 37 bad ones report exactly those 37 line numbers. A crash-injection test (kill the task after chunk k, restart) ends with every valid row imported exactly once.
 
-- [ ] **M8.5 Import status**
+- [x] **M8.5 Import status**
   - Do: `GET …/imports/{id}` is visible to the uploader and OWNERs (others get 404). Errors are ordered by line, at most 1000, with `errorsTruncated`.
 
 **Done when:** M8-tagged parity tests pass, including Bruno `02-reading` export.

@@ -106,7 +106,6 @@ mod m8 {
 
     /// Java: `Api10UnsafeConsumptionOfApisTest.aFormulaThatEntersThroughAnImportIsStoredAsTypedAndEscapedOnTheWayOut`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_formula_that_enters_through_an_import_is_stored_as_typed_and_escaped_on_the_way_out() {
         let world = World::start().await;
         let team = world.team().await;
@@ -140,7 +139,6 @@ mod m8 {
 
     /// Java: `Api10UnsafeConsumptionOfApisTest.aCsvThatIsReallyBinaryIsRefused`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_csv_that_is_really_binary_is_refused() {
         let world = World::start().await;
         let team = world.team().await;

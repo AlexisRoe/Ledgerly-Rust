@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into import_jobs (id, team_id, user_id, status, original_name, storage_key, total_rows, imported_rows, created_at) values ($1, $2, $3, $4, $5, $6, $7, 0, $8)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd03264abb35dce090c4239b6e8460fdd5a5cfa4ab3b71a7bac079a7e8838d9b"
+}

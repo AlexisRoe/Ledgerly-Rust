@@ -46,6 +46,41 @@ pub fn utf16_len(text: &str) -> usize {
     text.encode_utf16().count()
 }
 
+/// Java's `substring(0, limit)` on a string longer than `limit` UTF-16 units. A character whose two units
+/// would be split leaves Java a lone surrogate, which the Postgres driver stores as `?`; so does this.
+#[must_use]
+pub fn truncate_utf16(text: &str, limit: usize) -> String {
+    let mut kept = String::new();
+    let mut units = 0;
+    for c in text.chars() {
+        let width = c.len_utf16();
+        if units + width > limit {
+            if units < limit {
+                kept.push('?');
+            }
+            break;
+        }
+        units += width;
+        kept.push(c);
+    }
+    kept
+}
+
+/// What Java keeps of a client's file name: `replaceAll("\\p{Cntrl}", "")` (the C0 controls and DEL),
+/// `strip()`, `fallback` if nothing is left, at most 255 UTF-16 units. Metadata only, never a path.
+#[must_use]
+pub fn display_name(original: &str, fallback: &str) -> String {
+    let without_controls: String = original
+        .chars()
+        .filter(|c| !matches!(*c, '\u{0}'..='\u{1F}' | '\u{7F}'))
+        .collect();
+    let name = strip(&without_controls);
+    if name.is_empty() {
+        return fallback.to_owned();
+    }
+    truncate_utf16(name, 255)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

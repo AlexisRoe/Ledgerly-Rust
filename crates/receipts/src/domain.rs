@@ -8,7 +8,6 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use ledgerly_shared::id::{ExpenseId, ReceiptId, TeamId, UserId};
-use ledgerly_shared::text::strip;
 
 /// Where a receipt is in the malware check: `PendingScan`, then `Accepted` (clean) or `Quarantined`
 /// (infected). Only an accepted receipt is ever served.
@@ -164,40 +163,10 @@ fn ticket_line(head: &[u8], start: usize) -> Option<usize> {
     Some(start + comment + line_break)
 }
 
-/// What is kept of the client's file name: control characters dropped, Java-stripped, at most 255 UTF-16
-/// units, `receipt` if nothing is left. Metadata only; it never becomes a path. Java:
-/// `UploadReceipt.displayName`.
+/// What is kept of the client's file name, `receipt` if nothing is left. Java: `UploadReceipt.displayName`.
 #[must_use]
 pub fn display_name(original: &str) -> String {
-    // Java's `\p{Cntrl}`: the C0 controls and DEL, nothing else.
-    let without_controls: String = original
-        .chars()
-        .filter(|c| !matches!(*c, '\u{0}'..='\u{1F}' | '\u{7F}'))
-        .collect();
-    let name = strip(&without_controls);
-    if name.is_empty() {
-        return "receipt".to_owned();
-    }
-    first_utf16_units(name, 255)
-}
-
-/// Java's `substring(0, limit)` on a string longer than `limit` UTF-16 units. A character whose two units
-/// would be split leaves Java a lone surrogate, which the Postgres driver stores as `?`; so does this.
-fn first_utf16_units(text: &str, limit: usize) -> String {
-    let mut kept = String::new();
-    let mut units = 0;
-    for c in text.chars() {
-        let width = c.len_utf16();
-        if units + width > limit {
-            if units < limit {
-                kept.push('?');
-            }
-            break;
-        }
-        units += width;
-        kept.push(c);
-    }
-    kept
+    ledgerly_shared::text::display_name(original, "receipt")
 }
 
 /// A name safe to put in a download header: only letters, digits, dash and underscore, no directory part, no

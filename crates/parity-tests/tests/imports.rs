@@ -92,7 +92,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.aTenThousandRowImportWithThirtySevenBadRowsReportsExactlyThoseLines`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_ten_thousand_row_import_with_thirty_seven_bad_rows_reports_exactly_those_lines() {
         let world = World::start().await;
         let team = world.team().await;
@@ -166,7 +165,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.errorsNameTheKindOfProblemAndTheLine`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn errors_name_the_kind_of_problem_and_the_line() {
         let world = World::start().await;
         let team = world.team().await;
@@ -190,7 +188,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.quotesBlankLinesCrlfAndABomAreHandled`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn quotes_blank_lines_crlf_and_a_bom_are_handled() {
         let world = World::start().await;
         let team = world.team().await;
@@ -226,7 +223,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.aLineWithAnUnbalancedQuoteIsReportedAndTheRestStillImports`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_line_with_an_unbalanced_quote_is_reported_and_the_rest_still_imports() {
         let world = World::start().await;
         let team = world.team().await;
@@ -247,7 +243,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.moreThanTenThousandRowsGets400AndNothingIsQueued`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn more_than_ten_thousand_rows_gets_400_and_nothing_is_queued() {
         let world = World::start().await;
         let team = world.team().await;
@@ -262,7 +257,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.exactlyTenThousandRowsIsAccepted`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn exactly_ten_thousand_rows_is_accepted() {
         let world = World::start().await;
         let team = world.team().await;
@@ -276,7 +270,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.aSixthImportOfTheDayGets429WithRetryAfter_API6`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_sixth_import_of_the_day_gets_429_with_retry_after() {
         let world = World::start().await;
         let team = world.team().await;
@@ -297,7 +290,6 @@ mod m8 {
     /// Java: `ImportApiTest.theLimitIsPerUserAndPerTeamAndResetsTomorrow`, without the last step (the next day),
     /// which needs a clock.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn the_limit_is_per_user_and_per_team() {
         let world = World::start().await;
         let team = world.team().await;
@@ -318,7 +310,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.eightSimultaneousUploadsLetExactlyFiveThrough`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn eight_simultaneous_uploads_let_exactly_five_through() {
         let world = World::start().await;
         let team = world.team().await;
@@ -349,7 +340,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.rejectedUploadsDoNotUseUpTheDailyAllowance`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn rejected_uploads_do_not_use_up_the_daily_allowance() {
         let world = World::start().await;
         let team = world.team().await;
@@ -366,7 +356,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.wrongHeaderEmptyAndHeaderOnlyFilesGet400`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn wrong_header_empty_and_header_only_files_get_400() {
         let world = World::start().await;
         let team = world.team().await;
@@ -384,7 +373,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.theNoteColumnIsOptional`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn the_note_column_is_optional() {
         let world = World::start().await;
         let team = world.team().await;
@@ -403,7 +391,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.binaryFilesGet415`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn binary_files_get_415() {
         let world = World::start().await;
         let team = world.team().await;
@@ -419,7 +406,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.aFileOverTenMegabytesGets413`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn a_file_over_ten_megabytes_gets_413() {
         let world = World::start().await;
         let team = world.team().await;
@@ -434,7 +420,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.onlyTeammatesCanImportAndAnonymousCannot`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn only_teammates_can_import_and_anonymous_cannot() {
         let world = World::start().await;
         let team = world.team().await;
@@ -449,7 +434,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.anImportIsVisibleToItsStarterAndToOwnersOnly`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn an_import_is_visible_to_its_starter_and_to_owners_only() {
         let world = World::start().await;
         let team = world.team().await;
@@ -473,7 +457,6 @@ mod m8 {
 
     /// Java: `ImportApiTest.anImportIsNotReachableThroughAnotherTeam`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn an_import_is_not_reachable_through_another_team() {
         let world = World::start().await;
         let team = world.team().await;

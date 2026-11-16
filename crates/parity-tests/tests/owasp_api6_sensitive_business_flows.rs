@@ -98,7 +98,6 @@ mod m8 {
 
     /// Java: `Api6UnrestrictedAccessToSensitiveBusinessFlowsTest.importsAreCappedAtFivePerDay`.
     #[tokio::test]
-    #[ignore = "M8"]
     async fn imports_are_capped_at_five_per_day() {
         let world = World::start().await;
         let team = world.team().await;
