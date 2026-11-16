@@ -17,6 +17,8 @@ use ledgerly_shared::events::{Delivery, DeliveryFailed, Listener, read_payload};
 use ledgerly_shared::id::{ImportId, TeamId};
 use tokio::io::AsyncReadExt;
 
+use tracing::Instrument;
+
 use super::Context;
 use crate::domain::{self, ImportStatus, Record, Row};
 use crate::events::{IMPORT_QUEUED, ImportCompleted, ImportQueued};
@@ -114,9 +116,17 @@ impl ImportRunner {
         persistence::find(&mut connection, team, id).await
     }
 
+    /// [`Self::run_job`] with the team's id on every log line it writes, as a request's lines carry it. Java's
+    /// log names the team through Spring Batch, which logs the job's parameters (the team id among them) when
+    /// the job starts and ends.
+    async fn execute(&self, job: Job, resume: bool) {
+        let span = tracing::info_span!("import", teamId = %job.team_id);
+        self.run_job(job, resume).instrument(span).await;
+    }
+
     /// `RUNNING`, the chunks, then `COMPLETED` (and the file deleted) or `FAILED` (the file kept for a
     /// restart), and `ImportCompleted` either way.
-    async fn execute(&self, job: Job, resume: bool) {
+    async fn run_job(&self, job: Job, resume: bool) {
         let (team, id) = (job.team_id, job.id);
         if !self.live.lock().unwrap_or_else(PoisonError::into_inner).insert(id) {
             tracing::info!("Import {id} is running; nothing to start");

@@ -499,7 +499,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: the architecture test also asserts that only `infrastructure` modules depend on network-client crates (`reqwest`, `aws-sdk-s3`, `tokio::net` use), and `cargo-deny` bans crates nobody needs.
   - Accept: adding `reqwest` to `expenses::domain` fails the test.
 
-- [ ] **M10.5 Log hygiene**
+- [x] **M10.5 Log hygiene**
   - Do: `just parity` captures the app container's logs for the whole run and asserts that no email, password, token, cookie, `Bearer`, merchant/note value, `password_hash` or `$argon2id` appears (inventory: `LogHygieneTest`).
   - Accept: passes. Logging an email on purpose makes it fail.
 

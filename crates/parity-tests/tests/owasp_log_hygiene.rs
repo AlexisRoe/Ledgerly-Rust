@@ -20,7 +20,6 @@ mod m10 {
 
     /// Java: `LogHygieneTest.noSecretOrPersonalDataReachesTheLogs`.
     #[tokio::test]
-    #[ignore = "M10"]
     async fn no_secret_or_personal_data_reaches_the_logs() {
         let world = World::start().await;
         let email = format!("log-hygiene-{}@private-domain.example", Uuid::new_v4());
