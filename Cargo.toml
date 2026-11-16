@@ -43,7 +43,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["std"
 getrandom = "0.4.3"
 idna = "1.1.0"
 http-body-util = "0.1.5"
-chrono = { version = "0.4.45", default-features = false, features = ["now", "std"] }
+chrono = { version = "0.4.45", default-features = false, features = ["now", "serde", "std"] }
 multer = "3.1.0"
 jsonschema = { version = "0.61.2", default-features = false }
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }

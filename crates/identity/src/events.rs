@@ -6,10 +6,11 @@
 use chrono::{DateTime, Utc};
 use ledgerly_shared::events::Event;
 use ledgerly_shared::id::UserId;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Everything identity publishes. Java: the sealed `IdentityEvent`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IdentityEvent {
     /// An account was created. Java: `UserRegistered`.
     UserRegistered {
@@ -93,5 +94,9 @@ impl Event for IdentityEvent {
             Self::UserVerified { .. } => "ledgerly-rust:identity.UserVerified",
             Self::RefreshTokenReuseDetected { .. } => "ledgerly-rust:identity.RefreshTokenReuseDetected",
         }
+    }
+
+    fn payload(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
     }
 }

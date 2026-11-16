@@ -6,10 +6,11 @@ use chrono::{DateTime, Utc};
 use ledgerly_shared::events::Event;
 use ledgerly_shared::id::{InvitationId, TeamId, UserId};
 use ledgerly_shared::role::Role;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Everything that changes a team. Java: the sealed `TeamEvent`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamEvent {
     pub event_id: Uuid,
     /// The team the event happened in.
@@ -22,7 +23,7 @@ pub struct TeamEvent {
 }
 
 /// What happened. Java: one record per variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TeamEventKind {
     /// A team was created; its creator became OWNER. Java: `TeamCreated`.
     TeamCreated,
@@ -78,5 +79,9 @@ impl Event for TeamEvent {
             TeamEventKind::MemberRemoved { .. } => "ledgerly-rust:teams.MemberRemoved",
             TeamEventKind::MemberLeft => "ledgerly-rust:teams.MemberLeft",
         }
+    }
+
+    fn payload(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
     }
 }

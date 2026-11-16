@@ -62,6 +62,20 @@ impl fmt::Display for Role {
     }
 }
 
+/// As its name, `"OWNER"`, like Jackson writes Java's enum.
+impl serde::Serialize for Role {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Role {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = <std::borrow::Cow<'de, str>>::deserialize(deserializer)?;
+        name.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 impl FromStr for Role {
     type Err = UnknownRole;
 

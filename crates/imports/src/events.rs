@@ -6,10 +6,11 @@
 use chrono::{DateTime, Utc};
 use ledgerly_shared::events::Event;
 use ledgerly_shared::id::{ImportId, TeamId, UserId};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// An import job finished. `failed`: it stopped early and can be restarted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImportCompleted {
     pub event_id: Uuid,
     pub team_id: TeamId,
@@ -33,5 +34,9 @@ impl Event for ImportCompleted {
 
     fn event_type(&self) -> &'static str {
         "ledgerly-rust:imports.ImportCompleted"
+    }
+
+    fn payload(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
     }
 }

@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update event_publication\n                  set status = 'RESUBMITTED',\n                      completion_attempts = coalesce(completion_attempts, 0) + 1,\n                      last_resubmission_date = $1\n                where completion_date is null\n                  and starts_with(event_type, $2)\n                  and ($3::timestamptz is null or publication_date < $3)\n                  and id <> all($4)\n            returning id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "event_publication",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Timestamptz",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cd8dbef84d3b6f8c49d11e4acedc1c65727a93ca4cb10a35fe8e9679e49db94d"
+}

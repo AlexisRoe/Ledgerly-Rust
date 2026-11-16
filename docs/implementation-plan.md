@@ -455,7 +455,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** a durable outbox in `event_publication`, and an append-only audit trail with Java's event names and details.
 **Rust you meet:** enums and trait objects for events, serde tagging, long-running background loops, idempotent consumers.
 
-- [ ] **M9.1 Outbox**
+- [x] **M9.1 Outbox**
   - Do:
     - `shared::events::Publisher` writes one `event_publication` row per (event, listener) **in the caller's transaction**. `event_type` uses Rust's own names (e.g. `ledgerly-rust:expenses.ExpenseSubmitted`), and the payload is serde JSON.
     - After commit, a dispatcher delivers and sets `completion_date`.

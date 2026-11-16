@@ -29,7 +29,7 @@ use ledgerly_receipts::Receipts;
 use ledgerly_shared::clock::{Clock, SystemClock};
 use ledgerly_shared::config::Limits;
 use ledgerly_shared::database::SchemaError;
-use ledgerly_shared::events::{Discard, Publisher};
+use ledgerly_shared::events::{Outbox, Publisher};
 use ledgerly_shared::ratelimit::RateLimiter;
 use ledgerly_shared::storage::{ObjectStorage, S3ObjectStorage};
 use ledgerly_shared::web::{self, Authentication, Problem, Routes, TokenVerifier};
@@ -69,6 +69,7 @@ pub struct Modules {
     receipts: Receipts,
     imports: Imports,
     storage: S3ObjectStorage,
+    outbox: Outbox,
 }
 
 impl Modules {
@@ -81,8 +82,8 @@ impl Modules {
     pub fn new(config: &Config, pool: &PgPool) -> Result<Self, IdentityError> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let limiter = RateLimiter::new(clock.clone());
-        // Until the outbox (M9.1), events are dropped where Java publishes them.
-        let events: Arc<dyn Publisher> = Arc::new(Discard);
+        let outbox = Outbox::new(pool.clone(), clock.clone());
+        let events: Arc<dyn Publisher> = Arc::new(outbox.clone());
         let identity = Identity::new(&config.auth, config.profiles, pool, &clock, &events, &limiter)?;
         let teams = Teams::new(&config.teams, pool, &clock, &events);
         let storage = S3ObjectStorage::new(&config.storage);
@@ -108,6 +109,10 @@ impl Modules {
             &config.clamav,
             &config.limits,
         );
+        // Nobody listens yet (M9.2 and M9.3 add the listeners), so publishing writes no rows.
+        if outbox.subscribe(Vec::new()).is_err() {
+            tracing::warn!("The outbox's listeners were set twice");
+        }
         Ok(Self {
             clock,
             identity,
@@ -115,6 +120,7 @@ impl Modules {
             receipts,
             imports,
             storage,
+            outbox,
         })
     }
 
@@ -328,7 +334,11 @@ impl App {
 
         tracing::info!(apiPort = api_port, managementPort = management_port, "Started Ledgerly");
         self.modules.ensure_bucket();
+        // Delivers what earlier runs left undelivered, then each event as its transaction commits.
+        let dispatcher = self.modules.outbox.start();
         let (api_result, management_result, ()) = tokio::join!(api_then_management, management, trigger);
+        // Deliveries still running are abandoned; their publications stay open for the next start.
+        dispatcher.abort();
         api_result.and(management_result)
     }
 }

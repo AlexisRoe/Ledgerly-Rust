@@ -7,10 +7,11 @@
 use chrono::{DateTime, Utc};
 use ledgerly_shared::events::Event;
 use ledgerly_shared::id::{ExpenseId, ReceiptId, TeamId, UserId};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Something that happened to a receipt. Java: the sealed `ReceiptEvent`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReceiptEvent {
     pub event_id: Uuid,
     /// The team the receipt's expense belongs to.
@@ -24,7 +25,7 @@ pub struct ReceiptEvent {
 }
 
 /// What happened. Java: one record per variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReceiptEventKind {
     /// A file was stored and waits for the malware scan. Java: `Uploaded`.
     Uploaded { actor_id: UserId },
@@ -80,6 +81,10 @@ impl Event for ReceiptEvent {
             ReceiptEventKind::Quarantined => "ledgerly-rust:receipts.ReceiptQuarantined",
             ReceiptEventKind::Deleted { .. } => "ledgerly-rust:receipts.ReceiptDeleted",
         }
+    }
+
+    fn payload(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
     }
 }
 

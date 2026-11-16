@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update event_publication set completion_date = $2, status = 'COMPLETED' where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "230b31b5590a7b6bb20d7d7b39eb72e59987ea7ff74b752bc4ec638a46833d24"
+}

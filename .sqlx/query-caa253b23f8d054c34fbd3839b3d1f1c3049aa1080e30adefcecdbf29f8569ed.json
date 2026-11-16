@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from event_publication where completion_date < $1 and starts_with(event_type, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "caa253b23f8d054c34fbd3839b3d1f1c3049aa1080e30adefcecdbf29f8569ed"
+}
