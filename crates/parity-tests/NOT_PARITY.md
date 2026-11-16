@@ -15,9 +15,9 @@ repositories, log capture, the registry).
 
 | Java test | Kind | Milestone | Ported in-process in |
 | --- | --- | --- | --- |
-| `Api7ServerSideRequestForgeryTest.onlyInfrastructureMayCallOut` | INT (ArchUnit) | M10 | `crates/app/tests/architecture.rs`: only infrastructure modules depend on HTTP and socket crates |
-| `Api7ServerSideRequestForgeryTest.theRuleReallyFailsForAClassThatBreaksIt` | INT | M10 | `crates/app/tests/architecture.rs`: the check fails for a made-up dependency graph |
-| `Api7ServerSideRequestForgeryTest.theSameCodeInAnInfrastructurePackageIsAllowed` | INT | M10 | `crates/app/tests/architecture.rs` |
+| `Api7ServerSideRequestForgeryTest.onlyInfrastructureMayCallOut` | INT (ArchUnit) | M10 | `crates/app/tests/architecture.rs::only_infrastructure_may_call_out` |
+| `Api7ServerSideRequestForgeryTest.theRuleReallyFailsForAClassThatBreaksIt` | INT | M10 | `crates/app/tests/architecture.rs::the_rule_really_fails_for_code_that_breaks_it` |
+| `Api7ServerSideRequestForgeryTest.theSameCodeInAnInfrastructurePackageIsAllowed` | INT | M10 | `crates/app/tests/architecture.rs::the_same_code_in_an_adapter_or_a_test_is_allowed` |
 | `Api8SecurityMisconfigurationTest.theAllowlistRefusesWildcardsPathsAndSloppyEntries` | INT | M1 | `crates/shared/src/config/mod.rs` (`is_valid_origin`) and `crates/app/src/config.rs` (startup refuses) — done |
 | `Api8SecurityMisconfigurationTest.anUnexpectedFailureRevealsNothingButATraceId` | fault (a test-only route) | M3 | `crates/app` in-process router test with a failing handler |
 | `Api9ImproperInventoryManagementTest.everyServedEndpointIsInTheSpecAndEveryDocumentedOneIsServed`, direction "served, therefore documented" | INT (route table) | M3 | `crates/app` test comparing the router with the spec; the other direction is `owasp_api9_inventory.rs` |

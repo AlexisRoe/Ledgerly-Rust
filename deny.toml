@@ -38,6 +38,21 @@ multiple-versions = "warn"
 wildcards = "deny"
 # `ledgerly-shared.workspace = true` is a path dependency without a version.
 allow-wildcard-paths = true
+# Crates nobody needs (plan M10.4, OWASP API7): other HTTP clients than the one the OTLP exporter and the tests
+# use, and OpenSSL, which rustls makes unnecessary. A new outbound path has to remove its entry here, with a
+# reason, before it can come in.
+deny = [
+    { crate = "ureq", reason = "a second HTTP client; outbound calls go through the adapters" },
+    { crate = "isahc", reason = "a second HTTP client; outbound calls go through the adapters" },
+    { crate = "surf", reason = "a second HTTP client; outbound calls go through the adapters" },
+    { crate = "attohttpc", reason = "a second HTTP client; outbound calls go through the adapters" },
+    { crate = "curl", reason = "libcurl; outbound calls go through the adapters" },
+    { crate = "curl-sys", reason = "libcurl; outbound calls go through the adapters" },
+    { crate = "openssl", reason = "TLS is rustls everywhere" },
+    { crate = "openssl-sys", reason = "TLS is rustls everywhere" },
+    { crate = "native-tls", reason = "TLS is rustls everywhere" },
+    { crate = "hyper-tls", reason = "TLS is rustls everywhere" },
+]
 
 [sources]
 # crates.io only: no other registry, no git dependency.

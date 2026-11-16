@@ -495,7 +495,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: `/actuator/prometheus` on 8081, with Java's metric names and tags (port spec §3.8), plus HTTP server metrics. Spans around S3 and clamd calls. The JVM and Spring MVC series Java's test also asserts (`jvm_memory_used_bytes`, `http_server_requests`) are Java-only; Rust exports `process_resident_memory_bytes` and `http_server_request_duration_seconds` instead.
   - Accept: the MetricsTest equivalents as parity tests that scrape `/actuator/prometheus`.
 
-- [ ] **M10.4 SSRF guard (API7)**
+- [x] **M10.4 SSRF guard (API7)**
   - Do: the architecture test also asserts that only `infrastructure` modules depend on network-client crates (`reqwest`, `aws-sdk-s3`, `tokio::net` use), and `cargo-deny` bans crates nobody needs.
   - Accept: adding `reqwest` to `expenses::domain` fails the test.
 

@@ -164,3 +164,219 @@ fn a_missing_arrow_and_an_unknown_crate_are_reported() {
         ]
     );
 }
+
+// --- OWASP API7: only infrastructure code calls out ---------------------------------------------------------------
+//
+// Java: `Api7ServerSideRequestForgeryTest`, an ArchUnit rule that only `..infrastructure..` and `..shared.storage..`
+// may depend on HTTP or socket clients. Rust has no packages to name, so the rule is checked twice: no crate but
+// the ones holding the adapters depends on a client crate, and no source file but the adapters names one. Test
+// code is exempt, as in Java (`ImportOption.DoNotIncludeTests`).
+
+/// Crates that make outbound connections, and the workspace crates that may depend on them directly. `shared`
+/// holds the object-store adapter. (OTLP export goes through `opentelemetry-otlp`, which is not on this list:
+/// it only ever talks to the configured endpoint.)
+const CLIENT_CRATES: &[(&str, &[&str])] = &[
+    ("reqwest", &[]),
+    ("aws-sdk-s3", &["shared"]),
+    ("aws-smithy-http-client", &["shared"]),
+    ("hyper", &[]),
+    ("hyper-util", &[]),
+    ("ureq", &[]),
+    ("isahc", &[]),
+    ("surf", &[]),
+    ("attohttpc", &[]),
+    ("curl", &[]),
+];
+
+/// Paths in source code that open outbound connections.
+const CLIENT_PATHS: &[&str] = &[
+    "reqwest",
+    "aws_sdk_s3",
+    "aws_smithy",
+    "hyper",
+    "TcpStream",
+    "UdpSocket",
+    "UnixStream",
+    "tokio::net",
+];
+
+/// Listening is not calling out: the app binds its two ports.
+const SERVER_PATHS: &[&str] = &["tokio::net::TcpListener"];
+
+/// The adapters, which are allowed to call out: the object store and the malware scanner.
+const ADAPTERS: &[&str] = &["crates/shared/src/storage/", "crates/receipts/src/scanner.rs"];
+
+/// The crate that is test code as a whole (ADR 0011).
+const TEST_CRATES: &[&str] = &["crates/parity-tests/"];
+
+/// `(workspace crate, client crate)` for every normal (non-dev) dependency on a client crate.
+fn client_dependencies() -> BTreeSet<(String, String)> {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let output = Command::new(cargo)
+        .args(["metadata", "--format-version", "1", "--no-deps", "--locked"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("cargo metadata can be started");
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).expect("cargo metadata prints JSON");
+    let mut found = BTreeSet::new();
+    for package in metadata["packages"].as_array().expect("packages is an array") {
+        let name = package["name"].as_str().expect("a package has a name");
+        let name = name.strip_prefix(PREFIX).unwrap_or(name);
+        for dependency in package["dependencies"].as_array().expect("dependencies is an array") {
+            let normal = dependency["kind"].is_null();
+            let target = dependency["name"].as_str().expect("a dependency has a name");
+            if normal && CLIENT_CRATES.iter().any(|(client, _)| *client == target) {
+                found.insert((name.to_owned(), target.to_owned()));
+            }
+        }
+    }
+    found
+}
+
+fn crate_violations(dependencies: &BTreeSet<(String, String)>) -> Vec<String> {
+    dependencies
+        .iter()
+        .filter(|(name, client)| {
+            name != "parity-tests"
+                && !CLIENT_CRATES
+                    .iter()
+                    .any(|(known, allowed)| known == client && allowed.contains(&name.as_str()))
+        })
+        .map(|(name, client)| format!("`{name}` depends on `{client}`; only infrastructure may call out"))
+        .collect()
+}
+
+/// The production code of a file: everything before its `#[cfg(test)]` module, or nothing for a file that only
+/// tests.
+fn production_code(path: &str, text: &str) -> String {
+    let file = path.rsplit('/').next().unwrap_or(path);
+    if matches!(file, "tests.rs" | "testing.rs" | "doubles.rs") || path.contains("/tests/") {
+        return String::new();
+    }
+    text.split("#[cfg(test)]").next().unwrap_or_default().to_owned()
+}
+
+/// `path: name` for every client path named outside the adapters.
+fn source_violations(files: &[(String, String)]) -> Vec<String> {
+    let mut found = Vec::new();
+    for (path, text) in files {
+        if ADAPTERS
+            .iter()
+            .chain(TEST_CRATES)
+            .any(|allowed| path.starts_with(allowed))
+        {
+            continue;
+        }
+        let mut code = production_code(path, text);
+        for server in SERVER_PATHS {
+            code = code.replace(server, "");
+        }
+        for client in CLIENT_PATHS {
+            if code.contains(client) {
+                found.push(format!("{path}: {client}; only infrastructure may call out"));
+            }
+        }
+    }
+    found
+}
+
+/// Every `.rs` file under `crates/*/src`, with its path relative to the workspace.
+fn sources() -> Vec<(String, String)> {
+    fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, String)>) {
+        for entry in std::fs::read_dir(dir).expect("the source tree can be read") {
+            let path = entry.expect("a directory entry").path();
+            if path.is_dir() {
+                walk(&path, root, out);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let relative = path
+                    .strip_prefix(root)
+                    .expect("under the root")
+                    .to_string_lossy()
+                    .into_owned();
+                out.push((
+                    relative,
+                    std::fs::read_to_string(&path).expect("a source file is UTF-8"),
+                ));
+            }
+        }
+    }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root.canonicalize().expect("the workspace root exists");
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(root.join("crates")).expect("crates/ can be read") {
+        let src = entry.expect("a directory entry").path().join("src");
+        if src.is_dir() {
+            walk(&src, &root, &mut files);
+        }
+    }
+    files
+}
+
+/// Java: `Api7ServerSideRequestForgeryTest.onlyInfrastructureMayCallOut`.
+#[test]
+fn only_infrastructure_may_call_out() {
+    let mut found = crate_violations(&client_dependencies());
+    found.extend(source_violations(&sources()));
+
+    assert!(
+        found.is_empty(),
+        "outbound calls outside the adapters:\n  - {}",
+        found.join("\n  - ")
+    );
+}
+
+/// Java: `Api7ServerSideRequestForgeryTest.theRuleReallyFailsForAClassThatBreaksIt`, with a made-up crate graph
+/// and a made-up source file.
+#[test]
+fn the_rule_really_fails_for_code_that_breaks_it() {
+    let dependencies = BTreeSet::from([("expenses".to_owned(), "reqwest".to_owned())]);
+    let files = [(
+        "crates/expenses/src/domain/fetch.rs".to_owned(),
+        "use reqwest::Client;\nasync fn f() { tokio::net::TcpStream::connect(\"x:1\").await; }\n".to_owned(),
+    )];
+
+    assert_eq!(
+        crate_violations(&dependencies),
+        ["`expenses` depends on `reqwest`; only infrastructure may call out"]
+    );
+    assert_eq!(
+        source_violations(&files),
+        [
+            "crates/expenses/src/domain/fetch.rs: reqwest; only infrastructure may call out",
+            "crates/expenses/src/domain/fetch.rs: TcpStream; only infrastructure may call out",
+            "crates/expenses/src/domain/fetch.rs: tokio::net; only infrastructure may call out",
+        ]
+    );
+}
+
+/// Java: `Api7ServerSideRequestForgeryTest.theSameCodeInAnInfrastructurePackageIsAllowed`: the adapters do call
+/// out, and the rule exempts them; test code is exempt too.
+#[test]
+fn the_same_code_in_an_adapter_or_a_test_is_allowed() {
+    let scanner = sources()
+        .into_iter()
+        .find(|(path, _)| path == "crates/receipts/src/scanner.rs")
+        .expect("the scanner exists");
+    assert!(scanner.1.contains("TcpStream"), "the scanner opens a socket");
+    let files = [
+        scanner,
+        (
+            "crates/shared/src/storage/s3.rs".to_owned(),
+            "use aws_sdk_s3::Client;".to_owned(),
+        ),
+        (
+            "crates/teams/src/web/tests.rs".to_owned(),
+            "use reqwest::Client;".to_owned(),
+        ),
+        (
+            "crates/teams/src/lib.rs".to_owned(),
+            "pub fn f() {}\n#[cfg(test)]\nmod tests { use reqwest::Client; }".to_owned(),
+        ),
+    ];
+
+    assert_eq!(source_violations(&files), Vec::<String>::new());
+    assert_eq!(
+        crate_violations(&BTreeSet::from([("shared".to_owned(), "aws-sdk-s3".to_owned())])),
+        Vec::<String>::new()
+    );
+}
