@@ -53,3 +53,5 @@ pub mod ex101_futures_by_hand;
 pub mod ex102_pin;
 pub mod ex103_cancellation;
 pub mod ex104_blocking;
+pub mod ex106_layout;
+pub mod ex107_allocations;

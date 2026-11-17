@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: memory and performance</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Memory and performance</h1>
+  <p class="lede">Section 18 on one page.</p>
+
+  <h2>Sizes (64-bit)</h2>
+  <table>
+    <tbody>
+      <tr><td><code>&amp;T</code>, <code>Box</code>, <code>Arc</code>, <code>Option&lt;Box&lt;T&gt;&gt;</code></td><td>8</td></tr>
+      <tr><td><code>&amp;str</code>, <code>&amp;[T]</code>, <code>&amp;dyn T</code>, <code>Box&lt;dyn T&gt;</code></td><td>16 (fat pointer)</td></tr>
+      <tr><td><code>String</code>, <code>Vec&lt;T&gt;</code></td><td>24 (ptr, cap, len); content on the heap</td></tr>
+      <tr><td><code>Uuid</code> / Ledgerly ids</td><td>16, inline, <code>Copy</code></td></tr>
+      <tr><td><code>Option&lt;u32&gt;</code> / <code>Option&lt;NonZeroU32&gt;</code></td><td>8 / 4 (niche)</td></tr>
+      <tr><td>field-less enum (≤ 256 variants), and <code>Option</code> of it</td><td>1</td></tr>
+    </tbody>
+  </table>
+  <p>Rust reorders fields to cut padding; <code>#[repr(C)]</code> only for FFI. Check with
+    <code>std::mem::size_of::&lt;T&gt;()</code>.</p>
+
+  <h2>Allocation habits</h2>
+  <table>
+    <tbody>
+      <tr><td>known size</td><td><code>Vec::with_capacity(n)</code>, <code>String::with_capacity(n)</code></td></tr>
+      <tr><td>building text</td><td><code>write!(buf, …)</code> (needs <code>use std::fmt::Write</code>) instead of many <code>format!</code></td></tr>
+      <tr><td>loops</td><td>one buffer outside, <code>.clear()</code> inside</td></tr>
+      <tr><td>results</td><td>return <code>&amp;str</code> borrowed from input; <code>Cow</code> when sometimes new</td></tr>
+      <tr><td>iterators</td><td><code>count</code>/<code>sum</code>/<code>any</code>/<code>for</code> instead of <code>collect</code> then loop</td></tr>
+      <tr><td>perspective</td><td>allocation ≈ tens of ns; DB round trip ≈ 1 ms. Optimise loops, not one-offs</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Dispatch</h2>
+  <table>
+    <tbody>
+      <tr><td>generics</td><td>monomorphised, inlinable; cost: compile time, binary size</td></tr>
+      <tr><td><code>dyn</code></td><td>one copy, vtable call, no inlining; cost: ~ns per call, a <code>Box</code></td></tr>
+      <tr><td>Ledgerly</td><td>ports <code>Arc&lt;dyn …&gt;</code>; hot inner code generic</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Measuring</h2>
+  <script type="text/x-code" data-lang="bash">
+    cargo build --release                 # never measure debug builds
+    cargo run --release --bin bench       # rough stopwatch, std::hint::black_box
+    cargo bench                           # criterion benchmarks in benches/
+    samply record ./target/release/app    # sampling profiler (set debug = true in [profile.release] first)
+  </script>
+  <script type="text/x-code" data-lang="toml">
+    [profile.release]
+    lto = "fat"          # optimise across crates
+    codegen-units = 1    # whole-crate optimisation
+    strip = "symbols"    # smaller binary
+    panic = "unwind"     # a panic ends a request, not the process
+  </script>
+
+  <p>Lessons: <a data-lesson="106"></a> · <a data-lesson="107"></a> · <a data-lesson="108"></a> · <a data-lesson="109"></a></p>
+</main>
+</body>
+</html>

@@ -53,6 +53,9 @@
       <tr><td><strong><code>Result&lt;T, E&gt;</code></strong></td><td><code>Ok(T)</code> or <code>Err(E)</code>: an operation that may fail.</td></tr>
       <tr><td><strong>unit <code>()</code></strong></td><td>The type with one value: "nothing to return". (<code>void</code>)</td></tr>
       <tr><td><strong>slice</strong></td><td>A borrowed view into contiguous data: <code>&amp;[T]</code>, <code>&amp;str</code>.</td></tr>
+      <tr><td><strong>niche</strong></td><td>An impossible bit pattern (a null reference) that an enum reuses as its tag, so <code>Option&lt;&amp;T&gt;</code> costs nothing.</td></tr>
+      <tr><td><strong>monomorphisation</strong></td><td>Compiling one specialised copy of a generic function per type it's used with.</td></tr>
+      <tr><td><strong>release profile</strong></td><td>Cargo's optimised build settings (<code>--release</code>); tests use the unoptimised dev profile.</td></tr>
       <tr><td><strong>generic</strong></td><td>A type or function with type parameters, <code>Vec&lt;T&gt;</code>; monomorphized per use.</td></tr>
       <tr><td><strong>type alias</strong></td><td><code>type X = …;</code>: a new name, not a new type.</td></tr>
     </tbody>

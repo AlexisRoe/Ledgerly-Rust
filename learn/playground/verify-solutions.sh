@@ -17,4 +17,4 @@ for solution in solutions/*.rs; do
     if [ -f "src/bin/$name" ]; then cp "$solution" "$work/src/bin/$name"; else cp "$solution" "$work/src/$name"; fi
 done
 echo "== with solutions/, every test must pass"
-(cd "$work" && cargo test --quiet 2>&1 | tail -n 15)
+(cd "$work" && cargo test --quiet 2>&1 | grep -v -e '^running 0 tests$' -e '^test result: ok. 0 passed' -e '^$')

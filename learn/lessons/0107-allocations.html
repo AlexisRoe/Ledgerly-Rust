@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Where allocations hide</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Memory and performance</p>
+  <h1>Where allocations hide</h1>
+  <p class="lede">Heap allocations are the most common avoidable cost in Rust code. Most are visible
+    (<code>String::new</code>, <code>Vec::new</code>, <code>Box::new</code>), but many hide in innocent-looking calls.
+    A handful of habits remove most of them.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can spot hidden allocations (<code>format!</code>, <code>to_string</code>, <code>clone</code>,
+      <code>collect</code>), and fix them with <code>with_capacity</code>, borrowing, buffer reuse and iterator
+      consumers.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Where does a <code>String</code>'s text live, and what's on the stack?</summary>
+      <div>Text on the heap; a 24-byte header (pointer, capacity, length) on the stack. (106)</div></details>
+    <details><summary>When does a <code>Cow&lt;str&gt;</code> allocate?</summary>
+      <div>Only when it needs new text (<code>Owned</code>). (85)</div></details>
+  </div>
+
+  <h2>Where they hide</h2>
+  <table>
+    <thead><tr><th>Allocates</th><th>Often avoidable with</th></tr></thead>
+    <tbody>
+      <tr><td><code>format!(…)</code>, <code>.to_string()</code>, <code>.to_owned()</code></td><td><code>write!</code> into an existing buffer; pass <code>&amp;str</code>; <code>Display</code> straight into the output</td></tr>
+      <tr><td><code>.clone()</code> of a <code>String</code>/<code>Vec</code></td><td>borrow; return <code>&amp;str</code> tied to the input; <code>Arc</code> for shared data</td></tr>
+      <tr><td><code>.collect::&lt;Vec&lt;_&gt;&gt;()</code> just to loop or count again</td><td>keep the iterator: <code>.count()</code>, <code>.sum()</code>, <code>.any()</code>, a <code>for</code> loop</td></tr>
+      <tr><td><code>Vec::new()</code> + many <code>push</code>es (regrowth: 4, 8, 16…)</td><td><code>Vec::with_capacity(n)</code> when you know <code>n</code></td></tr>
+      <tr><td>a new <code>String</code>/<code>Vec</code> per loop iteration</td><td>one buffer outside the loop, <code>.clear()</code> inside (keeps capacity)</td></tr>
+      <tr><td><code>Box&lt;dyn Trait&gt;</code>, <code>Box::pin(fut)</code></td><td>generics, if the type is known at compile time</td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://nnethercote.github.io/perf-book/heap-allocations.html">The Rust Performance Book: Heap
+    Allocations</a>.)</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: one allocation for a hex string</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/receipts/src/application/upload.rs" data-line="183">
+      fn hex(bytes: &[u8]) -> String {
+          use std::fmt::Write;
+          bytes
+              .iter()
+              .fold(String::with_capacity(bytes.len() * 2), |mut text, byte| {
+                  let _ = write!(text, "{byte:02x}");
+                  text
+              })
+      }
+    </script>
+    <p>A SHA-256 hash as hex: exactly two characters per byte, so the final size is known up front. The naive
+      <code>bytes.iter().map(|b| format!("{b:02x}")).collect::&lt;String&gt;()</code> would allocate once per byte, 32 times, plus regrowth of the result.
+      <code>write!</code> on a <code>String</code> can't actually fail; <code>let _ =</code> discards the
+      <code>Result</code> without an <code>unwrap</code>.</p>
+  </div>
+
+  <h2>Keep perspective</h2>
+  <p>An allocation takes tens of nanoseconds. A Postgres round trip takes a millisecond: 10,000 times more. In a
+    request handler, a few clones don't matter; in a loop over 10,000 import rows, or in code that runs on every
+    request, they can. Write the clear version first, and optimise where a measurement says so (lesson 109).
+    Clippy helps: <code>redundant_clone</code>, <code>format_collect</code> and friends point out the easy ones.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>V8 allocates constantly and its GC is tuned for short-lived garbage, so JS developers rarely think about it.
+      Rust has no GC; each allocation is a call to the allocator and each drop a call to free. That's still fast, and
+      fully deterministic: no pauses, but also no batching. Fewer allocations translate directly into less work.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex107_allocations.rs</code>: hex with one allocation, a reused CSV buffer, a borrowed
+      result instead of a clone, and a count without <code>collect</code>. The tests check capacities and pointers.
+      Run <code>cargo test ex107</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">How many allocations does <code>words.iter().filter(…).collect::&lt;Vec&lt;_&gt;&gt;().len()</code>
+      make, compared with <code>.count()</code>?</p>
+    <ul class="options">
+      <li>The same; collect is optimised away for len</li>
+      <li data-correct>At least one more; count allocates nothing</li>
+      <li>Fewer, because collect reuses the words vector</li>
+      <li>None of the two versions allocate anything</li>
+    </ul>
+    <div class="explain">Consumers like <code>count</code> pull items one by one without storing them.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A loop builds one CSV line per row into a fresh <code>String</code>. The cheapest fix?</p>
+    <ul class="options">
+      <li>Use format! instead of push_str in the loop</li>
+      <li data-correct>One String outside the loop, cleared every iteration</li>
+      <li>Wrap each line's String in an Arc instead</li>
+      <li>Convert the line to a Box&lt;str&gt; afterwards</li>
+    </ul>
+    <div class="explain"><code>clear()</code> keeps the capacity, so after the first rows no allocation happens.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A handler clones a 40-byte <code>String</code> once per request, then queries Postgres. Worth fixing?</p>
+    <ul class="options">
+      <li>Yes, clones are always the main bottleneck</li>
+      <li data-correct>Rarely; the query costs thousands of times</li>
+      <li>Yes, because clones block the async runtime</li>
+      <li>No, because Rust strings are always reference-counted</li>
+    </ul>
+    <div class="explain">Measure first; optimise hot loops, not one-off clones.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://nnethercote.github.io/perf-book/heap-allocations.html">The Rust Performance Book: Heap
+      Allocations</a>, by Nicholas Nethercote, who has spent years speeding up the Rust compiler.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

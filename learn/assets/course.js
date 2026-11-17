@@ -164,6 +164,14 @@
         [104, "blocking-in-async", "Blocking inside async"],
         [105, "review-concurrency", "Review: concurrency and async internals"],
       ] },
+    { title: "Memory and performance", blurb: "Sizes and layout, hidden allocations, what generics and dyn cost, and how to measure.",
+      ref: "performance.html", lessons: [
+        [106, "stack-heap-layout", "Stack, heap and layout"],
+        [107, "allocations", "Where allocations hide"],
+        [108, "cost-of-abstractions", "Generics vs dyn: what abstractions cost"],
+        [109, "measuring", "Measuring: release builds, benchmarks, profiles"],
+        [110, "review-performance", "Review: memory and performance"],
+      ] },
   ];
 
   const REFERENCES = [
@@ -185,6 +193,7 @@
     ["ownership-deep.html", "Ownership and lifetimes in depth"],
     ["traits-deep.html", "Traits in depth"],
     ["concurrency.html", "Concurrency and async internals"],
+    ["performance.html", "Memory and performance"],
   ];
 
   const LESSONS = [];
