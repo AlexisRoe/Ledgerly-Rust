@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Option: no null, no undefined</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1><code>Option</code>: no <code>null</code>, no <code>undefined</code></h1>
+  <p class="lede"><code>T | undefined</code> becomes <code>Option&lt;T&gt;</code>, an ordinary enum with two
+    variants. Its methods replace <code>?.</code> and <code>??</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>Option</code> fields and return types in Ledgerly, and the method chains on them
+      (<code>map</code>, <code>filter</code>, <code>ok_or</code>, <code>unwrap_or</code>), translating each to the TS
+      you'd write.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>How does <code>match</code> get the data out of <code>ExpenseError::Forbidden(…)</code>?</summary>
+      <div>With a pattern that binds a name: <code>ExpenseError::Forbidden(forbidden) =&gt; …</code>.</div></details>
+    <details><summary>What do you write for a struct field that may be missing?</summary>
+      <div><code>Option&lt;T&gt;</code>. Every field must still be given, as <code>None</code> or <code>Some(x)</code>.</div></details>
+  </div>
+
+  <h2>It's just an enum</h2>
+  <script type="text/x-code" data-lang="rust" data-label="The standard library's definition (simplified)">
+    pub enum Option<T> {
+        None,
+        Some(T),
+    }
+  </script>
+  <p>Generic over <code>T</code> (lesson 27), and in scope everywhere, so you write <code>Some(x)</code> and
+    <code>None</code> without a prefix. A <code>String</code> can never be "null": if a value may be absent, its
+    type says <code>Option&lt;String&gt;</code>, and you can't use the inner value without first handling
+    <code>None</code> (<a href="https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html#the-option-enum-and-its-advantages-over-null-values">Book
+    6.1, "The Option Enum"</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: filters that may or may not be set</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/persistence/mod.rs" data-line="72">
+      #[derive(Debug, Clone, PartialEq, Eq)]
+      pub(crate) struct Criteria {
+          pub team: TeamId,
+          pub claimant: Option<UserId>,
+          pub status: Option<ExpenseStatus>,
+          pub category: Option<Category>,
+          /// An ISO 4217 code Java knows.
+          pub currency: Option<String>,
+    </script>
+    <p>Read it like a TS type: <code>team</code> is required (every query is scoped to a team!), and the rest are
+      optional query filters such as <code>?status=SUBMITTED</code>.</p>
+  </div>
+
+  <h2>From <code>?.</code> and <code>??</code> to methods</h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust on <code>opt: Option&lt;T&gt;</code></th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td><code>x !== undefined</code></td><td><code>opt.is_some()</code></td><td><code>bool</code></td></tr>
+      <tr><td><code>x?.name</code></td><td><code>opt.map(|x| x.name)</code></td><td><code>Option&lt;U&gt;</code></td></tr>
+      <tr><td><code>x ?? fallback</code></td><td><code>opt.unwrap_or(fallback)</code></td><td><code>T</code></td></tr>
+      <tr><td><code>x ?? compute()</code></td><td><code>opt.unwrap_or_else(|| compute())</code></td><td><code>T</code> (lazy)</td></tr>
+      <tr><td><code>x &amp;&amp; ok(x) ? x : undefined</code></td><td><code>opt.filter(|x| ok(x))</code></td><td><code>Option&lt;T&gt;</code></td></tr>
+      <tr><td><code>if (x === undefined) throw new E()</code></td><td><code>opt.ok_or(E)?</code></td><td>turns it into a <code>Result</code></td></tr>
+      <tr><td><code>if (x) { use(x) }</code></td><td><code>if let Some(x) = opt { use(x) }</code></td><td>lesson 33</td></tr>
+      <tr><td><code>x!</code> (non-null assertion)</td><td><code>opt.unwrap()</code></td><td>panics on <code>None</code>; banned in Ledgerly</td></tr>
+    </tbody>
+  </table>
+  <p><code>|x| …</code> is a closure, Rust's arrow function (<a data-lesson="45"></a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: "found and visible, or not found"</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/access.rs" data-line="30">
+      pub(crate) async fn load(
+          connection: &mut PgConnection,
+          actor: Actor,
+          team: TeamId,
+          id: ExpenseId,
+      ) -> Result<Versioned<Expense>, UseCaseError> {
+          persistence::find(connection, team, id)
+              .await?
+              .filter(|found| found.value.is_visible_to(actor))
+              .ok_or(UseCaseError::NotFound)
+      }
+    </script>
+    <p>Read the chain line by line. <code>find</code> returns an <code>Option</code> (after <code>.await?</code>
+      handled the database error): <code>Some(expense)</code> or <code>None</code>. <code>.filter</code> turns
+      <code>Some</code> into <code>None</code> if the actor may not see it. <code>.ok_or</code> turns
+      <code>None</code> into the error <code>NotFound</code>. A missing expense, another team's expense, and a
+      colleague's expense all look the same to the client, which is the security rule (OWASP API1) in four
+      lines.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS has two "nothing" values plus optional properties, and with <code>strictNullChecks</code> off, none of it
+      is checked. Rust has one, it's a real type, and nesting means something: <code>Option&lt;Option&lt;T&gt;&gt;</code>
+      can say "not given" vs "given as null", which <code>T | null | undefined</code> only hints at. (Ledgerly's
+      PATCH takes a simpler route: <code>note: None</code> leaves the note alone, and a blank note removes it. See the
+      <code>match command.note</code> in <code>application/update_expense.rs</code>.)</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex24_option.rs</code>: translate four TS snippets using <code>?.</code>,
+      <code>??</code> and a guard into <code>Option</code> methods. Run <code>cargo test ex24</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What's the Rust for TS <code>note ?? "-"</code>, with <code>note: Option&lt;&amp;str&gt;</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>note || "-"</code></li>
+      <li><code>note.unwrap()</code></li>
+      <li data-correct><code>note.unwrap_or("-")</code></li>
+      <li><code>note?.or("-")</code></li>
+    </ul>
+    <div class="explain"><code>unwrap_or</code> gives the inner value or the fallback. <code>unwrap()</code> would
+      panic on <code>None</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>.ok_or(UseCaseError::NotFound)</code> do to an <code>Option&lt;Expense&gt;</code>?</p>
+    <ul class="options">
+      <li>Panics with NotFound if the option is None</li>
+      <li data-correct>Turns it into a Result, NotFound for None</li>
+      <li>Returns NotFound from the enclosing function right away</li>
+      <li>Logs NotFound and then returns the option unchanged</li>
+    </ul>
+    <div class="explain"><code>Some(e)</code> becomes <code>Ok(e)</code>, <code>None</code> becomes
+      <code>Err(NotFound)</code>. Returning early only happens if a <code>?</code> follows.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why is <code>team</code> in <code>Criteria</code> not an <code>Option</code>?</p>
+    <ul class="options">
+      <li>Option can't hold id types such as TeamId</li>
+      <li data-correct>Every query must be scoped to one team</li>
+      <li>The team is filled in later by the database</li>
+      <li>Options are only allowed at the end of structs</li>
+    </ul>
+    <div class="explain">Ledgerly's rule: every query that reads team data takes the team id. The type makes an
+      unscoped query impossible to build.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html#the-option-enum-and-its-advantages-over-null-values">6.1,
+      "The Option Enum and Its Advantages Over Null Values"</a>. Then skim the method list in the
+      <a href="https://doc.rust-lang.org/std/option/enum.Option.html"><code>Option</code> docs</a>; the overview at the
+      top groups them by purpose.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

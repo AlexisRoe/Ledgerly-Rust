@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: data types</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types · Review</p>
+  <h1>Review: data types</h1>
+  <p class="lede">Mixed practice across lessons 16–27, plus one question each from sections 1 and 2. Then you
+    explain every field of the <code>Expense</code> aggregate.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>From memory first. Note which questions you missed; the lesson numbers are in the explanations.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>Name three integer types Ledgerly uses and why each.</summary>
+      <div><code>u32</code> for counts/page sizes (can't be negative), <code>u64</code> for byte sizes,
+        <code>usize</code> for lengths/indexes, <code>i64</code> to match Postgres <code>bigint</code>, <code>u8</code>
+        for a currency's decimals. (16)</div></details>
+    <details><summary>When does a function take <code>&amp;str</code> and when does it return <code>String</code>?</summary>
+      <div>Take <code>&amp;str</code> when it only reads. Return <code>String</code> when it creates new text, and
+        <code>&amp;str</code> when it returns part of its input. (18)</div></details>
+    <details><summary>The three shapes of an enum variant?</summary>
+      <div>Unit (<code>Deleted</code>), tuple-like (<code>RuleViolated(&amp;'static str)</code>), struct-like
+        (<code>SelfDealing { action }</code>). (23)</div></details>
+    <details><summary>What's the difference between <code>&amp;self</code>, <code>&amp;mut self</code> and
+      <code>self</code>?</summary>
+      <div>Read-only borrow, mutable borrow, take ownership (consume). (21)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">Which type would Ledgerly use for "optional filter by currency code"?</p>
+    <ul class="options" data-fixed>
+      <li><code>String</code></li>
+      <li><code>&amp;str | null</code></li>
+      <li data-correct><code>Option&lt;String&gt;</code></li>
+      <li><code>Result&lt;String, ()&gt;</code></li>
+    </ul>
+    <div class="explain"><code>Criteria::currency</code> is exactly <code>Option&lt;String&gt;</code>. Absence is
+      not an error. (24)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's the Rust equivalent of a TS discriminated union?</p>
+    <ul class="options">
+      <li>A struct with an optional kind field</li>
+      <li data-correct>An enum whose variants carry their own data</li>
+      <li>A trait with one implementation per variant</li>
+      <li>A tuple whose first element names the variant</li>
+    </ul>
+    <div class="explain">Enum variants with fields. <code>match</code> narrows them, and the compiler checks
+      exhaustiveness. (23)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does <code>Expense::rejections()</code> return a slice?</p>
+    <ul class="options">
+      <li>Vectors can never be returned from any methods</li>
+      <li data-correct>Callers can read but never push or copy</li>
+      <li>Slices are always sorted by their insertion order</li>
+      <li>Slices are stored on the stack, vectors not</li>
+    </ul>
+    <div class="explain"><code>&amp;[Rejection]</code> borrows without copying and has no mutating methods. (19)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What prevents code outside <code>money</code> from building an invalid <code>Money</code>?</p>
+    <ul class="options">
+      <li>A runtime check in every function using Money</li>
+      <li data-correct>Private fields: only validating constructors can build it</li>
+      <li>A clippy lint that forbids struct literal syntax</li>
+      <li>The database rejects invalid amounts on insert</li>
+    </ul>
+    <div class="explain">Field privacy plus constructors that return <code>Result</code>: parse, don't validate.
+      (13, 26)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Read <code>Result&lt;(Merchant, Option&lt;Note&gt;), InvalidInput&gt;</code>.</p>
+    <ul class="options">
+      <li>A merchant, or a note, or an invalid input</li>
+      <li data-correct>May fail; if not, a merchant and maybe a note</li>
+      <li>A list of merchants, each with an optional note</li>
+      <li>An invalid input that contains a merchant and note</li>
+    </ul>
+    <div class="explain">Outside in: a <code>Result</code> of a tuple (two values) whose second part is optional.
+      (19, 25, 27)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Section 2) Where does <code>mod text;</code> inside <code>crates/expenses/src/domain/mod.rs</code>
+      look for code?</p>
+    <ul class="options" data-fixed>
+      <li><code>src/text.rs</code></li>
+      <li data-correct><code>src/domain/text.rs</code></li>
+      <li><code>src/domain/mod/text.rs</code></li>
+      <li><code>src/lib/text.rs</code></li>
+    </ul>
+    <div class="explain">A module's children live in its folder: <code>domain/text.rs</code> (or
+      <code>domain/text/mod.rs</code>). (11)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Section 1) Which file pins the exact compiler version?</p>
+    <ul class="options" data-fixed>
+      <li><code>Cargo.toml</code></li>
+      <li><code>Cargo.lock</code></li>
+      <li data-correct><code>rust-toolchain.toml</code></li>
+      <li><code>rustfmt.toml</code></li>
+    </ul>
+    <div class="explain"><code>channel = "1.99.1"</code>. <code>rust-version</code> in <code>Cargo.toml</code> is only
+      a minimum. (2)</div>
+  </div>
+
+  <h2>Explain the aggregate</h2>
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code (10 minutes)</span>
+    <p>Open <a class="src" data-src="crates/expenses/src/domain/expense.rs" data-line="117"></a>. For each of the
+      ten fields of <code>Expense</code>, write one line: what its type is, what TS type you'd have used, and what
+      the Rust type guarantees that the TS one wouldn't.</p>
+    <details class="reveal"><summary>Model answers for four of them</summary>
+      <div>
+        <p><code>id: ExpenseId</code>: TS <code>string</code>. Can't be confused with a <code>TeamId</code>; always a
+          UUIDv7.</p>
+        <p><code>money: Money</code>: TS <code>{ amount: number; currency: string }</code>. Always positive, correct
+          decimals for its currency, fits the column; no float rounding.</p>
+        <p><code>note: Option&lt;Note&gt;</code>: TS <code>note?: string</code>. Absence is explicit, and a present
+          note is within the length limit.</p>
+        <p><code>rejections: Vec&lt;Rejection&gt;</code>: TS <code>Rejection[]</code>. Private, so only
+          <code>reject</code> can push, and outsiders get a read-only slice.</p>
+      </div></details>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>Keep the <a href="../reference/types.html">data types cheat sheet</a> open while reading code this week.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Structs: like interfaces, plus data</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1>Structs: like interfaces, plus data</h1>
+  <p class="lede">A <code>struct</code> is the shape of an <code>interface</code> and the data of an object
+    literal, but it has a name that matters and no optional fields.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read Ledgerly's three kinds of struct (named fields, tuple struct, unit struct), build one, read its
+      fields, and say why <code>Expense</code> has private fields while <code>NewExpense</code> has public ones.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's the slice type that a <code>Vec&lt;Rejection&gt;</code> lends out?</summary>
+      <div><code>&amp;[Rejection]</code>.</div></details>
+    <details><summary>Which fields can code outside a module see in a <code>pub struct</code>?</summary>
+      <div>Only the ones marked <code>pub</code>.</div></details>
+    <details><summary>How do you return two values from a function without a new type?</summary>
+      <div>A tuple: <code>-&gt; (Merchant, Option&lt;Note&gt;)</code>.</div></details>
+  </div>
+
+  <h2>Defining and building</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      interface NewExpense {
+        money: Money;
+        category: Category;
+        incurredOn: LocalDate;
+        merchant: string;
+        note?: string;          // optional
+      }
+      const draft: NewExpense = {
+        money, category, incurredOn,
+        merchant: "Deutsche Bahn",
+      };
+      draft.merchant;
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="23">
+      #[derive(Debug, Clone, PartialEq, Eq)]
+      pub struct NewExpense {
+          pub money: Money,
+          pub category: Category,
+          pub incurred_on: NaiveDate,
+          pub merchant: String,
+          pub note: Option<String>,
+      }
+      // building one (every field is required):
+      // let draft = NewExpense {
+      //     money, category, incurred_on,
+      //     merchant: "Deutsche Bahn".to_owned(),
+      //     note: None,
+      // };
+    </script>
+  </div>
+  <ul>
+    <li><strong>Every field must be given.</strong> There's no <code>?:</code>. A field that may be missing has the
+      type <code>Option&lt;T&gt;</code> and you write <code>None</code> explicitly (<a data-lesson="24"></a>).</li>
+    <li><strong>Field init shorthand</strong> works like in JS: <code>money,</code> means
+      <code>money: money,</code>.</li>
+    <li><strong>Struct update syntax</strong> <code>NewExpense { note: None, ..other }</code> is like
+      <code>{ ...other, note: undefined }</code>, but the spread goes <em>last</em>.</li>
+    <li><code>#[derive(…)]</code> generates standard abilities: printing with <code>{:?}</code>, cloning,
+      comparing with <code>==</code>. Lesson 50 covers it. For now, read it as "this struct can be debug-printed,
+      copied and compared".</li>
+  </ul>
+
+  <h2>Public data vs guarded state</h2>
+  <p><code>NewExpense</code> is plain input data: all fields <code>pub</code>, anyone can build one. The
+    <code>Expense</code> aggregate is the opposite:</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="117">
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Expense {
+        id: ExpenseId,
+        team_id: TeamId,
+        claimant_id: UserId,
+        money: Money,
+        category: Category,
+        incurred_on: NaiveDate,
+        merchant: Merchant,
+        note: Option<Note>,
+        status: ExpenseStatus,
+        rejections: Vec<Rejection>,
+    }
+  </script>
+  <p>No field is <code>pub</code>. Outside its module nobody can write <code>expense.status = Approved</code> or
+    build an <code>Expense { … }</code> by hand. The only ways in are <code>Expense::draft</code> (which validates)
+    and the six transition methods (which check the workflow). The doc comment above it says: "The fields are
+    private and there is no setter."</p>
+
+  <h2>Tuple structs and unit structs</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/text.rs" data-line="34">
+    pub struct Merchant(String);
+  </script>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/id.rs" data-line="41">
+    pub struct InvalidId;
+  </script>
+  <ul>
+    <li><strong>Tuple struct</strong>: fields without names, accessed as <code>.0</code>, <code>.1</code>. Used
+      for single-value wrappers ("newtypes", <a data-lesson="26"></a>): <code>Merchant(String)</code> is a
+      <code>String</code> that's known to be a valid merchant.</li>
+    <li><strong>Unit struct</strong>: no fields at all. <code>InvalidId</code> is an error that carries no data,
+      only the fact that something wasn't a UUID.</li>
+  </ul>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TypeScript is <strong>structural</strong>: any object with the right fields <em>is</em> a
+      <code>NewExpense</code>. Rust is <strong>nominal</strong>: two structs with identical fields are different,
+      incompatible types. There are also no anonymous object literals. Every <code>{ … }</code> value has a named
+      struct type, and every field must be listed.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex20_structs.rs</code>: define a <code>Receipt</code> struct, build it with
+      shorthand, update it with <code>..</code>, and wrap a value in a tuple struct. Run
+      <code>cargo test ex20</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">How do you say a struct field is optional?</p>
+    <ul class="options" data-fixed>
+      <li><code>note?: String</code></li>
+      <li><code>note: String | null</code></li>
+      <li data-correct><code>note: Option&lt;String&gt;</code></li>
+      <li><code>#[optional] note: String</code></li>
+    </ul>
+    <div class="explain">Optional means "may be absent", which is <code>Option&lt;T&gt;</code>. You still pass the
+      field, as <code>None</code> or <code>Some(value)</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Code in <code>expenses::application</code> has an <code>expense: Expense</code>. Which line
+      compiles there?</p>
+    <ul class="options" data-fixed>
+      <li><code>expense.status = ExpenseStatus::Approved;</code></li>
+      <li><code>let s = expense.status;</code></li>
+      <li data-correct><code>let s = expense.status();</code></li>
+      <li><code>let e = Expense { ..expense };</code></li>
+    </ul>
+    <div class="explain">The fields are private to the <code>domain::expense</code> module. Only the public method
+      <code>status()</code> is reachable from <code>application</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Two structs both have exactly <code>{ id: Uuid }</code>. Can you pass one where the other is
+      expected?</p>
+    <ul class="options">
+      <li>Yes, the shapes match so the types match</li>
+      <li data-correct>No, Rust compares struct types by their name</li>
+      <li>Only if they derive the same trait list</li>
+      <li>Only with an explicit as cast between them</li>
+    </ul>
+    <div class="explain">Nominal typing. Ledgerly relies on it: <code>TeamId</code> and <code>ExpenseId</code> both
+      wrap a UUID and are still different types.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch05-01-defining-structs.html">5.1 "Defining and
+      Instantiating Structs"</a> (field init shorthand, update syntax, tuple and unit structs).</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

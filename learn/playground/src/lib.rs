@@ -6,3 +6,13 @@
 #![allow(dead_code, unused_variables, unused_mut, unused_imports)]
 pub mod ex09_expressions;
 pub mod ex12_paths;
+pub mod ex16_numbers;
+pub mod ex18_strings;
+pub mod ex19_collections;
+pub mod ex20_structs;
+pub mod ex21_impl;
+pub mod ex22_enums;
+pub mod ex23_enum_data;
+pub mod ex24_option;
+pub mod ex25_result;
+pub mod ex26_newtypes;

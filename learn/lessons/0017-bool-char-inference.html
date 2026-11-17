@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>bool, char and type inference</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1><code>bool</code>, <code>char</code> and type inference</h1>
+  <p class="lede">No truthiness, a real character type, and inference that's stronger than TypeScript's within a
+    function and absent at its edges.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can predict when Rust needs a type annotation, read the turbofish <code>::&lt;T&gt;</code>, and you won't
+      trip over <code>'a'</code> vs <code>"a"</code> or <code>if count {</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Which type does <code>.len()</code> return, and why does Ledgerly write
+      <code>u32::try_from(x.len())</code>?</summary>
+      <div><code>usize</code>. Converting to the narrower <code>u32</code> can fail, and <code>try_from</code> makes
+        that explicit, unlike <code>as</code>.</div></details>
+    <details><summary>What does <code>checked_add</code> return on overflow?</summary>
+      <div><code>None</code>: it returns an <code>Option</code>.</div></details>
+  </div>
+
+  <h2><code>bool</code>: no truthiness</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      if (items.length) { … }       // 0 is falsy
+      if (note) { … }               // "" and undefined are falsy
+      const ok = !!user;
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      if !items.is_empty() { … }    // condition must be a bool
+      if let Some(note) = note { … } // absence is an Option (lesson 24)
+      // if items.len() { … }       // error[E0308]: expected `bool`, found `usize`
+    </script>
+  </div>
+  <p><code>&amp;&amp;</code>, <code>||</code>, <code>!</code> work as in TS, but only on <code>bool</code>, and they
+    return <code>bool</code>, never one of the operands. There's no <code>??</code> trick with <code>||</code>.</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="320">
+    pub fn is_visible_to(&self, actor: Actor) -> bool {
+        self.is_claimed_by(actor) || actor.role().includes(Role::Approver)
+    }
+  </script>
+
+  <h2><code>char</code>: one Unicode scalar value</h2>
+  <p>TypeScript has no character type: <code>"a"[0]</code> is a one-character <em>string</em>, and it counts
+    UTF-16 units, so an emoji is two of them. Rust's <code>char</code> is a 4-byte Unicode scalar value written in
+    <strong>single quotes</strong>: <code>'a'</code>, <code>'€'</code>, <code>'\u{00A0}'</code>. Double quotes are
+    always strings.</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/text.rs" data-line="14">
+    #[must_use]
+    pub const fn is_java_whitespace(c: char) -> bool {
+        matches!(
+            c,
+            '\u{0009}'..='\u{000D}'
+                | '\u{001C}'..='\u{001F}'
+                | '\u{0020}'
+    // …
+  </script>
+  <p>Ledgerly needs this because Java and Rust disagree about what counts as whitespace. A merchant name of one
+    non-breaking space is valid in Java, so it must be valid here too. <code>'a'..='z'</code> is an inclusive range
+    of chars. <code>matches!</code> is lesson 33.</p>
+
+  <h2>Type inference: strong inside, explicit at the edges</h2>
+  <ul>
+    <li><strong>Function signatures are always fully typed</strong>: parameters and return type. No inference from
+      the body, unlike TS's inferred return types.</li>
+    <li><strong>Inside a body, inference flows both ways.</strong> Rust can infer a variable's type from how it's used
+      <em>later</em>:</li>
+  </ul>
+  <script type="text/x-code" data-lang="rust">
+    let mut ids = Vec::new();       // Vec of what? Not decided yet…
+    ids.push(ExpenseId::new_v7());  // …now it's Vec<ExpenseId>
+  </script>
+  <p>When nothing pins the type down, you annotate, either on the variable or with the <strong>turbofish</strong>
+    <code>::&lt;T&gt;</code> on a generic function (<a href="https://doc.rust-lang.org/rust-by-example/types/inference.html">Rust
+    by Example: inference</a>):</p>
+  <script type="text/x-code" data-lang="rust">
+    let size: u32 = "50".parse()?;         // annotate the variable…
+    let size = "50".parse::<u32>()?;       // …or the call: the "turbofish"
+    let names: Vec<_> = list.iter().map(|x| x.name()).collect(); // `_` = "you work it out"
+  </script>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="459">
+      FixedClock::at("2026-11-05T10:00:00Z".parse::<chrono::DateTime<chrono::Utc>>().unwrap())
+    </script>
+    <p><code>parse</code> can produce many types. The turbofish says: a UTC date-time from the
+      <code>chrono</code> crate. (<code>.unwrap()</code> is allowed here because this is a test.)</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS infers return types and widens literals (<code>let x = 5</code> is <code>number</code>). Rust never infers
+      across a function boundary, and an unconstrained integer literal defaults to <code>i32</code>. Turn on
+      rust-analyzer's inlay hints: they show every inferred type in grey, which makes Ledgerly's terse code much
+      easier to read.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Which condition compiles?</p>
+    <ul class="options" data-fixed>
+      <li><code>if rows.len() { … }</code></li>
+      <li><code>if note { … }</code> (note: <code>Option&lt;Note&gt;</code>)</li>
+      <li data-correct><code>if !rows.is_empty() { … }</code></li>
+      <li><code>if rows.len() || 1 { … }</code></li>
+    </ul>
+    <div class="explain">Conditions must be <code>bool</code>. There's no truthiness for numbers, options or
+      strings.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's <code>'€'</code> in Rust?</p>
+    <ul class="options">
+      <li>A one-character string, as in TS</li>
+      <li data-correct>A char: one Unicode scalar value</li>
+      <li>A syntax error; use double quotes</li>
+      <li>A lifetime annotation named euro here</li>
+    </ul>
+    <div class="explain">Single quotes make a <code>char</code>. Strings use double quotes. (Lifetimes like
+      <code>'a</code> look similar but have no closing quote.)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which of these always needs written types?</p>
+    <ul class="options">
+      <li>Every let binding inside a function body</li>
+      <li data-correct>A function's parameters and return type</li>
+      <li>Closure parameters passed to map or filter</li>
+      <li>Integer literals such as 42 or 1_000</li>
+    </ul>
+    <div class="explain">Signatures are the contract, and they're always explicit. Inside bodies, inference does
+      the rest.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>"42".parse::&lt;u8&gt;()</code> do differently from <code>"42".parse()</code>?</p>
+    <ul class="options">
+      <li>It parses faster by skipping all validation</li>
+      <li data-correct>It tells parse which type to produce</li>
+      <li>It returns the number, not a Result</li>
+      <li>It accepts only ASCII digits as input</li>
+    </ul>
+    <div class="explain">The turbofish fills in <code>parse</code>'s generic type parameter. Both return a
+      <code>Result</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch03-02-data-types.html">3.2 "Data Types"</a>, sections
+      "The Boolean Type" and "The Character Type". For inference, Rust by Example's
+      <a href="https://doc.rust-lang.org/rust-by-example/types/inference.html">Inference</a> page.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

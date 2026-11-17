@@ -114,7 +114,7 @@ def main():
                     errors.append(f"{rel}: {src}:{n} is {actual!r}, excerpt starts {first!r}")
             for line in excerpt:
                 s = line.strip()
-                if not s or s in ("// …", "# …", "…") or s.endswith("// …") or s.startswith("// …"):
+                if not s or s in ("# …", "…") or s.endswith("// …") or (s.startswith("//") and not s.startswith(("///", "//!"))):
                     continue
                 if s not in stripped:
                     warnings.append(f"{rel}: line not found verbatim in {src}: {s!r}")

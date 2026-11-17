@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: data types</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Data types: TypeScript ↔ Rust</h1>
+  <p class="lede">Section 3 on one page.</p>
+
+  <h2>Scalars</h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td><code>number</code> (integer use)</td><td><code>u8 u16 u32 u64 u128 usize</code> / <code>i8 … i128 isize</code></td><td>default <code>i32</code>; <code>usize</code> for lengths</td></tr>
+      <tr><td><code>number</code> (float)</td><td><code>f64</code>, <code>f32</code></td><td>never for money</td></tr>
+      <tr><td><code>bigint</code></td><td><code>i128</code>/<code>u128</code></td><td>or a crate</td></tr>
+      <tr><td>decimal.js / dinero</td><td><code>rust_decimal::Decimal</code></td><td>Ledgerly's <code>Money</code></td></tr>
+      <tr><td><code>boolean</code></td><td><code>bool</code></td><td>no truthiness</td></tr>
+      <tr><td>(1-char string)</td><td><code>char</code> <code>'a'</code></td><td>Unicode scalar, 4 bytes</td></tr>
+      <tr><td><code>void</code></td><td><code>()</code></td><td>"unit"</td></tr>
+      <tr><td><code>never</code></td><td><code>!</code></td><td>e.g. a function that always panics</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Conversions:</strong> <code>u64::from(x_u32)</code> (lossless) · <code>u32::try_from(x_usize)</code> →
+    <code>Result</code> · avoid <code>as</code> (truncates). <strong>Overflow:</strong> <code>checked_add</code> →
+    <code>Option</code> · <code>saturating_add</code> · <code>wrapping_add</code>.</p>
+
+  <h2>Text</h2>
+  <table>
+    <thead><tr><th></th><th><code>String</code></th><th><code>&amp;str</code></th></tr></thead>
+    <tbody>
+      <tr><td>Is</td><td>owned, growable</td><td>borrowed view</td></tr>
+      <tr><td>Use for</td><td>struct fields, new text you return</td><td>parameters, returning part of input</td></tr>
+      <tr><td>Literal</td><td></td><td><code>"x"</code> is <code>&amp;'static str</code></td></tr>
+      <tr><td>Convert</td><td><code>s.to_owned()</code> · <code>to_string()</code> · <code>format!()</code></td><td><code>&amp;s</code> · <code>s.as_str()</code></td></tr>
+    </tbody>
+  </table>
+  <p>Length: <code>.len()</code> = UTF-8 bytes · <code>.chars().count()</code> = characters ·
+    <code>.encode_utf16().count()</code> = JS/Java length. No <code>s[0]</code>.</p>
+
+  <h2>Collections</h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust owned</th><th>Rust borrowed</th></tr></thead>
+    <tbody>
+      <tr><td><code>[A, B]</code> (tuple)</td><td><code>(A, B)</code>, <code>t.0</code></td><td></td></tr>
+      <tr><td><code>readonly [T, T, T]</code></td><td><code>[T; 3]</code></td><td><code>&amp;[T]</code></td></tr>
+      <tr><td><code>T[]</code></td><td><code>Vec&lt;T&gt;</code>, <code>vec![…]</code></td><td><code>&amp;[T]</code></td></tr>
+      <tr><td><code>Map&lt;K, V&gt;</code></td><td><code>HashMap&lt;K, V&gt;</code></td><td><code>&amp;HashMap</code></td></tr>
+      <tr><td><code>Set&lt;T&gt;</code></td><td><code>HashSet&lt;T&gt;</code></td><td></td></tr>
+    </tbody>
+  </table>
+  <p><code>v[i]</code> panics out of bounds · <code>v.get(i)</code> → <code>Option</code> · <code>v.first()</code>,
+    <code>v.last()</code>, <code>v.is_empty()</code>, <code>v.len()</code>, <code>v.push(x)</code>.</p>
+
+  <h2>Structs and impl</h2>
+  <script type="text/x-code" data-lang="rust">
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct NewExpense { pub merchant: String, pub note: Option<String> }  // named fields
+    pub struct Merchant(String);                                              // tuple struct (newtype): .0
+    pub struct InvalidId;                                                     // unit struct
+
+    let n = NewExpense { merchant, note: None };      // shorthand; every field required
+    let m = NewExpense { note: Some(x), ..n };        // update syntax (spread last)
+
+    impl Merchant {
+        pub const MAX_LEN: usize = 200;                         // associated const
+        pub fn new(text: &str) -> Result<Self, InvalidInput> {  // associated fn ("static"): Merchant::new(…)
+            Ok(Self(text.to_owned()))
+        }
+        pub fn as_str(&self) -> &str { &self.0 }                 // method: m.as_str()
+    }
+    // &self = read · &mut self = modify · self = consume
+  </script>
+
+  <h2>Enums</h2>
+  <script type="text/x-code" data-lang="rust">
+    pub enum Category { Travel, Meals, Office, Software, Other }     // ≈ "TRAVEL" | "MEALS" | …
+    pub enum ExpenseError {                                         // ≈ discriminated union
+        RuleViolated(&'static str),                                 // tuple-like
+        SelfDealing { action: Action },                             // struct-like
+    }
+    match error {
+        ExpenseError::RuleViolated(rule) => …,                      // binds the data
+        ExpenseError::SelfDealing { .. } => …,                      // ignores it
+    }                                                               // no `_` → new variants must be handled
+  </script>
+
+  <h2><code>Option</code> and <code>Result</code></h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td><code>T | undefined</code></td><td><code>Option&lt;T&gt;</code>: <code>Some(x)</code> / <code>None</code></td></tr>
+      <tr><td><code>x?.f</code></td><td><code>x.map(|v| v.f)</code></td></tr>
+      <tr><td><code>x ?? d</code></td><td><code>x.unwrap_or(d)</code> / <code>unwrap_or_else(|| …)</code></td></tr>
+      <tr><td><code>cond ? x : undefined</code></td><td><code>x.filter(|v| cond)</code></td></tr>
+      <tr><td><code>if (!x) throw E</code></td><td><code>x.ok_or(E)?</code></td></tr>
+      <tr><td><code>x!</code></td><td><code>x.unwrap()</code> (panics; tests only)</td></tr>
+      <tr><td>T, may throw E</td><td><code>Result&lt;T, E&gt;</code>: <code>Ok(v)</code> / <code>Err(e)</code></td></tr>
+      <tr><td><code>void</code>, may throw</td><td><code>Result&lt;(), E&gt;</code></td></tr>
+      <tr><td>rethrow</td><td><code>?</code></td></tr>
+      <tr><td><code>catch (e) { throw new X(e) }</code></td><td><code>.map_err(|e| X(e))?</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Newtypes and generics</h2>
+  <p><code>pub struct TeamId(Uuid);</code>: distinct type, zero cost, no casts. TS brands are forgeable; newtypes
+    aren't. <code>struct Versioned&lt;T&gt; { value: T, version: Version }</code> ≈ <code>interface Versioned&lt;T&gt;</code>.
+    <code>type X = …;</code> is an alias (same type). Read nested types outside in:
+    <code>Result&lt;Option&lt;Versioned&lt;Expense&gt;&gt;, E&gt;</code> = "may fail; else maybe an expense with
+    version".</p>
+
+  <p>Lessons: <a data-lesson="16"></a> · <a data-lesson="17"></a> · <a data-lesson="18"></a> · <a data-lesson="19"></a> ·
+    <a data-lesson="20"></a> · <a data-lesson="21"></a> · <a data-lesson="22"></a> · <a data-lesson="23"></a> ·
+    <a data-lesson="24"></a> · <a data-lesson="25"></a> · <a data-lesson="26"></a> · <a data-lesson="27"></a></p>
+</main>
+</body>
+</html>
