@@ -12,7 +12,7 @@ The multi-stage `Dockerfile` ([ADR 0012](adr/0012-distroless-runtime-image.md)):
 
 1. Dependencies are cached with cargo-chef on a digest-pinned `rust` image.
 2. The release binary is built with `cargo auditable`, so its dependency list is embedded in the binary and scanners can read it.
-3. The binary is copied into `gcr.io/distroless/cc-debian12:nonroot`, pinned by digest. It runs as uid 65532, with no shell and no package manager.
+3. The binary is copied into `gcr.io/distroless/base-nossl-debian12:nonroot`, pinned by digest, together with `libgcc_s` from the builder (ADR 0012). It runs as uid 65532, with no shell, no package manager and no OpenSSL. The release profile (`Cargo.toml`) uses fat LTO, one codegen unit and stripped symbols: the image is about 42 MB.
 
 On every push, CI builds the image, asserts that it runs as non-root, scans it with Trivy (findings rated high or critical that have a fix fail the build), and keeps a CycloneDX SBOM as a build artifact.
 

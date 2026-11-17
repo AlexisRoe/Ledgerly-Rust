@@ -72,3 +72,14 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 uuid = { version = "1.29.2", features = ["serde", "v4", "v7"] }
 zeroize = "1.9.1"
+
+# The image's build (ADR 0012). One codegen unit and whole-program LTO give the smallest and fastest binary, at
+# the cost of a slower build; `strip` drops the symbol table and debug info, which the image does not need
+# (cargo-auditable's dependency list is a section of its own and stays). `panic` stays `unwind`, the default: the
+# CatchPanic layer (M3.2) turns a handler's panic into a 500 by catching the unwind, and `abort` would end the
+# process instead.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "unwind"

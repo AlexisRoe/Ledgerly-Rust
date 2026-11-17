@@ -519,7 +519,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 **Goal:** a production-grade image and pipeline, the Keycloak swap, and the full parity suite green.
 **Rust you meet:** release profiles (LTO, why `panic = "unwind"` stays: the panic-catching layer from M3.2 depends on it), `cargo auditable`, SBOMs, dependency upgrades.
 
-- [ ] **M11.1 Final image**
+- [x] **M11.1 Final image**
   - Do: harden the Dockerfile. Release profile (`lto`, `codegen-units = 1`, `strip`), all digests pinned, no build secrets in layers, a healthcheck via the orchestrator (distroless has no shell, so Compose uses the management port from outside).
   - Accept: the image is under 50 MB, Trivy shows nothing high or critical with a fix, and the container runs `read_only` with no capabilities.
 

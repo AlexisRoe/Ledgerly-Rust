@@ -93,6 +93,8 @@ services:
       LEDGERLY_STORAGE_S3_ENDPOINT: http://seaweedfs:8333
       LEDGERLY_RECEIPTS_CLAMAV_HOST: clamav
       MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/traces
+    # No `healthcheck:`: the image has no shell and no curl to run one with. `just up` asks the readiness probe on
+    # the management port from outside (scripts/wait-until-ready.sh), as an orchestrator's HTTP probe would.
     # The application needs to write nowhere but /tmp (upload staging), and needs no Linux capability.
     read_only: true
     tmpfs:
