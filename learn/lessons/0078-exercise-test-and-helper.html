@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exercise: add a test, then a helper</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Making changes</p>
+  <h1>Exercise: add a test, then a helper</h1>
+  <p class="lede">A change that adds something instead of changing behaviour: a method
+    <code>ExpenseStatus::is_final</code>, specified by a test that checks it against the workflow table itself.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this exercise</span>
+    <p>You've written a test that won't compile yet, added a <code>const fn</code> with an exhaustive
+      <code>match</code>, and passed <code>clippy -D warnings</code>. That's a change that could really be committed,
+      since it adds no behaviour Java lacks.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>From which status can no action lead anywhere?</summary>
+      <div><code>Reimbursed</code>: every inner arm of <code>target_from</code> is <code>None</code>. (31)</div></details>
+    <details><summary><code>matches!</code> vs an exhaustive <code>match</code>: what's the trade-off?</summary>
+      <div><code>matches!</code> is shorter but quietly returns <code>false</code> for new variants; a full
+        <code>match</code> forces a decision. (33, 77)</div></details>
+  </div>
+
+  <div class="note">
+    <span class="box-label">Setup</span>
+    <p><code>git switch -c practice/is-final</code>. No Docker needed.</p>
+  </div>
+
+  <h2>Step 1: the test, which doesn't compile yet</h2>
+  <p>In the <code>mod tests</code> of <a class="src" data-src="crates/expenses/src/domain/status.rs"></a>, add:</p>
+  <script type="text/x-code" data-lang="rust">
+    use crate::domain::Action;
+
+    #[test]
+    fn a_status_is_final_exactly_when_no_action_leads_anywhere() {
+        for status in ExpenseStatus::ALL {
+            let stuck = Action::ALL.iter().all(|action| action.target_from(status).is_none());
+            assert_eq!(status.is_final(), stuck, "{status}");
+        }
+    }
+  </script>
+  <p>Instead of listing the expected answer per status, the test derives it from the workflow table. If someone ever
+    adds a transition out of <code>Reimbursed</code>, this test tells them <code>is_final</code> is now wrong.
+    <code>cargo test -p ledgerly-expenses a_status_is_final</code> → <code>error[E0599]: no method named
+    `is_final`</code>. That's the "red" of a test-first change in Rust.</p>
+
+  <h2>Step 2: the helper</h2>
+  <p>In <code>impl ExpenseStatus</code>, next to <code>as_str</code>, add a <code>pub const fn is_final(self) -&gt;
+    bool</code> with a doc comment and <code>#[must_use]</code>. Write it as an exhaustive <code>match</code>, not
+    <code>matches!</code>, so a new status forces a decision (lesson 77).</p>
+  <details class="reveal"><summary>Show a solution</summary>
+    <div>
+      <script type="text/x-code" data-lang="rust">
+        /// True if no action can move an expense out of this status.
+        #[must_use]
+        pub const fn is_final(self) -> bool {
+            match self {
+                Self::Reimbursed => true,
+                Self::Draft | Self::Submitted | Self::Approved | Self::Rejected => false,
+            }
+        }
+      </script>
+    </div></details>
+
+  <h2>Step 3: the full loop</h2>
+  <script type="text/x-code" data-lang="bash">
+    $ cargo test -p ledgerly-expenses a_status_is_final        # green
+    $ cargo test -p ledgerly-expenses domain                   # nothing else broke
+    $ cargo clippy -p ledgerly-expenses --all-targets -- -D warnings
+    $ cargo fmt --all --check
+  </script>
+  <p>All four pass with the solution above (checked while writing this course). If clippy complains, read the lint
+    name and its link: every clippy message points to an explanation page.</p>
+
+  <h2>Step 4: would you commit this?</h2>
+  <p>Unlike lessons 76 and 77, this adds no behaviour on the wire, so it doesn't break parity with Java. Nothing uses it
+    yet, though, and Ledgerly's process is "one plan step, one commit". So: a good warm-up for when a real step needs
+    it. Clean up with <code>git restore . &amp;&amp; git switch - &amp;&amp; git branch -D practice/is-final</code>.</p>
+
+  <div class="breaks">
+    <span class="box-label">What this shows</span>
+    <p>The compile error in step 1 is a feature: Rust tests can't call a method that doesn't exist, so "red" starts at
+      compile time. And the test checks a <em>relationship</em> (<code>is_final</code> agrees with
+      <code>target_from</code>) rather than a list of examples. That's the property-testing mindset from lesson 66,
+      applied with a plain <code>for</code> loop over <code>ALL</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why derive <code>stuck</code> from <code>target_from</code> instead of hard-coding
+      <code>Reimbursed</code> in the test?</p>
+    <ul class="options">
+      <li>Hard-coded values aren't allowed inside Rust tests</li>
+      <li data-correct>The test stays right if the workflow changes</li>
+      <li>target_from is faster than writing out a list</li>
+      <li>The compiler can't compare enum values in tests</li>
+    </ul>
+    <div class="explain">The test encodes the definition ("no action leads anywhere"), not today's answer.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why <code>const fn</code>?</p>
+    <ul class="options">
+      <li>Only const functions may return a bool value</li>
+      <li data-correct>It can also be used in constants, like as_str</li>
+      <li>const makes the function private to its module</li>
+      <li>clippy requires every match function to be const</li>
+    </ul>
+    <div class="explain">It's consistent with the other <code>ExpenseStatus</code> methods and costs nothing; a
+      <code>match</code> on a <code>Copy</code> enum is allowed in <code>const fn</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Rust Reference on <a href="https://doc.rust-lang.org/reference/const_eval.html">constant evaluation</a> (skim
+      "const functions"), and <a class="src" data-src="crates/expenses/src/domain/action.rs" data-line="115"></a>, where
+      Ledgerly's own tests check <code>Action</code> against the workflow in the same style.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

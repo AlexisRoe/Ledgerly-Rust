@@ -21,3 +21,9 @@
 - Links to other lessons: `<a data-lesson="12"></a>`, filled in by course.js.
 - Playground exercise modules are `learn/playground/src/exNN_slug.rs` (NN = lesson number), with solutions in `learn/playground/solutions/` and checked by `verify-solutions.sh`.
 - Real Ledgerly snippets must be copied verbatim (an elided part is marked `// …`), with the correct line numbers.
+
+## Status (2026-11-17)
+- All 79 lessons, 15 reference pages and the playground (28 exercises, solutions checked by `verify-solutions.sh`) are built.
+- Lessons were written before the learner took any of them, so they can't adapt to quiz results. Once the learner reports progress or confusion, write learning records and adjust (add remedial lessons rather than rewriting).
+- Author tools: `python3 learn/check-lessons.py` checks manifest, snippet line numbers, quiz option lengths and sources.
+- Exercises 76–78 were simulated against the real code (compiler errors and failing tests quoted are real output from 2026-11-17). Re-run them if the expenses domain changes.

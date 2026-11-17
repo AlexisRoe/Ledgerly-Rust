@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exercise: add an enum variant</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Making changes</p>
+  <h1>Exercise: add an enum variant</h1>
+  <p class="lede">Add a status <code>Archived</code> to <code>ExpenseStatus</code> and let the compiler lead you to
+    every place that must decide what it means. This is the payoff of all those <code>match</code>es without
+    <code>_</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this exercise</span>
+    <p>You've followed compile errors across three files, made a decision at each, found the one place the compiler
+      <em>can't</em> help (the <code>ALL</code> array), and fixed the two tests that pin the old behaviour.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's E0004?</summary>
+      <div>Non-exhaustive patterns: a <code>match</code> doesn't cover every value. (31, 75)</div></details>
+    <details><summary>What does <code>status @ (A | B)</code> do in a pattern?</summary>
+      <div>Matches A or B and binds the matched value to <code>status</code>. (32)</div></details>
+  </div>
+
+  <div class="note">
+    <span class="box-label">Setup</span>
+    <p><code>git switch -c practice/archived</code>. All commands below run without Docker.</p>
+  </div>
+
+  <h2>Step 1: add the variant</h2>
+  <p>In <a class="src" data-src="crates/expenses/src/domain/status.rs" data-line="10"></a>, add <code>Archived,</code>
+    after <code>Reimbursed,</code>. Run <code>cargo check -p ledgerly-expenses</code>. You should get exactly three
+    errors (this is real output, shortened):</p>
+  <script type="text/x-code" data-lang="text" data-label="cargo check -p ledgerly-expenses --message-format=short">
+    crates/expenses/src/domain/action.rs:69:15:  error[E0004]: non-exhaustive patterns: `ExpenseStatus::Archived` not covered
+    crates/expenses/src/domain/expense.rs:426:15: error[E0004]: non-exhaustive patterns: `ExpenseStatus::Archived` not covered
+    crates/expenses/src/domain/status.rs:37:15:  error[E0004]: non-exhaustive patterns: `ExpenseStatus::Archived` not covered
+    error: could not compile `ledgerly-expenses` (lib) due to 3 previous errors
+  </script>
+
+  <h2>Step 2: decide at each one</h2>
+  <table>
+    <thead><tr><th>Error</th><th>Question it forces</th><th>A reasonable answer</th></tr></thead>
+    <tbody>
+      <tr><td><code>status.rs</code> <code>as_str</code></td><td>What's its name in the API and database?</td><td><code>Self::Archived =&gt; "ARCHIVED",</code></td></tr>
+      <tr><td><code>action.rs</code> <code>target_from</code></td><td>Which actions are possible from Archived?</td><td>none: a new outer arm whose inner <code>match</code> lists all six actions <code>=&gt; None</code> (no <code>_</code>!)</td></tr>
+      <tr><td><code>expense.rs</code> <code>require_draft_of</code></td><td>Is an archived expense editable?</td><td>no: add <code>| ExpenseStatus::Archived</code> to the <code>status @ (…)</code> pattern</td></tr>
+    </tbody>
+  </table>
+  <p>Each error is a business question that would have gone unanswered in a codebase with <code>default:</code>
+    branches. Run <code>cargo check -p ledgerly-expenses</code> until it's clean.</p>
+
+  <h2>Step 3: the compiler's blind spot</h2>
+  <p>The library compiles. But look at <code>ExpenseStatus::ALL</code>: it still lists five statuses, and nothing
+    complained, because an array literal isn't a <code>match</code>. So <code>"ARCHIVED".parse::&lt;ExpenseStatus&gt;()</code>
+    would fail (it searches <code>ALL</code>), and the database could never load an archived expense. Fix it: add
+    <code>Self::Archived</code> and change <code>[Self; 5]</code> to <code>[Self; 6]</code> (try leaving the 5 and
+    read the error).</p>
+
+  <h2>Step 4: the tests</h2>
+  <p>Now run <code>cargo test -p ledgerly-expenses domain</code>. It won't compile yet: a fourth E0004 appears in the
+    test helper <code>in_status</code> (around <code>expense.rs:508</code>), which builds an expense in each status by
+    performing transitions. But <strong>no transition leads to Archived</strong>. Build one the way persistence does,
+    with <code>Expense::restore</code>:</p>
+  <details class="reveal"><summary>Show the arm</summary>
+    <div>
+      <script type="text/x-code" data-lang="rust">
+        // No action leads to Archived, so build one the way persistence does.
+        ExpenseStatus::Archived => {
+            e = Expense::restore(StoredExpense {
+                id: e.id(),
+                team_id: e.team_id(),
+                claimant_id: e.claimant_id(),
+                money: e.money(),
+                category: e.category(),
+                incurred_on: e.incurred_on(),
+                merchant: e.merchant().clone(),
+                note: e.note().cloned(),
+                status: ExpenseStatus::Archived,
+                rejections: Vec::new(),
+            });
+        }
+      </script>
+    </div></details>
+  <p>Run the tests again. Exactly two fail, both deliberately pinning the old behaviour:</p>
+  <ul>
+    <li><code>legal_pairs_succeed_and_the_rest_are_invalid_transitions</code>: it counts <code>(6, 24)</code> legal and
+      illegal pairs. With six statuses it's <code>(6, 30)</code>. Update the expectation, since it's a real change.</li>
+    <li><code>names_are_javas_enum_constants_in_javas_order</code>: the list of names. Add <code>"ARCHIVED"</code>. Its
+      name tells you this is where Java parity would break.</li>
+  </ul>
+
+  <div class="breaks">
+    <span class="box-label">What this shows</span>
+    <p>In TypeScript, adding <code>"ARCHIVED"</code> to a string union with <code>default:</code> branches compiles
+      immediately and quietly does <em>something</em> everywhere. Here you had to answer four questions, the type
+      system found three of them, and the tests found the rest. Step 4 also exposed a design gap: a status no action
+      can reach. In the real project that's a conversation for Ledgerly-Java (contract, schema, workflow) before any
+      Rust is written.</p>
+  </div>
+
+  <p>Clean up: <code>git restore . &amp;&amp; git switch - &amp;&amp; git branch -D practice/archived</code>.</p>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why didn't the compiler flag <code>ExpenseStatus::ALL</code>?</p>
+    <ul class="options">
+      <li>Arrays are checked only when the tests run</li>
+      <li data-correct>An array literal isn't a match; nothing's checked</li>
+      <li>const items are skipped by the type checker</li>
+      <li>It did, but only as a warning</li>
+    </ul>
+    <div class="explain">Only <code>match</code> (and patterns) are checked for completeness. That's why the
+      <code>names_…</code> test exists.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What would a <code>_ =&gt; None</code> arm in <code>target_from</code> have changed?</p>
+    <ul class="options">
+      <li>Nothing; the behaviour would be exactly the same</li>
+      <li data-correct>One fewer error, and Archived silently gets None</li>
+      <li>A compile error, since _ isn't allowed there</li>
+      <li>Archived would accept every action without any checks</li>
+    </ul>
+    <div class="explain">Here <code>None</code> happens to be right, but nobody would have been asked. That's the
+      trade-off from lesson 31.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">The workflow test's <code>(6, 24)</code> becomes <code>(6, 30)</code>. Is updating it "weakening" a test?</p>
+    <ul class="options">
+      <li>Yes, a test's expected values must never change</li>
+      <li data-correct>No, the behaviour changed on purpose; it's recorded</li>
+      <li>Yes, the test should be deleted and rewritten</li>
+      <li>No, because unit tests needn't be accurate anyway</li>
+    </ul>
+    <div class="explain">Updating an expectation to match an intended change is fine. Weakening means making a test
+      accept behaviour it should reject.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch06-02-match.html">6.2</a> "Matches Are Exhaustive", now
+      with a real example behind it. And the M0 entry of <code>docs/learning-log.md</code>, which describes exactly this
+      design.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
