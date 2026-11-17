@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # `just parity [url]`: runs the parity suite (crates/parity-tests/src/bin/parity.rs) and, however it ends
-# (success, failure or Ctrl-C), removes every container it created, with its anonymous volumes. Containers
+# (success, failure or Ctrl-C), removes every container it created, with its anonymous volumes. After a
+# successful run against its own app, the Compose data is flushed (`just flush`), so that every suite starts from
+# a clean slate; a failed run keeps its data for a look. Containers
 # that existed before the run, such as a stopped or running dev environment, are left as they were: running if
 # they ran, stopped if they were stopped.
 set -euo pipefail
@@ -32,6 +34,10 @@ cleanup() {
   if [ -n "$started" ]; then
     echo "parity: stopping the containers this run started" >&2
     echo "$started" | xargs docker stop >/dev/null || true
+  fi
+  # A run that passed leaves no data behind for the next one. Not with a URL: that deployment's data is not ours.
+  if [ "$status" -eq 0 ] && [ -z "$url" ]; then
+    scripts/flush.sh || true
   fi
   # With nothing of the project left, also the network compose created.
   if [ -z "$(containers)" ]; then

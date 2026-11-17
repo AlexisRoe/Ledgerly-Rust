@@ -121,6 +121,10 @@ up: image
     docker compose --profile app up -d postgres seaweedfs clamav lgtm app
     scripts/wait-until-ready.sh http://127.0.0.1:8081/actuator/health/readiness
 
+# Empty the Compose database and object store (fresh migrated schema); `just parity` does it after a passing run.
+flush:
+    scripts/flush.sh
+
 # Containers left by tests (integration-test Postgres, parity app containers) are removed completely.
 # Stop the dev environment, the app included; its data stays for the next `just up` or `just deps`.
 down: remove-test-containers

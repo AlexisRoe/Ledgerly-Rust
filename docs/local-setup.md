@@ -60,6 +60,7 @@ just up        # build the image, start the dependencies, run Flyway, start the 
 | Check the image as CI does: non-root, Trivy, SBOM | `just image && just image-check && just sbom` (Trivy runs in Docker) |
 | Stop everything, the app included, and keep the data | `just down` (or `just stop`) |
 | Remove every container and all data | `just reset` |
+| Empty the database and object store, keep the containers | `just flush` (`just parity` does this after a passing run) |
 | Remove a left-over integration-test Postgres | `just test-db-down` (normally not needed) |
 
 `just verify` runs, in order:
