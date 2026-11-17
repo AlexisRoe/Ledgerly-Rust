@@ -328,6 +328,9 @@ pub(crate) fn multipart(path: &str, part: &str, name: &str, content: &[u8]) -> R
 #[tokio::test]
 async fn an_upload_is_stored_under_a_random_key_and_listed_as_pending() {
     let world = World::new().await;
+    // The outbox delivers the upload to the scanner as soon as it commits; a scanner that cannot answer keeps
+    // the receipt pending for the listing below, however fast the delivery is.
+    world.scanner.set(Behaviour::Unavailable);
     let expense = world.expense("DRAFT").await;
 
     let reply = world.upload(expense, world.claimant, "lunch receipt.pdf", PDF).await;

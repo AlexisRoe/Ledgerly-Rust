@@ -1912,7 +1912,6 @@ dependencies = [
  "http-body-util",
  "idna",
  "ledgerly-shared",
- "metrics",
  "multer",
  "opentelemetry",
  "proptest",

@@ -15,7 +15,6 @@ workspace = true
 testing = []
 
 [dependencies]
-metrics.workspace = true
 opentelemetry.workspace = true
 aws-sdk-s3.workspace = true
 aws-smithy-http-client.workspace = true
