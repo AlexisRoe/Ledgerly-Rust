@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Startup: from main to a listening server</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Reading Ledgerly end to end</p>
+  <h1>Startup: from <code>main</code> to a listening server</h1>
+  <p class="lede">Lesson 1 showed you <code>main</code> and asked you not to read every token. Now read all of it,
+    plus <code>run</code>, and you'll know the life of the process from <code>docker run</code> to SIGTERM.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can list the startup steps in order, say what makes each one fail and how that failure is reported, and
+      explain graceful shutdown.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why isn't <code>main</code> <code>async</code>?</summary>
+      <div>Some setup (telemetry's blocking client) must happen before the runtime exists. (62)</div></details>
+    <details><summary>What do <code>tokio::join!</code> and <code>select!</code> do in <code>serve</code>?</summary>
+      <div><code>join!</code> runs both listeners and the shutdown trigger to completion; <code>select!</code> races a
+        server against its drain deadline. (63)</div></details>
+  </div>
+
+  <h2>Part 1: synchronous setup in <code>main</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/app/src/main.rs" data-line="12">
+    fn main() -> ExitCode {
+        let config = match Config::from_environment(&ProcessEnvironment) {
+            Ok(config) => config,
+            Err(error) => return failed_to_start(&error),
+        };
+        if let Err(error) = logging::init(config.profiles) {
+            return failed_to_start(&error);
+        }
+  </script>
+  <ol>
+    <li><strong>Config</strong> from environment variables, with Java's names (<code>SPRING_DATASOURCE_URL</code>, …).
+      <code>&amp;ProcessEnvironment</code> is a <code>&amp;dyn Environment</code> [49, 53]. All problems are
+      collected and reported at once, and secrets are already <code>SecretString</code>s [71].</li>
+    <li><strong>Logging</strong>: JSON lines in Spring's ECS format [71]. <code>if let Err</code> [33].</li>
+    <li><strong>Panic hook</strong>: logs the panic's location, not its message [57].</li>
+    <li><strong>Telemetry</strong> (OpenTelemetry exporter), before the runtime.</li>
+    <li><strong>Runtime</strong>: <code>tokio::runtime::Builder::new_multi_thread()</code>, then
+      <code>block_on(run(…))</code> [62].</li>
+  </ol>
+  <p>Every failure goes through <code>failed_to_start</code>, which prints Spring Boot's "APPLICATION FAILED TO
+    START" banner to stderr and returns <code>ExitCode::FAILURE</code>. There are no panics and no
+    <code>process::exit</code> deep in the code [1, 25].</p>
+
+  <h2>Part 2: async startup in <code>run</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/app/src/main.rs" data-line="46">
+    async fn run(config: Config, telemetry: Telemetry) -> Result<(), StartupError> {
+        let stop = stop_signal()?;
+        let pool = database::connect(&config.database).await?;
+        // Before the ports open: a schema this build was not made for is never served (ADR 0006).
+        database::verify(&pool).await?;
+        // Java's `DevDataSeeder` (`local` without `test`): an empty database gets the demo team.
+        seed::demo_data(config.profiles, &pool, chrono::Utc::now()).await?;
+        let app = App::bind(config, telemetry, pool.clone()).await?;
+        app.serve(stop).await?;
+        // Closed after the last request has finished.
+        pool.close().await;
+        Ok(())
+    }
+  </script>
+  <ol start="6">
+    <li><code>stop_signal()</code>: a lazy future that completes on SIGTERM or Ctrl-C [63].</li>
+    <li><code>database::connect</code>: the sqlx pool [69].</li>
+    <li><code>database::verify</code>: compares the database's Flyway history with the migrations embedded by
+      <code>build.rs</code> [14]. A schema this build doesn't know means refusing to start.</li>
+    <li><code>seed::demo_data</code>: in the <code>local</code> profile, an empty database gets a demo team.</li>
+    <li><code>App::bind</code>: builds every module (the wiring of section 13), and opens the API and management
+      ports.</li>
+    <li><code>app.serve(stop)</code>: serves until the stop signal, drains running requests for up to 30 s, stops the
+      management port last, and aborts background tasks [63, 64].</li>
+    <li><code>pool.close()</code>, then back in <code>main</code>: <code>drop(runtime)</code> and
+      <code>telemetry.shutdown()</code> [36].</li>
+  </ol>
+  <p>Each <code>?</code> converts its error into <code>StartupError</code> through <code>#[from]</code> variants
+    [55, 56]: <code>Io</code>, <code>Database</code>, <code>Schema</code>, <code>Identity</code>, <code>Seed</code>,
+    <code>RateLimit</code>. <code>main</code> then prints it.</p>
+
+  <div class="breaks">
+    <span class="box-label">Compared with a Node service</span>
+    <p>A Node <code>index.ts</code> often does the same steps with top-level <code>await</code> and a
+      <code>process.on("SIGTERM")</code> handler. The Rust version is longer but explicit about two things Node leaves
+      implicit: <em>when</em> the runtime exists, and <em>what order</em> things shut down in (stop accepting → drain →
+      stop management → close the pool → stop the runtime).</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it (needs Docker)</span>
+    <ol>
+      <li><code>just deps</code>, then <code>just run</code>. Watch the "Started Ledgerly" log line with
+        <code>apiPort</code> and <code>managementPort</code>.</li>
+      <li>Press <kbd>Ctrl</kbd>+<kbd>C</kbd> and read the shutdown log lines. Which step in <code>serve</code> prints
+        "Commencing graceful shutdown"?</li>
+      <li>Run the binary with a bad database URL:
+        <code>SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:1/x just run</code>. Which <code>StartupError</code>
+        variant do you see in the banner?</li>
+    </ol>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">The database schema is newer than this build knows. What happens?</p>
+    <ul class="options">
+      <li>The app starts and logs a warning only</li>
+      <li data-correct>database::verify fails and the app refuses to start</li>
+      <li>The app migrates the database to its version</li>
+      <li>Requests fail one by one with a 500</li>
+    </ul>
+    <div class="explain">The check runs before the ports open (ADR 0006), and Rust never changes the schema.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How does a missing <code>SPRING_DATASOURCE_URL</code> reach the console?</p>
+    <ul class="options">
+      <li>A panic inside the config reader prints it</li>
+      <li data-correct>An Err from Config, printed by failed_to_start later</li>
+      <li>A log line at error level from tracing</li>
+      <li>process.exit is called inside the config reader itself</li>
+    </ul>
+    <div class="explain"><code>Config::from_environment</code> returns <code>Err(ConfigError)</code>, and
+      <code>main</code> matches it and calls <code>failed_to_start</code>. Logging isn't even set up yet.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In what order does shutdown happen?</p>
+    <ul class="options">
+      <li>Pool closes, then API stops, then requests drain</li>
+      <li data-correct>API drains requests, management stops, then pool closes</li>
+      <li>Runtime drops first, then everything stops at once</li>
+      <li>Management stops, then the API, then the pool</li>
+    </ul>
+    <div class="explain"><code>api_then_management</code> stops management after the API; <code>run</code> closes the
+      pool after <code>serve</code> returns; <code>main</code> drops the runtime last.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The M1 entry of <code>docs/learning-log.md</code> ("First axum app") explains the startup and shutdown design,
+      and <a href="../../docs/adr/0006-apply-java-migrations-unchanged-with-flyway.md">ADR 0006</a> explains the schema
+      check.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
