@@ -29,3 +29,4 @@ pub mod ex47_collect;
 pub mod ex49_traits;
 pub mod ex51_conversions;
 pub mod ex52_generics;
+pub mod ex56_thiserror;

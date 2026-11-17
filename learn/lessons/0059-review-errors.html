@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: error handling</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Error handling the Ledgerly way · Review</p>
+  <h1>Review: error handling</h1>
+  <p class="lede">Mixed practice on lessons 55–58 with earlier material, then you trace one refusal end to end without
+    help.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>The trace exercise is the real check: if you can name every type and file along the path, you can debug any
+      wrong HTTP status in Ledgerly.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>Four thiserror attributes and what they do.</summary>
+      <div><code>derive(Error)</code> (Error + Display), <code>#[error("…{field}")]</code> (message),
+        <code>#[error(transparent)]</code> (inner message), <code>#[from]</code> (From impl for <code>?</code>). (56)</div></details>
+    <details><summary>Panic or <code>Result</code>: missing row, invalid input, broken invariant?</summary>
+      <div><code>Result</code>, <code>Result</code>, panic (a bug). (57)</div></details>
+    <details><summary>Which two functions map Ledgerly's expense errors to HTTP?</summary>
+      <div><code>problem::failure</code> (use-case errors) and <code>problem::refusal</code> (domain errors), in
+        <code>crates/expenses/src/web/problem.rs</code>. (58)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">Which line would clippy reject in Ledgerly's production code?</p>
+    <ul class="options" data-fixed>
+      <li><code>let n = text.parse::&lt;u32&gt;().unwrap_or(0);</code></li>
+      <li data-correct><code>let n = text.parse::&lt;u32&gt;().expect("number");</code></li>
+      <li><code>let n = text.parse::&lt;u32&gt;().map_err(|_| Invalid)?;</code></li>
+      <li><code>let n = text.parse::&lt;u32&gt;().ok();</code></li>
+    </ul>
+    <div class="explain"><code>expect</code> panics on <code>Err</code> and is denied (<code>expect_used</code>). The
+      others handle the error.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A <code>?</code> on a <code>Result&lt;_, PersistenceError&gt;</code> compiles inside a function
+      returning <code>Result&lt;_, UseCaseError&gt;</code>. Why?</p>
+    <ul class="options">
+      <li>All error types convert into each other</li>
+      <li data-correct>UseCaseError has a Storage variant marked #[from]</li>
+      <li>? ignores error types, checking only Ok</li>
+      <li>PersistenceError is a type alias for UseCaseError</li>
+    </ul>
+    <div class="explain"><code>#[from]</code> generated the <code>From</code> impl that <code>?</code> uses. (55, 56)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Traits) <code>error.to_string()</code> on an <code>ExpenseError</code>: where does the text come
+      from?</p>
+    <ul class="options">
+      <li>The Debug output that derive generated for it</li>
+      <li data-correct>The Display impl that thiserror generated from #[error]</li>
+      <li>A message table loaded from the OpenAPI contract</li>
+      <li>The variant's name converted to sentence case</li>
+    </ul>
+    <div class="explain"><code>to_string</code> exists for every <code>Display</code> type. thiserror wrote that
+      <code>Display</code>. (50, 56)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Ownership) Why does a refused approval leave the database unchanged?</p>
+    <ul class="options">
+      <li>The handler explicitly calls rollback in a catch block</li>
+      <li data-correct>? returns early and the dropped transaction rolls back</li>
+      <li>Postgres ignores writes from requests that end in 409</li>
+      <li>approve() writes nothing until the very last line</li>
+    </ul>
+    <div class="explain">The transaction is owned by the use case. The early return drops it, and drop rolls back.
+      (Also: the domain checks before it assigns.) (36)</div>
+  </div>
+
+  <h2>Trace a refusal yourself</h2>
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code (10 minutes)</span>
+    <p>A member (role <code>MEMBER</code>) calls <code>POST …/expenses/{id}:approve</code> on a colleague's submitted
+      expense. Without re-reading lesson 58, find and write down:</p>
+    <ol>
+      <li>the line in <code>Expense</code> that refuses, and the exact <code>ExpenseError</code> value it returns;</li>
+      <li>the <code>UseCaseError</code> variant it becomes, and why;</li>
+      <li>the <code>Problem</code> constructor <code>refusal</code> picks, and the HTTP status;</li>
+      <li>the message text the client sees.</li>
+    </ol>
+    <details class="reveal"><summary>Answer</summary>
+      <div><code>require_decider</code> in <code>domain/expense.rs</code>: <code>actor.role().includes(Role::Approver)</code>
+        is false, so <code>Err(Forbidden::RoleTooLow { role: Member, action: Approve }.into())</code>, i.e.
+        <code>ExpenseError::Forbidden(…)</code>. The <code>?</code> in <code>TransitionExpense::execute</code> wraps it as
+        <code>UseCaseError::Refused</code> via <code>#[from]</code>. <code>refusal</code> matches
+        <code>ExpenseError::Forbidden(forbidden)</code> → <code>Problem::forbidden(…)</code> → 403. Message:
+        <code>"Role MEMBER may not APPROVE"</code>. (A member may only see their own expenses, so in practice
+        <code>access::load</code> answers 404 first for a colleague's expense. Both paths are worth knowing.)</div></details>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="../reference/errors.html">error handling cheat sheet</a>. To compare, the Book's whole
+      <a href="https://doc.rust-lang.org/book/ch09-00-error-handling.html">chapter 9</a> in one sitting.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

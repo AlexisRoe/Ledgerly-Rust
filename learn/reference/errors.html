@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: error handling</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Error handling</h1>
+  <p class="lede">Section 8 on one page.</p>
+
+  <h2>Error vs panic</h2>
+  <table>
+    <thead><tr><th></th><th>Expected failure</th><th>Bug</th></tr></thead>
+    <tbody>
+      <tr><td>Rust</td><td><code>Result&lt;T, E&gt;</code> + <code>?</code></td><td>panic (<code>unwrap</code>, <code>expect</code>, <code>panic!</code>, index, overflow)</td></tr>
+      <tr><td>Ledgerly</td><td>everywhere</td><td>denied by clippy outside tests; <code>CatchPanicLayer</code> → 500 as a last resort</td></tr>
+    </tbody>
+  </table>
+  <p>Instead of <code>unwrap</code>: <code>?</code> · <code>ok_or(E)?</code> · <code>unwrap_or(x)</code> ·
+    <code>unwrap_or_default()</code> · <code>unwrap_or_else(|| …)</code> · <code>map_or(d, f)</code> ·
+    <code>.get(i)</code> · <code>checked_*</code>. Exceptions: <code>#[expect(lint, reason = "…")]</code>.</p>
+
+  <h2>Defining an error (thiserror)</h2>
+  <script type="text/x-code" data-lang="rust">
+    #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+    pub enum MoneyError {
+        #[error("Not a valid decimal number")]          // fixed message
+        NotADecimal,
+        #[error("Amount must be positive: {amount}")]   // field in message (its Display)
+        NotPositive { amount: String },
+        #[error("{0}")]                                 // tuple field
+        Rule(&'static str),
+        #[error(transparent)]                           // inner error's message
+        Currency(#[from] CurrencyError),                // From<CurrencyError> for MoneyError
+    }
+  </script>
+
+  <h2>Ledgerly's layers</h2>
+  <table>
+    <thead><tr><th>Layer</th><th>Error</th><th>Into the next layer by</th></tr></thead>
+    <tbody>
+      <tr><td>shared</td><td><code>MoneyError</code>, <code>CurrencyError</code>, <code>InvalidId</code></td><td><code>#[from]</code>, <code>map_err</code></td></tr>
+      <tr><td>domain</td><td><code>ExpenseError</code> (<code>Forbidden</code>, <code>InvalidInput</code> inside)</td><td><code>UseCaseError::Refused(#[from])</code></td></tr>
+      <tr><td>persistence</td><td><code>PersistenceError</code> (<code>Conflict</code>, <code>Corrupt</code>, <code>Database</code>)</td><td><code>UseCaseError::Storage(#[from])</code>; <code>sqlx::Error</code> by a hand-written <code>From</code></td></tr>
+      <tr><td>application</td><td><code>UseCaseError</code></td><td><code>.map_err(|e| problem::failure(&amp;e))?</code></td></tr>
+      <tr><td>web</td><td><code>Problem</code> (status + problem+json)</td><td><code>impl IntoResponse for Problem</code></td></tr>
+    </tbody>
+  </table>
+  <p>Mapping to HTTP: <code>crates/expenses/src/web/problem.rs</code> (<code>failure</code>, <code>refusal</code>) and
+    the <code>ErrorCode</code> table in <code>crates/shared/src/web/problem.rs</code>. Exhaustive matches, no
+    <code>_</code>.</p>
+
+  <h2>Operators and methods</h2>
+  <table>
+    <thead><tr><th>Write</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>x?</code></td><td>unwrap <code>Ok</code>, or <code>return Err(From::from(e))</code></td></tr>
+      <tr><td><code>.map_err(|e| …)</code></td><td>replace or wrap the error</td></tr>
+      <tr><td><code>.ok()</code> / <code>.err()</code></td><td><code>Result</code> → <code>Option</code></td></tr>
+      <tr><td><code>.ok_or(e)</code> / <code>.ok_or_else(|| e)</code></td><td><code>Option</code> → <code>Result</code></td></tr>
+      <tr><td><code>.transpose()</code></td><td><code>Option&lt;Result&gt;</code> ↔ <code>Result&lt;Option&gt;</code></td></tr>
+      <tr><td><code>.is_ok()</code>, <code>.is_err()</code></td><td><code>bool</code></td></tr>
+      <tr><td><code>e.to_string()</code></td><td>the <code>#[error]</code> message</td></tr>
+    </tbody>
+  </table>
+
+  <p>Lessons: <a data-lesson="25"></a> · <a data-lesson="34"></a> · <a data-lesson="55"></a> · <a data-lesson="56"></a> ·
+    <a data-lesson="57"></a> · <a data-lesson="58"></a></p>
+</main>
+</body>
+</html>
