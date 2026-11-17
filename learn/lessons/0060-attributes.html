@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Attributes: #[…] and #![…]</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Macros and attributes</p>
+  <h1>Attributes: <code>#[…]</code> and <code>#![…]</code></h1>
+  <p class="lede">The lines starting with <code>#</code> look like TypeScript decorators, and some behave like them.
+    Most, though, are instructions to the compiler: what to compile, what to generate, what to check.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can sort every attribute you meet in Ledgerly into one of four kinds (generate, compile-conditionally,
+      lint, configure a library) and say what it does.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>#[derive(PartialEq)]</code> do?</summary>
+      <div>Generates an <code>==</code> implementation that compares field by field. (50)</div></details>
+    <details><summary>What does <code>#[cfg(test)] mod tests;</code> do?</summary>
+      <div>Compiles the module only for test builds. (11)</div></details>
+  </div>
+
+  <h2>Outer vs inner</h2>
+  <ul>
+    <li><code>#[attr]</code> (outer) applies to the <strong>next item</strong>: a function, struct, field, module, or
+      <code>mod</code> line.</li>
+    <li><code>#![attr]</code> (inner, with <code>!</code>) applies to the <strong>enclosing item</strong>, usually
+      the whole file/module or crate when it's at the top. Same idea as <code>///</code> vs <code>//!</code>
+      (<a href="https://doc.rust-lang.org/reference/attributes.html">Reference: attributes</a>).</li>
+  </ul>
+
+  <h2>The four kinds in Ledgerly</h2>
+  <table>
+    <thead><tr><th>Kind</th><th>Examples</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Generate code</strong></td><td class="wrap"><code>#[derive(Debug, Clone, thiserror::Error)]</code>, <code>#[tokio::test]</code>, <code>#[tokio::main]</code></td><td>a macro writes implementations or wraps the function</td></tr>
+      <tr><td><strong>Conditional compilation</strong></td><td class="wrap"><code>#[cfg(test)]</code>, <code>#[cfg(any(test, feature = "testing"))]</code></td><td>the item exists only under that condition</td></tr>
+      <tr><td><strong>Lints</strong></td><td class="wrap"><code>#![forbid(unsafe_code)]</code>, <code>#[must_use]</code>, <code>#[expect(clippy::…, reason = "…")]</code>, <code>#![cfg_attr(not(test), deny(…))]</code></td><td>turn checks on, off, or into errors</td></tr>
+      <tr><td><strong>Configure a library</strong></td><td class="wrap"><code>#[serde(rename_all = "camelCase")]</code>, <code>#[serde(transparent)]</code>, <code>#[error("…")]</code>, <code>#[from]</code></td><td>"helper attributes" read by that library's derive</td></tr>
+    </tbody>
+  </table>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: one of each</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/lib.rs" data-line="6">
+      #![forbid(unsafe_code)]
+    </script>
+    <p>At the top of every crate: <code>unsafe</code> doesn't compile here, and nothing below can allow it.</p>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/mod.rs" data-line="3">
+      #![cfg_attr(not(test), deny(clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+    </script>
+    <p><code>cfg_attr(condition, attr)</code> applies <code>attr</code> only when the condition holds: in production
+      builds of the domain module, indexing and unchecked arithmetic are errors. Tests are exempt.</p>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/money/mod.rs" data-line="150">
+      #[expect(
+          clippy::should_implement_trait,
+          reason = "the name is the point: this is the comparison `Ord::cmp` cannot be, because it can fail"
+      )]
+      pub fn cmp(&self, other: &Self) -> Result<Ordering, MoneyError> {
+    </script>
+    <p>Clippy suggests "a method named <code>cmp</code> should be the <code>Ord</code> trait". Ledgerly disagrees on
+      purpose and says why. Unlike <code>#[allow]</code>, <code>#[expect]</code> fails if the lint stops firing, so stale
+      exceptions get cleaned up.</p>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/dto.rs" data-line="154">
+      #[derive(Debug, Clone, Serialize)]
+      #[serde(rename_all = "camelCase")]
+      pub(crate) struct ExpenseResponse {
+    </script>
+    <p>The struct fields are <code>snake_case</code> in Rust, and the JSON keys become <code>camelCase</code>
+      (<code>team_id</code> → <code>teamId</code>). Lesson 68.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS decorators run at <em>runtime</em> and wrap classes or methods. Rust attributes act at <em>compile
+      time</em>: they can remove code entirely (<code>cfg</code>), generate code (<code>derive</code>), or change what
+      the checker accepts (lints). Nothing of an attribute remains at runtime except the code it generated.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What's the difference between <code>#[forbid(x)]</code> on a function and <code>#![forbid(x)]</code>
+      at the top of <code>lib.rs</code>?</p>
+    <ul class="options">
+      <li>None at all; the exclamation mark is optional style</li>
+      <li data-correct>The first covers that function, the second the whole crate</li>
+      <li>The first is a lint, the second a derive macro</li>
+      <li>The first runs at runtime, the second at compile time</li>
+    </ul>
+    <div class="explain">Outer attributes apply to the next item, inner ones to the enclosing item.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why <code>#[expect(lint, reason = …)]</code> instead of <code>#[allow(lint)]</code>?</p>
+    <ul class="options">
+      <li>expect is faster to compile than allow in clippy</li>
+      <li data-correct>It fails once the lint stops, and records why</li>
+      <li>allow is deprecated in the 2024 edition of Rust</li>
+      <li>expect also suppresses the lint inside all the tests</li>
+    </ul>
+    <div class="explain">An exception that's no longer needed becomes a warning (an error in Ledgerly's CI), and the
+      reason is written next to it.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Where does <code>FixedClock</code> exist?</p>
+    <ul class="options">
+      <li>In every build, but it's hidden from the docs</li>
+      <li data-correct>In test builds, or with the testing feature on</li>
+      <li>Only in the ledgerly binary's optimised release build</li>
+      <li>Only in the parity tests, which run against Docker</li>
+    </ul>
+    <div class="explain"><code>#[cfg(any(test, feature = "testing"))]</code>: otherwise the code isn't compiled at
+      all, so it can't reach production.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Reference, <a href="https://doc.rust-lang.org/reference/attributes.html">"Attributes"</a> (the built-in
+      attributes index at the bottom), and
+      <a href="https://doc.rust-lang.org/reference/conditional-compilation.html">"Conditional compilation"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

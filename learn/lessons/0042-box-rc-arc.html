@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shared ownership: Box, Rc, Arc</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and borrowing</p>
+  <h1>Shared ownership: <code>Box</code>, <code>Rc</code>, <code>Arc</code></h1>
+  <p class="lede">"One owner" is the default, not a prison. Smart pointers put a value on the heap, and
+    <code>Arc</code> gives it many owners, which is how every JS object behaves.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can explain why Ledgerly passes <code>Arc&lt;dyn Clock&gt;</code>, <code>Arc&lt;dyn Publisher&gt;</code> and
+      <code>PgPool</code> around and clones them freely, and what <code>Box::new(…)</code> is doing in
+      <code>main</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>&amp;'static str</code> mean?</summary>
+      <div>A borrowed string valid for the whole program, typically a literal. (41)</div></details>
+    <details><summary>Why is <code>pool.clone()</code> cheap?</summary>
+      <div>It copies a handle to a shared, reference-counted pool. (38)</div></details>
+  </div>
+
+  <h2>Three smart pointers</h2>
+  <table>
+    <thead><tr><th>Type</th><th>Owners</th><th>Threads</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td><code>Box&lt;T&gt;</code></td><td>one</td><td>any</td><td>put a value on the heap: values whose size isn't known at compile time (<code>Box&lt;dyn Trait&gt;</code>), recursive types</td></tr>
+      <tr><td><code>Rc&lt;T&gt;</code></td><td>many (reference counted)</td><td>one thread only</td><td>shared data inside single-threaded code; rare in a server</td></tr>
+      <tr><td><code>Arc&lt;T&gt;</code></td><td>many ("atomically" reference counted)</td><td>any</td><td>shared data across threads and tasks: Ledgerly's services</td></tr>
+    </tbody>
+  </table>
+  <p><code>Arc::clone(&amp;x)</code> or <code>x.clone()</code> adds an owner (count + 1), and dropping a clone removes
+    one. When the count hits zero, the value is dropped. It's a tiny, predictable garbage collector for one value.
+    <code>Arc</code> only gives <strong>shared, read-only</strong> access; to change the inside you add a lock,
+    <code>Arc&lt;Mutex&lt;T&gt;&gt;</code> (lesson 64)
+    (<a href="https://doc.rust-lang.org/book/ch15-04-rc.html">Book 15.4</a>,
+    <a href="https://doc.rust-lang.org/std/sync/struct.Arc.html"><code>Arc</code> docs</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: one clock, many users</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/transition_expense.rs" data-line="20">
+      pub(crate) struct TransitionExpense {
+          pool: PgPool,
+          clock: Arc<dyn Clock>,
+          memberships: Arc<dyn MembershipLookup>,
+          receipts: Arc<dyn ReceiptChecks>,
+          events: Arc<dyn Publisher>,
+      }
+    </script>
+    <p>Every use case holds the same clock, the same membership lookup, the same event publisher. Who owns them? All
+      of them together. That's exactly <code>Arc</code>. In TS you'd just pass the object, and the GC would sort out
+      ownership. Here it's written down, and the <code>.clone()</code> calls in <code>ExpensesApi::new</code> are
+      those extra owners being created.</p>
+    <p><code>dyn Clock</code> means "some type implementing the <code>Clock</code> trait": the real
+      <code>SystemClock</code> in production, a <code>FixedClock</code> in tests. Its size isn't known at compile
+      time, so it must sit behind a pointer (<code>Arc</code> or <code>Box</code>). That's lesson 53.</p>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/main.rs" data-line="23">
+      std::panic::set_hook(Box::new(|panic| {
+          let location = panic.location().map(ToString::to_string).unwrap_or_default();
+          tracing::error!(location, "Thread panicked");
+      }));
+    </script>
+    <p>A closure has a compiler-generated type of unknown size. <code>Box::new</code> puts it on the heap so
+      <code>set_hook</code> can store it, with one owner.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In JS, every object is effectively in an <code>Arc</code>: on the heap, shared, freed when unreachable. Rust
+      makes you choose per value, and the default (a plain value with one owner) is the cheapest. One thing
+      <code>Arc</code> can't do that the GC can: collect <em>cycles</em>. Two <code>Arc</code>s pointing at each other
+      never reach zero. Ledgerly's object graph is a tree (app → services → clock/pool), so it never comes up.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why <code>Arc&lt;dyn Clock&gt;</code> and not <code>Rc&lt;dyn Clock&gt;</code> in Ledgerly?</p>
+    <ul class="options">
+      <li>Rc can't hold trait objects such as dyn Clock</li>
+      <li data-correct>Requests run on many threads; Rc is single-threaded</li>
+      <li>Arc is faster than Rc in every single case</li>
+      <li>Rc has been deprecated since the 2024 edition</li>
+    </ul>
+    <div class="explain">Tokio runs handlers on a thread pool. <code>Rc</code>'s counter isn't thread-safe, and the
+      compiler refuses to send it between threads (it's not <code>Send</code>).</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What happens on <code>let c2 = clock.clone();</code> with <code>clock: Arc&lt;dyn Clock&gt;</code>?</p>
+    <ul class="options">
+      <li>A second, independent clock object is created from it</li>
+      <li data-correct>The count goes up; both point to one clock</li>
+      <li>The original clock is moved into c2 and gone</li>
+      <li>The clock is copied onto the stack of c2</li>
+    </ul>
+    <div class="explain">Cloning an <code>Arc</code> clones the pointer, not the value.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You need a shared counter that many requests increment. Which type?</p>
+    <ul class="options" data-fixed>
+      <li><code>Arc&lt;u64&gt;</code></li>
+      <li><code>Box&lt;u64&gt;</code></li>
+      <li data-correct><code>Arc&lt;Mutex&lt;u64&gt;&gt;</code></li>
+      <li><code>Rc&lt;u64&gt;</code></li>
+    </ul>
+    <div class="explain"><code>Arc</code> alone allows only shared, read-only access. Mutation through many owners
+      needs a lock (or an atomic integer type).</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch15-01-box.html">15.1 "Using Box&lt;T&gt; to Point to Data on
+      the Heap"</a> and <a href="https://doc.rust-lang.org/book/ch15-04-rc.html">15.4 "Rc&lt;T&gt;, the Reference
+      Counted Smart Pointer"</a>. <code>Arc</code> is introduced in
+      <a href="https://doc.rust-lang.org/book/ch16-03-shared-state.html">16.3 "Shared-State Concurrency"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

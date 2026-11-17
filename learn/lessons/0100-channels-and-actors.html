@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Channels and the actor pattern</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Concurrency and async internals</p>
+  <h1>Channels and the actor pattern</h1>
+  <p class="lede">Instead of sharing data behind a lock, give it to one task and send that task messages. Tokio has
+    four channel types for the four common shapes of communication.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can pick <code>mpsc</code>, <code>oneshot</code>, <code>watch</code> or <code>broadcast</code> for a job, and
+      write a small actor with a request/reply channel.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>When must you use <code>tokio::sync::Mutex</code> instead of the std one?</summary>
+      <div>When the guard has to live across an <code>.await</code>. (99)</div></details>
+    <details><summary>What happens to the losing branches of <code>tokio::select!</code>?</summary>
+      <div>Their futures are dropped, which cancels them. (63)</div></details>
+  </div>
+
+  <h2>The four channels</h2>
+  <table>
+    <thead><tr><th>Channel</th><th>Shape</th><th>Node analogy</th></tr></thead>
+    <tbody>
+      <tr><td><code>mpsc</code></td><td>many senders → one receiver, a queue; bounded = backpressure</td><td>a job queue, a stream</td></tr>
+      <tr><td><code>oneshot</code></td><td>one value, once</td><td>a <code>Promise</code> you resolve from elsewhere</td></tr>
+      <tr><td><code>watch</code></td><td>one value that changes; receivers see the latest</td><td>an observable "current state"</td></tr>
+      <tr><td><code>broadcast</code></td><td>every receiver gets every message</td><td><code>EventEmitter</code></td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://tokio.rs/tokio/tutorial/channels">Tokio tutorial: channels</a>.) A channel closes when all
+    senders are dropped: <code>recv()</code> then returns <code>None</code>, which is how consumer loops end
+    without any "stop" message.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a watch channel as a shutdown switch</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/server.rs" data-line="13">
+      /// The switch that starts a shutdown. Cloning gives another handle to the same switch.
+      #[derive(Debug, Clone)]
+      pub(crate) struct Shutdown {
+          started: watch::Sender<bool>,
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/server.rs" data-line="35">
+      /// Completes once the shutdown has started, immediately if it already has.
+      pub(crate) async fn wait(&self) {
+          let mut started = self.started.subscribe();
+          // The sender lives in `self`, so it cannot be gone while this future runs; `Err` is unreachable.
+          let _ = started.wait_for(|started| *started).await;
+      }
+    </script>
+    <p>A boolean everybody can wait on. <code>watch</code> fits because late subscribers must see the current value:
+      a request that starts waiting after the shutdown began must return immediately. The app's probe tests use a
+      <code>oneshot</code> the same way, to stop a test server (<a class="src" data-src="crates/app/tests/probes.rs" data-line="56"></a>).</p>
+  </div>
+
+  <h2>The actor pattern</h2>
+  <script type="text/x-code" data-lang="rust">
+    enum Command { Add(u64), Get(oneshot::Sender<u64>) }   // Get carries its reply channel
+
+    async fn counter_actor(mut commands: mpsc::Receiver<Command>) {
+        let mut total = 0;                                  // owned by this task alone: no lock
+        while let Some(command) = commands.recv().await {
+            match command {
+                Command::Add(n) => total += n,
+                Command::Get(reply) => { let _ = reply.send(total); }
+            }
+        }                                                   // all handles dropped → loop ends
+    }
+  </script>
+  <p>Callers hold a cloneable handle around the <code>mpsc::Sender</code>. The state is never shared, so it can
+    never be locked wrongly, and commands are processed in order. It's a good fit for a connection, a rate limiter or
+    a cache with complex updates (<a href="https://ryhl.io/blog/actors-with-tokio/">Alice Ryhl: Actors with Tokio</a>).</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Node's single thread makes "shared state in a closure" safe by default, so actors are rare there. In Rust,
+      choosing between a lock and an actor is a real design decision. Locks are simpler for small, quick updates;
+      actors shine when updates involve awaiting or when ordering matters. Bounded channels add one thing Node
+      streams make you think about too: when the queue is full, <code>send().await</code> waits.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex100_channels.rs</code>: a fan-in over <code>mpsc</code>, a counter actor with a
+      <code>oneshot</code> reply, and a ticker stopped through a <code>watch</code> channel. Run
+      <code>cargo test ex100</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A consumer loops on <code>while let Some(job) = rx.recv().await</code>. When does the loop end?</p>
+    <ul class="options">
+      <li>When the channel's buffer is empty</li>
+      <li data-correct>When every sender has been dropped</li>
+      <li>After a timeout of thirty seconds</li>
+      <li>Never; it needs an explicit break</li>
+    </ul>
+    <div class="explain">An empty queue just waits. A closed channel returns <code>None</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Many tasks need the current feature-flag value, which changes rarely. Which channel?</p>
+    <ul class="options" data-fixed>
+      <li><code>mpsc</code></li>
+      <li><code>oneshot</code></li>
+      <li data-correct><code>watch</code></li>
+      <li><code>broadcast</code></li>
+    </ul>
+    <div class="explain"><code>watch</code> holds one current value; receivers read or await changes.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does an actor's state need no <code>Mutex</code>?</p>
+    <ul class="options">
+      <li>Actors run on a special single-threaded runtime</li>
+      <li data-correct>Only the actor's own task ever touches it</li>
+      <li>The channel copies the state for each message</li>
+      <li>Tokio locks the state automatically for it</li>
+    </ul>
+    <div class="explain">Ownership instead of sharing: other tasks only send messages.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Tokio tutorial's <a href="https://tokio.rs/tokio/tutorial/channels">"Channels"</a> chapter, then
+      <a href="https://ryhl.io/blog/actors-with-tokio/">"Actors with Tokio"</a> by Alice Ryhl, a Tokio maintainer.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

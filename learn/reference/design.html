@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: designing Rust code</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Designing Rust code</h1>
+  <p class="lede">Section 19 on one page.</p>
+
+  <h2>Errors</h2>
+  <table>
+    <tbody>
+      <tr><td>callers <strong>handle</strong></td><td><code>#[derive(thiserror::Error)] enum</code>; one variant per reaction; carry data; <code>#[from]</code> for sources</td></tr>
+      <tr><td>callers <strong>report</strong></td><td><code>anyhow::Result&lt;T&gt;</code>; <code>.context("…")</code> / <code>.with_context(|| …)</code>; print with <code>{:#}</code></td></tr>
+      <tr><td>never</td><td>secrets, SQL, paths in messages users see</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Parse, don't validate</h2>
+  <script type="text/x-code" data-lang="rust">
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
+    #[serde(try_from = "String")]
+    pub struct Email(String);                                  // private field
+    impl Email { pub fn parse(s: &str) -> Result<Self, InvalidEmail> { … }  pub fn as_str(&self) -> &str { &self.0 } }
+    impl TryFrom<String> for Email { type Error = InvalidEmail; fn try_from(s: String) -> … { Email::parse(&s) } }
+  </script>
+  <p>Parse at the edge (request, row, env var); pass typed values inward.</p>
+
+  <h2>Construction</h2>
+  <table>
+    <tbody>
+      <tr><td><code>new(…) -&gt; Self</code> / <code>-&gt; Result&lt;Self, E&gt;</code></td><td>few required inputs</td></tr>
+      <tr><td><code>impl Default</code> + <code>S { x: 1, ..Default::default() }</code></td><td>many fields with sensible defaults (hand-write if 0 isn't sensible)</td></tr>
+      <tr><td>builder: <code>T::builder(req).opt(x).build()?</code></td><td>required + optional parts, validation of the combination; <code>#[must_use]</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Naming and API</h2>
+  <table>
+    <tbody>
+      <tr><td><code>as_</code> / <code>to_</code> / <code>into_</code></td><td>free borrow / costly → owned / consumes self</td></tr>
+      <tr><td>getters</td><td><code>name()</code>, not <code>get_name()</code>; return <code>&amp;str</code>, <code>&amp;[T]</code></td></tr>
+      <tr><td>parameters</td><td><code>&amp;str</code> to read, <code>impl Into&lt;String&gt;</code> to store, <code>impl AsRef&lt;Path&gt;</code> for paths</td></tr>
+      <tr><td>derive</td><td><code>Debug</code> always (redact secrets); <code>Clone, PartialEq, Eq, Hash, Default</code> where meaningful</td></tr>
+      <tr><td><code>#[must_use]</code></td><td>pure getters, builders, results nobody should ignore</td></tr>
+      <tr><td><code>#[non_exhaustive]</code></td><td>public enums/structs of published libraries; not inside one workspace</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Boundaries</h2>
+  <ul>
+    <li>Module: organisation, <code>pub(crate)</code>. Crate: enforced wall, acyclic graph, parallel builds.</li>
+    <li>Features are additive; test helpers behind <code>feature = "testing"</code> in <code>[dev-dependencies]</code>.</li>
+    <li>Published crates: new enum variant, new pub field, removed item = breaking. <code>cargo-semver-checks</code>.</li>
+  </ul>
+
+  <h2>Docs</h2>
+  <p>Summary line · details · <code># Errors</code> · <code># Panics</code> · <code># Examples</code> (run by
+    <code>cargo test</code>) · intra-doc links <code>[`Item`]</code> · <code>cargo doc --open</code>.</p>
+
+  <p>Lessons: <a data-lesson="111"></a> · <a data-lesson="112"></a> · <a data-lesson="113"></a> · <a data-lesson="114"></a> ·
+    <a data-lesson="115"></a> · <a data-lesson="116"></a></p>
+</main>
+</body>
+</html>

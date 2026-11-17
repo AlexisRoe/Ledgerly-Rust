@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Structs that borrow</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and lifetimes in depth</p>
+  <h1>Structs that borrow</h1>
+  <p class="lede">A struct can hold references instead of owned data. Then it carries a lifetime parameter, and it
+    can't outlive what it borrows. It's how parsers, views and "context" structs avoid copying.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can write a struct with a <code>'a</code> parameter, give its methods the right return lifetimes, and
+      decide when a borrowing struct is worth the trouble.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>State elision rule 3.</summary>
+      <div>With <code>&amp;self</code> or <code>&amp;mut self</code>, references in the result get self's
+        lifetime. (80)</div></details>
+    <details><summary>What's the rule for <code>&amp;mut</code> borrows?</summary>
+      <div>One <code>&amp;mut</code> at a time, and no <code>&amp;</code> while it's alive. (39)</div></details>
+  </div>
+
+  <h2>The shape</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      // TS: an object holding references is just an object.
+      interface Header { name: string; value: string }
+
+      function parseHeader(line: string): Header | undefined {
+        const i = line.indexOf(":");
+        if (i < 0) return undefined;
+        return { name: line.slice(0, i), value: line.slice(i + 1).trim() };
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      // Rust: a struct holding references names their lifetime.
+      struct Header<'a> { name: &'a str, value: &'a str }
+
+      fn parse_header(line: &str) -> Option<Header<'_>> {
+          let (name, value) = line.split_once(':')?;
+          Some(Header { name, value: value.trim() })
+      }
+    </script>
+  </div>
+  <p><code>Header&lt;'a&gt;</code> reads "a header borrowing from something that lives for <code>'a</code>".
+    <code>'_</code> is the "elided lifetime" placeholder: "the one you'd infer anyway", here from <code>line</code>
+    (rule 2). The TS version copies two substrings; the Rust version copies nothing, and the compiler makes sure
+    nobody uses a <code>Header</code> after the line is gone.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a borrowed wiring context</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/receipts/src/lib.rs" data-line="34">
+      #[derive(Debug, Clone)]
+      pub struct Modules<'a> {
+          pub pool: &'a PgPool,
+          pub clock: &'a Arc<dyn Clock>,
+          pub events: &'a Arc<dyn Publisher>,
+          /// Who may see an expense and change its receipts.
+          pub expenses: ExpensesFacade,
+      }
+    </script>
+    <p>At startup, the app passes this to the receipts module's constructor: a bundle of things the module needs.
+      It borrows rather than owns because it lives only for the duration of the constructor call; the module
+      clones what it wants to keep. It's TS's "options object", with the borrow checker making sure it isn't
+      stashed away.</p>
+  </div>
+
+  <h2>Methods: whose lifetime does the result get?</h2>
+  <script type="text/x-code" data-lang="rust">
+    struct Words<'a> { rest: &'a str }
+
+    impl<'a> Words<'a> {
+        // Elided, this would be `-> Option<&str>` tied to `&mut self` (rule 3):
+        // each word would keep `self` mutably borrowed, and a second call fails (E0499).
+        fn next_word(&mut self) -> Option<&'a str> { … }   // tied to the TEXT instead
+    }
+  </script>
+  <p>This is the most common surprise with borrowing structs. The struct is only a cursor; the words come from the
+    text it points to. Writing <code>&amp;'a str</code> says so, and then
+    <code>let a = w.next_word(); let b = w.next_word();</code> compiles.</p>
+
+  <h2>When to own instead</h2>
+  <table>
+    <thead><tr><th>Borrow (<code>Struct&lt;'a&gt;</code>)</th><th>Own (<code>String</code>, <code>Vec</code>, <code>Arc</code>)</th></tr></thead>
+    <tbody>
+      <tr><td>short-lived: a parse result, a view, a constructor's arguments</td><td>stored for later: state, caches, anything in a <code>Router</code></td></tr>
+      <tr><td>hot path where copying matters</td><td>sent to another task or thread (lesson 82)</td></tr>
+      <tr><td>the lifetime spreads to everything that holds it</td><td>no lifetime parameters at all</td></tr>
+    </tbody>
+  </table>
+  <p>A common, good default for application code: <strong>own data in long-lived structs, borrow in function
+    parameters</strong>. That's what Ledgerly does almost everywhere; <code>Modules&lt;'a&gt;</code> is the
+    exception because it never outlives startup.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>A struct can't borrow from <em>itself</em>: <code>struct Doc { text: String, first: &amp;str }</code> pointing
+      into its own <code>text</code> doesn't work, because moving the struct would move the text and leave the
+      reference dangling. Store an index range (<code>first: Range&lt;usize&gt;</code>) instead. (Lesson 102 shows
+      how async Rust deals with exactly this problem.)</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex81_borrowing_structs.rs</code>: write <code>parse_header</code> and the
+      <code>Words</code> cursor. Afterwards, change <code>next_word</code>'s return type to
+      <code>Option&lt;&amp;str&gt;</code>, read the error, and change it back. Run <code>cargo test ex81</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What does <code>Header&lt;'_&gt;</code> in a return type mean?</p>
+    <ul class="options">
+      <li>The header holds no references at all</li>
+      <li data-correct>Its lifetime is the one elision would infer</li>
+      <li>The header lives for the whole program</li>
+      <li>The lifetime is chosen at run time</li>
+    </ul>
+    <div class="explain"><code>'_</code> makes the hidden lifetime visible without naming it.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You store a <code>Header&lt;'a&gt;</code> in your app's long-lived state. What's the likely result?</p>
+    <ul class="options">
+      <li>It works, and the line is kept alive automatically</li>
+      <li data-correct>Lifetime errors; store owned Strings in state instead</li>
+      <li>It works, but the header is copied every time</li>
+      <li>A runtime panic once the line is dropped</li>
+    </ul>
+    <div class="explain">Nothing keeps the line alive for you. Long-lived structs should own their data.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does <code>next_word</code> return <code>&amp;'a str</code> rather than <code>&amp;str</code>?</p>
+    <ul class="options">
+      <li>Because &amp;str in a return type is not allowed</li>
+      <li data-correct>So words borrow the text, not the cursor itself</li>
+      <li>So the words are copied out of the text</li>
+      <li>Because methods taking &amp;mut self cannot return references</li>
+    </ul>
+    <div class="explain">Tied to <code>&amp;mut self</code>, every word would block the next call.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html#lifetime-annotations-in-struct-definitions">"Lifetime
+      Annotations in Struct Definitions"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

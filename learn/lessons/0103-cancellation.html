@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cancellation and structured concurrency</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Concurrency and async internals</p>
+  <h1>Cancellation and structured concurrency</h1>
+  <p class="lede">In Rust, cancelling async work is as simple as dropping its future. That's powerful and occasionally
+    surprising: the work stops at whichever <code>.await</code> it was paused on, and code after it never runs.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can predict what a dropped future leaves behind, judge whether a branch in a <code>select!</code> loop is
+      cancel-safe, and manage a group of tasks with <code>JoinSet</code>, <code>abort</code> and <code>timeout</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>pin!</code> let you do in a <code>select!</code> loop?</summary>
+      <div>Poll the same future in every iteration through <code>&amp;mut</code>, without consuming it. (102)</div></details>
+    <details><summary>How does a future get polled again after <code>Pending</code>?</summary>
+      <div>Something calls its waker; the executor then polls it. (101)</div></details>
+  </div>
+
+  <h2>Dropping is cancelling</h2>
+  <p>A future only makes progress while it's polled. Drop it, and it's never polled again: its locals are dropped
+    (RAII cleanup runs), and everything after its current <code>.await</code> simply never happens. Things that cancel:</p>
+  <ul>
+    <li>the losing branches of <code>select!</code>;</li>
+    <li><code>tokio::time::timeout(limit, fut)</code> when the limit passes;</li>
+    <li><code>handle.abort()</code> on a spawned task (it stops at its next <code>.await</code>);</li>
+    <li>axum dropping a handler's future when the client disconnects;</li>
+    <li>dropping a <code>JoinSet</code>, which aborts every task still in it.</li>
+  </ul>
+  <p>JS has no equivalent: a Promise can't be cancelled, so cancellation is opt-in via <code>AbortSignal</code>,
+    checked by the code itself. In Rust it's the default, and you design for it.</p>
+
+  <h2>Cancel safety</h2>
+  <p>A future is <strong>cancel-safe</strong> if dropping it before it completes loses nothing. It matters in
+    <code>select!</code> loops, where a branch is cancelled and recreated every iteration:</p>
+  <script type="text/x-code" data-lang="rust">
+    loop {
+        tokio::select! {
+            Some(job) = jobs.recv() => handle(job).await,   // mpsc recv: cancel-safe, no message lost
+            _ = shutdown.wait() => break,
+        }
+    }
+    // NOT cancel-safe in a select! branch: reading into a buffer with read_exact,
+    // a half-done multi-step write… progress made before the drop is lost.
+  </script>
+  <p>Tokio documents cancel safety for every method that matters
+    (<a href="https://docs.rs/tokio/latest/tokio/macro.select.html#cancellation-safety">select!: cancellation safety</a>).
+    A database transaction is safe by construction: dropped uncommitted, it rolls back.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: cancelling on purpose</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/lib.rs" data-line="410">
+      let (api_result, management_result, ()) = tokio::join!(api_then_management, management, trigger);
+      // Deliveries still running are abandoned; their publications stay open for the next start.
+      dispatcher.abort();
+      metrics_upkeep.abort();
+    </script>
+    <p>After the servers stop, the background tasks are aborted. The comment states the design: an event delivery
+      cut off mid-way isn't lost, because its record in the outbox table stays open and the next start delivers it.
+      Cancellation is safe because the state that matters is in the database, not in the task.</p>
+  </div>
+
+  <h2>Structured concurrency with <code>JoinSet</code></h2>
+  <script type="text/x-code" data-lang="rust">
+    let mut set = JoinSet::new();
+    for id in ids { set.spawn(fetch(id)); }
+    while let Some(result) = set.join_next().await {   // in completion order
+        let receipt = result?;                         // Err(JoinError) if a task panicked or was aborted
+        …
+    }   // set dropped here: anything still running is aborted
+  </script>
+  <p>A <code>JoinSet</code> owns its tasks, so none can outlive the code that started them; it's
+    <code>Promise.all</code>/<code>allSettled</code> with results as they arrive and cleanup built in
+    (<a href="https://docs.rs/tokio/latest/tokio/task/struct.JoinSet.html">JoinSet</a>). Prefer it over loose
+    <code>tokio::spawn</code> calls whose handles nobody keeps.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>A Node request handler keeps running after the client disconnects, unless you check a signal. An axum handler
+      is dropped at its current <code>.await</code>. If a handler does two writes without a transaction, a disconnect
+      between them leaves half the work done. Ledgerly's use cases do their writes inside one transaction, so a
+      cancelled request rolls back cleanly.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex103_cancellation.rs</code>: collect results in finish order with a
+      <code>JoinSet</code>, abort a task and observe that its last line never ran, and wrap work in a
+      <code>timeout</code>. Run <code>cargo test ex103</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A task is aborted while awaiting a 1-second sleep. The next line sets a flag. Is the flag set?</p>
+    <ul class="options">
+      <li>Yes, the task finishes its current step first</li>
+      <li data-correct>No, the task stops at that await for good</li>
+      <li>Yes, but only after the full second has passed</li>
+      <li>It depends on which worker thread runs it</li>
+    </ul>
+    <div class="explain">Abort means: never polled again; the future is dropped at its current await.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What happens to unfinished tasks when a <code>JoinSet</code> is dropped?</p>
+    <ul class="options">
+      <li>They keep running detached in the background</li>
+      <li data-correct>They are aborted together with the set</li>
+      <li>The drop waits until all of them finish</li>
+      <li>The program panics because they were lost</li>
+    </ul>
+    <div class="explain">That's the "structured" part: tasks don't outlive their owner.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why is it safe for Ledgerly to abort the outbox dispatcher mid-delivery?</p>
+    <ul class="options">
+      <li>Because abort always waits until the delivery completes</li>
+      <li data-correct>Open deliveries stay in the database for later</li>
+      <li>Because events are delivered exactly once by Tokio</li>
+      <li>Because the dispatcher never awaits anything at all</li>
+    </ul>
+    <div class="explain">Cancel-safe by design: the durable state lives outside the task.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Tokio tutorial's <a href="https://tokio.rs/tokio/tutorial/select">"Select"</a> chapter (cancellation
+      section) and the docs for <a href="https://docs.rs/tokio/latest/tokio/task/struct.JoinSet.html">JoinSet</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

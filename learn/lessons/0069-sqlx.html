@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>sqlx: SQL checked at compile time</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">The libraries Ledgerly is built on</p>
+  <h1>sqlx: SQL checked at compile time</h1>
+  <p class="lede">No ORM. Ledgerly writes plain SQL, and sqlx's macros check every query against the real schema
+    while compiling: a misspelled column or a wrong parameter type is a compile error.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>query!</code>, <code>query_as!</code> and <code>query_scalar!</code> calls, explain what the
+      <code>.sqlx/</code> folder is for, and follow how a row becomes an <code>Expense</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why is row → <code>Versioned&lt;Expense&gt;</code> a <code>TryFrom</code>?</summary>
+      <div>A stored row might break domain rules (corrupt data), so the conversion can fail. (51)</div></details>
+    <details><summary>What does <code>SQLX_OFFLINE = "true"</code> in <code>.cargo/config.toml</code> do?</summary>
+      <div>Builds check SQL against saved metadata instead of a live database. (6)</div></details>
+  </div>
+
+  <h2>Compared with Node options</h2>
+  <table>
+    <thead><tr><th>Node</th><th>Approach</th><th>sqlx</th></tr></thead>
+    <tbody>
+      <tr><td>Prisma / TypeORM</td><td>schema in code, generated queries</td><td>no: the schema is Java's Flyway migrations, and SQL is hand-written</td></tr>
+      <tr><td>Kysely</td><td>typed query builder</td><td>partly: <code>QueryBuilder</code> for dynamic filters</td></tr>
+      <tr><td>pg + pgtyped / sqlc</td><td>raw SQL, types generated from the database</td><td><strong>yes</strong>, but without a generate step: the macro does it while compiling</td></tr>
+    </tbody>
+  </table>
+
+  <h2>A checked update</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/persistence/mod.rs" data-line="239">
+    let next = expected.next().ok_or(PersistenceError::Conflict { expected })?;
+    let updated = sqlx::query!(
+        "update expenses
+            set amount = $3, currency = $4, category = $5, incurred_on = $6, merchant = $7, note = $8,
+                status = $9, version = $10, updated_at = $11
+          where team_id = $1 and id = $2 and version = $12",
+        expense.team_id().as_uuid(),
+        expense.id().as_uuid(),
+        // … one argument per $n …
+    )
+    .execute(&mut *connection)
+    .await?;
+    if updated.rows_affected() == 0 {
+        return Err(PersistenceError::Conflict { expected });
+    }
+  </script>
+  <ul>
+    <li><strong>At compile time</strong>, <code>query!</code> asks Postgres (or the saved <code>.sqlx/</code> metadata)
+      to prepare the statement. Unknown column, wrong number of <code>$n</code>, or a Rust argument type that doesn't fit
+      the column → compile error.</li>
+    <li><code>where team_id = $1 and id = $2</code>: every read and write is scoped to the team (OWASP API1, a hard
+      rule of the project).</li>
+    <li><code>and version = $12</code> + <code>rows_affected() == 0</code> is <strong>optimistic locking</strong>: if
+      someone else changed the expense since you read it, nothing is updated, and the client gets 412.</li>
+    <li><code>&amp;mut *connection</code> re-borrows the connection so it can be used again afterwards (lesson 39).</li>
+  </ul>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: rows into typed structs</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/persistence/mod.rs" data-line="327">
+      /// One row of `expenses` with its rejections, as [`find`] and [`list`] select it.
+      #[derive(sqlx::FromRow)]
+      struct ExpenseRow {
+          id: Uuid,
+          team_id: Uuid,
+          claimant_id: Uuid,
+          amount: Decimal,
+          currency: String,
+          // …
+          note: Option<String>,
+          // …
+      }
+    </script>
+    <p><code>sqlx::query_as!(ExpenseRow, "select …", team, id)</code> (in <code>find</code>, lesson 25) checks that the
+      selected columns match these fields and types, with nullable columns as <code>Option</code>. The row type is
+      private and deliberately "dumb" (strings, UUIDs). <code>TryFrom&lt;ExpenseRow&gt;</code> then turns it into
+      domain types, validating as it goes. In SQL, <code>as "count!"</code> is sqlx syntax for "trust me, not
+      null".</p>
+  </div>
+
+  <h2>Offline mode: <code>.sqlx/</code></h2>
+  <p>Requiring a running database for every build would be painful (CI, the Docker image build). So the query
+    metadata is saved as JSON files in <code>.sqlx/</code> (66 of them), committed, and used when
+    <code>SQLX_OFFLINE=true</code>. When you add or change a query, run <code>just deps</code> (Postgres) and then
+    <code>just sqlx-prepare</code> to regenerate them, and commit the result. A stale <code>.sqlx</code> fails the build
+    with a clear message (<a href="https://docs.rs/sqlx/latest/sqlx/macro.query.html#offline-mode">sqlx docs: offline
+    mode</a>).</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Most TS stacks find SQL mistakes at runtime, or trust generated types that can drift from the database. sqlx
+      checks against the actual schema, here Ledgerly-Java's migrations, which Rust must never change. The cost:
+      queries must be string literals known at compile time. Dynamic queries (the list endpoint's optional filters)
+      use <code>QueryBuilder</code> and are checked by tests instead.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">You misspell a column, <code>set merhcant = $7</code>. When do you find out?</p>
+    <ul class="options">
+      <li>When the parity suite runs the update endpoint</li>
+      <li data-correct>At compile time, from the query! macro</li>
+      <li>When Postgres rejects the query in production</li>
+      <li>Never; Postgres silently ignores the unknown column</li>
+    </ul>
+    <div class="explain">The macro prepares the statement against the schema while compiling.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>rows_affected() == 0</code> mean after the versioned update?</p>
+    <ul class="options">
+      <li>The database connection dropped in the middle of the update</li>
+      <li data-correct>The version didn't match: someone else changed it first</li>
+      <li>The new values were identical to the stored ones</li>
+      <li>The expense is in another team, which is allowed</li>
+    </ul>
+    <div class="explain">Optimistic locking: no row matched <code>version = $12</code> (or the expense is gone), so it's
+      a <code>Conflict</code> → 412.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You changed a query. What else must be committed?</p>
+    <ul class="options">
+      <li>A new Flyway migration that changes the schema</li>
+      <li data-correct>The regenerated .sqlx metadata from just sqlx-prepare</li>
+      <li>An updated Cargo.lock with a new sqlx version</li>
+      <li>Nothing; queries are only re-checked at runtime anyway</li>
+    </ul>
+    <div class="explain">Offline builds read <code>.sqlx/</code>. And Rust never changes the schema; that happens in
+      Ledgerly-Java.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The sqlx docs for <a href="https://docs.rs/sqlx/latest/sqlx/macro.query.html"><code>query!</code></a> (including
+      "Offline Mode" and "Type Overrides") and
+      <a href="https://docs.rs/sqlx/latest/sqlx/macro.query_as.html"><code>query_as!</code></a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

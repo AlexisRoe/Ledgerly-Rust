@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>match: a switch that checks everything</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Control flow</p>
+  <h1><code>match</code>: a <code>switch</code> that checks everything</h1>
+  <p class="lede">No fall-through, no forgotten <code>break</code>, and a compile error when a case is missing.
+    This is the feature Ledgerly leans on hardest.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>Action::target_from</code>, Ledgerly's whole approval workflow in one nested
+      <code>match</code>, and write a <code>match</code> with <code>|</code>, ranges, guards and <code>_</code>,
+      knowing when <code>_</code> is a bad idea.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>How do you get the data out of <code>ExpenseError::Forbidden(…)</code>?</summary>
+      <div>A <code>match</code> arm with a binding: <code>ExpenseError::Forbidden(forbidden) =&gt; …</code>. (23)</div></details>
+    <details><summary>What's <code>1..=5</code>?</summary>
+      <div>An inclusive range, 1 to 5. (30)</div></details>
+  </div>
+
+  <h2>From <code>switch</code> + <code>never</code> to <code>match</code></h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      function asStr(role: Role): string {
+        switch (role) {
+          case "MEMBER": return "MEMBER";
+          case "APPROVER": return "APPROVER";
+          case "OWNER": return "OWNER";
+          default: {
+            const unreachable: never = role; // the exhaustiveness trick
+            throw new Error(unreachable);
+          }
+        }
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/role.rs" data-line="41">
+      pub const fn as_str(self) -> &'static str {
+          match self {
+              Self::Member => "MEMBER",
+              Self::Approver => "APPROVER",
+              Self::Owner => "OWNER",
+          }
+      }
+    </script>
+  </div>
+  <ul>
+    <li><code>match value { pattern =&gt; expression, … }</code>. Arms are tried top to bottom, and the first match
+      wins. There's no fall-through and no <code>break</code>.</li>
+    <li><strong>Exhaustive by default</strong>: if any possible value isn't covered, it's error E0004 and the
+      compiler lists what's missing. No <code>never</code> trick needed.</li>
+    <li><code>match</code> is an expression: its value is the chosen arm's value (here, the return value).</li>
+  </ul>
+
+  <h2>Pattern tools</h2>
+  <table>
+    <thead><tr><th>Pattern</th><th>Matches</th><th>TS</th></tr></thead>
+    <tbody>
+      <tr><td><code>A | B</code></td><td>either</td><td>stacked <code>case A: case B:</code></td></tr>
+      <tr><td><code>1..=9</code>, <code>'a'..='z'</code></td><td>a range</td><td>(none)</td></tr>
+      <tr><td><code>x if x &gt; 100</code></td><td>with an extra condition (a <strong>guard</strong>)</td><td><code>case</code> + <code>if</code></td></tr>
+      <tr><td><code>Some(n)</code>, <code>Err(e)</code></td><td>a variant, binding its data</td><td>narrowing</td></tr>
+      <tr><td><code>_</code></td><td>anything (wildcard)</td><td><code>default:</code></td></tr>
+      <tr><td><code>name @ pattern</code></td><td>the pattern, and binds the whole value</td><td>(none)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: the entire workflow</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/action.rs" data-line="68">
+      pub const fn target_from(self, from: ExpenseStatus) -> Option<ExpenseStatus> {
+          match from {
+              ExpenseStatus::Draft => match self {
+                  Self::Submit => Some(ExpenseStatus::Submitted),
+                  Self::Withdraw | Self::Approve | Self::Reject | Self::Reopen | Self::Reimburse => None,
+              },
+              ExpenseStatus::Submitted => match self {
+                  Self::Withdraw => Some(ExpenseStatus::Draft),
+                  Self::Approve => Some(ExpenseStatus::Approved),
+                  Self::Reject => Some(ExpenseStatus::Rejected),
+                  Self::Submit | Self::Reopen | Self::Reimburse => None,
+              },
+              // … Approved, Rejected, Reimbursed …
+          }
+      }
+    </script>
+    <p>"From this status, where does this action lead?" for all 30 pairs. Notice the impossible actions are
+      <em>listed by name</em> with <code>|</code> instead of a <code>_ =&gt; None</code>. That's on purpose (the
+      doc comment says so): add a seventh <code>Action</code> and every inner <code>match</code> fails to compile
+      until someone decides what it does from each status. A <code>_</code> would silently answer
+      <code>None</code>.</p>
+  </div>
+
+  <h3>Guards and <code>_</code> in the wild</h3>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/update_expense.rs" data-line="78">
+    let note = match command.note {
+        None => current.note().map(|note| note.as_str().to_owned()),
+        Some(note) if is_blank(&note) => None,
+        Some(note) => Some(note),
+    };
+  </script>
+  <p>A PATCH's note: not sent → keep the current one. Sent but blank → remove it. Otherwise → use it. The guard
+    <code>if is_blank(&amp;note)</code> only applies to its own arm, and order matters. And here <code>_</code> is
+    fine, because the value is a number, not an enum you'd extend:</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/id.rs" data-line="47">
+    && bytes.iter().enumerate().all(|(index, byte)| match index {
+        8 | 13 | 18 | 23 => *byte == b'-',
+        _ => byte.is_ascii_hexdigit(),
+    });
+  </script>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p><code>switch</code> compares values with <code>===</code>. <code>match</code> compares <strong>shapes</strong>:
+      it can look inside enums, tuples and structs, bind parts of them, and check ranges, all at once. The next
+      lesson shows destructuring. The trade-off to remember: <code>_</code> buys convenience now at the price of the
+      compiler's help later.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex31_match.rs</code>: write a small workflow table like
+      <code>target_from</code>, an HTTP status classifier with ranges, and a guard. Then add a variant and watch the
+      compiler find every place to update. Run <code>cargo test ex31</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Someone adds <code>Action::Archive</code>. What happens to <code>target_from</code>?</p>
+    <ul class="options">
+      <li>It returns None for Archive from every status</li>
+      <li>It panics at runtime when Archive first arrives</li>
+      <li data-correct>Every inner match fails to compile for Archive</li>
+      <li>It routes Archive to each block's first arm</li>
+    </ul>
+    <div class="explain">No arm covers <code>Archive</code> and there's no <code>_</code>, so each of the five inner
+      matches is non-exhaustive (E0004).</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>Some(note) if is_blank(&amp;note) =&gt; None</code> match?</p>
+    <ul class="options">
+      <li>Any Some value; the if is a comment</li>
+      <li data-correct>A Some whose note is blank, nothing else</li>
+      <li>Every blank string, whether it's Some or None</li>
+      <li>A None value that was blank before parsing</li>
+    </ul>
+    <div class="explain">The pattern must match <em>and</em> the guard must be true. A non-blank
+      <code>Some</code> falls through to the next arm.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which arm order is a mistake?</p>
+    <script type="text/x-code" data-lang="rust">
+      match code {
+          _ => "other",
+          200..=299 => "success",
+          404 => "not found",
+      }
+    </script>
+    <ul class="options">
+      <li>There is none; Rust reorders arms by specificity</li>
+      <li data-correct>The wildcard first makes the later arms unreachable</li>
+      <li>Ranges must always come after the single values</li>
+      <li>The 404 arm needs a guard, not a value</li>
+    </ul>
+    <div class="explain">Arms are tried top to bottom. <code>_</code> matches everything, so the compiler warns
+      "unreachable pattern" for the other two.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch06-02-match.html">6.2 "The match Control Flow
+      Construct"</a> (including "Matches Are Exhaustive" and "Catch-All Patterns and the _ Placeholder").</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

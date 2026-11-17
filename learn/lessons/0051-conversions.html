@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conversions: From, Into, TryFrom, FromStr, Display</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits and generics</p>
+  <h1>Conversions: <code>From</code>, <code>Into</code>, <code>TryFrom</code>, <code>FromStr</code>, <code>Display</code></h1>
+  <p class="lede">Instead of ad-hoc <code>toResponse()</code>, <code>parseX()</code> and <code>toString()</code>
+    helpers, Rust has a handful of standard traits for converting between types. Implement one, and
+    <code>.into()</code>, <code>.parse()</code>, <code>?</code> and <code>format!</code> start working.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can find where a <code>.into()</code>, <code>.parse()</code> or <code>try_from</code> in Ledgerly gets its
+      behaviour, and choose the right trait when you write a conversion yourself.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Which trait gives <code>{}</code> formatting, and which <code>{:?}</code>?</summary>
+      <div><code>Display</code> (hand-written) and <code>Debug</code> (usually derived). (50)</div></details>
+    <details><summary>Can you implement a trait for a type from another crate?</summary>
+      <div>Yes, if the trait is yours (orphan rule: trait or type must be local). (49)</div></details>
+  </div>
+
+  <h2>The map</h2>
+  <table>
+    <thead><tr><th>Trait</th><th>Direction</th><th>Can fail?</th><th>You call</th></tr></thead>
+    <tbody>
+      <tr><td><code>From&lt;A&gt; for B</code></td><td>A → B</td><td>no</td><td><code>B::from(a)</code> or <code>a.into()</code></td></tr>
+      <tr><td><code>Into&lt;B&gt;</code></td><td>A → B</td><td>no</td><td>free when <code>From</code> exists; used in bounds (<code>impl Into&lt;String&gt;</code>)</td></tr>
+      <tr><td><code>TryFrom&lt;A&gt; for B</code></td><td>A → B</td><td>yes, <code>type Error</code></td><td><code>B::try_from(a)?</code> or <code>a.try_into()?</code></td></tr>
+      <tr><td><code>FromStr for B</code></td><td>&amp;str → B</td><td>yes, <code>type Err</code></td><td><code>"…".parse::&lt;B&gt;()?</code></td></tr>
+      <tr><td><code>Display for B</code></td><td>B → text</td><td>no</td><td><code>format!("{b}")</code>, <code>b.to_string()</code></td></tr>
+    </tbody>
+  </table>
+  <p>Implement <code>From</code>, and <code>Into</code> comes for free. Implement <code>Display</code>, and
+    <code>to_string()</code> comes for free (<a href="https://doc.rust-lang.org/rust-by-example/conversion.html">Rust by
+    Example: conversion</a>). The <code>type Error = …</code> lines are <strong>associated types</strong>: each
+    implementation names its own error type.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: domain → API response (<code>From</code>)</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/dto.rs" data-line="175">
+      impl From<&Versioned<Expense>> for ExpenseResponse {
+          fn from(versioned: &Versioned<Expense>) -> Self {
+              let expense = &versioned.value;
+              Self {
+                  id: expense.id().to_string(),
+                  // …
+                  status: expense.status().as_str(),
+                  // …
+              }
+          }
+      }
+    </script>
+    <p>The JSON shape lives in the web layer, and the domain knows nothing about it. Callers write
+      <code>ExpenseResponse::from(&amp;found)</code>, or pass the function itself:
+      <code>.map(ExpenseResponse::from)</code>. Note <code>expense.id().to_string()</code>: that's the id's
+      <code>Display</code>.</p>
+  </div>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: database row → domain (<code>TryFrom</code>)</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/persistence/mod.rs" data-line="345">
+      impl TryFrom<ExpenseRow> for Versioned<Expense> {
+          type Error = PersistenceError;
+
+          /// Every column goes through the same constructor the domain uses, so a row the domain could not have
+          /// written is reported, not loaded.
+          fn try_from(row: ExpenseRow) -> Result<Self, Self::Error> {
+              // …
+              let currency = Currency::from_code(&row.currency).map_err(|_| corrupt("currency"))?;
+              let money = Money::new(row.amount, currency).map_err(|_| corrupt("amount"))?;
+    </script>
+    <p>A row from Postgres is untrusted (someone could edit the database by hand), so turning it into an
+      <code>Expense</code> can fail with <code>PersistenceError::Corrupt</code>. That's what <code>row.map(Versioned::try_from).transpose()</code>
+      in <code>find</code> calls (lesson 47).</p>
+  </div>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: text → enum (<code>FromStr</code>)</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/role.rs" data-line="79">
+      impl FromStr for Role {
+          type Err = UnknownRole;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              Self::ALL
+                  .into_iter()
+                  .find(|role| role.as_str() == s)
+                  .ok_or_else(|| UnknownRole(s.to_owned()))
+          }
+      }
+    </script>
+    <p>Now <code>"OWNER".parse::&lt;Role&gt;()</code> works anywhere, and so does the serde deserializer that calls
+      it.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS has no standard conversion protocol (only <code>toString</code>, <code>valueOf</code> and
+      <code>toJSON</code>), so every codebase invents names. In Rust the names are fixed, which is why you can find
+      every conversion with "Go to implementations" in VS Code. One more payoff: <code>?</code> calls
+      <code>From::from</code> on errors automatically. That's how a <code>CurrencyError</code> becomes a
+      <code>MoneyError</code> (section 8).</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex51_conversions.rs</code>: implement <code>Display</code>, <code>FromStr</code>,
+      <code>From</code> and <code>TryFrom</code> for a small <code>Currency</code> type. Run <code>cargo test ex51</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">You implemented <code>From&lt;TeamRow&gt; for Team</code>. Which call now also works?</p>
+    <ul class="options" data-fixed>
+      <li><code>let row: TeamRow = team.into();</code></li>
+      <li data-correct><code>let team: Team = row.into();</code></li>
+      <li><code>let team = row.parse::&lt;Team&gt;();</code></li>
+      <li><code>let team = Team::try_into(row);</code></li>
+    </ul>
+    <div class="explain"><code>Into</code> is implemented automatically in the same direction as <code>From</code>.
+      The reverse needs its own <code>From</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why is row → <code>Versioned&lt;Expense&gt;</code> a <code>TryFrom</code> and not a <code>From</code>?</p>
+    <ul class="options">
+      <li>From can never be implemented for generic types</li>
+      <li data-correct>A stored row may break rules and fail</li>
+      <li>TryFrom is faster for database rows than From</li>
+      <li>From only converts between the numeric types here</li>
+    </ul>
+    <div class="explain"><code>From</code> promises it can't fail. A corrupt currency or amount in the database must
+      become an error, not a panic.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>"MEMBER".parse::&lt;Role&gt;()</code> call?</p>
+    <ul class="options">
+      <li>Role's Display implementation, run in reverse order</li>
+      <li data-correct>The from_str method of Role's FromStr implementation</li>
+      <li>A serde deserializer configured for the Role</li>
+      <li>The Debug implementation derived for the Role</li>
+    </ul>
+    <div class="explain"><code>str::parse::&lt;T&gt;</code> works for any <code>T: FromStr</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>Rust by Example, <a href="https://doc.rust-lang.org/rust-by-example/conversion.html">"Conversion"</a> (three
+      short pages: From/Into, TryFrom/TryInto, to and from strings).</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

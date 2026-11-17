@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>? and From: errors that convert themselves</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Error handling the Ledgerly way</p>
+  <h1><code>?</code> and <code>From</code>: errors that convert themselves</h1>
+  <p class="lede">Each layer of Ledgerly has its own error type. <code>?</code> moves errors up through the layers,
+    and a <code>From</code> implementation at each step translates them: domain error → use-case error → HTTP
+    problem.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>Given a <code>?</code> in Ledgerly, you can say which error type goes in, which comes out, and which
+      <code>From</code> implementation connects them.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Spell out what <code>x?</code> does on <code>Err(e)</code>.</summary>
+      <div><code>return Err(From::from(e))</code>. (34)</div></details>
+    <details><summary>What does implementing <code>From&lt;A&gt; for B</code> give you?</summary>
+      <div><code>B::from(a)</code>, <code>a.into()</code>, and automatic conversion by <code>?</code>. (51)</div></details>
+  </div>
+
+  <h2>One error type per layer</h2>
+  <table>
+    <thead><tr><th>Layer</th><th>Error type</th><th>Variants (examples)</th></tr></thead>
+    <tbody>
+      <tr><td>shared</td><td><code>MoneyError</code>, <code>CurrencyError</code></td><td><code>NotPositive</code>, <code>TooManyDecimals</code></td></tr>
+      <tr><td>domain</td><td><code>ExpenseError</code></td><td><code>InvalidTransition</code>, <code>SelfDealing</code>, <code>Forbidden(…)</code>, <code>InvalidInput(…)</code></td></tr>
+      <tr><td>persistence</td><td><code>PersistenceError</code></td><td><code>Conflict</code>, <code>Corrupt</code>, <code>Database(sqlx::Error)</code></td></tr>
+      <tr><td>application</td><td><code>UseCaseError</code></td><td><code>NotFound</code>, <code>Stale</code>, <code>Refused(ExpenseError)</code>, <code>Storage(PersistenceError)</code></td></tr>
+      <tr><td>web</td><td><code>Problem</code></td><td>an HTTP status + RFC 9457 <code>problem+json</code> body</td></tr>
+    </tbody>
+  </table>
+  <p>Each type describes failures in its layer's terms. Higher layers <em>wrap</em> lower ones, which is the TS
+    pattern <code>throw new UseCaseError("…", { cause: e })</code>, but typed.</p>
+
+  <h2>The wiring: <code>From</code> impls</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/mod.rs" data-line="58">
+    /// The domain refused: a field rule, a transition, a role. Nothing was written.
+    #[error(transparent)]
+    Refused(#[from] ExpenseError),
+    // …
+    #[error(transparent)]
+    Storage(#[from] PersistenceError),
+  </script>
+  <p><code>#[from]</code> (from <code>thiserror</code>, next lesson) generates <code>impl From&lt;ExpenseError&gt; for
+    UseCaseError</code> that wraps it in <code>Refused</code>. Sometimes the conversion is written by hand, for
+    example to go two levels at once:</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/mod.rs" data-line="82">
+    impl From<sqlx::Error> for UseCaseError {
+        fn from(error: sqlx::Error) -> Self {
+            Self::Storage(PersistenceError::Database(error))
+        }
+    }
+  </script>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: following the <code>?</code>s</span>
+    <script type="text/x-code" data-lang="rust" data-label="transition_expense.rs, annotated">
+      let mut transaction = self.pool.begin().await?;               // sqlx::Error       → UseCaseError::Storage
+      let actor = access::actor(&mut transaction, self.memberships.as_ref(), team, caller).await?; // already UseCaseError
+      let found = access::load(&mut transaction, actor, team, id).await?;
+      let mut expense = found.value;
+      match action {
+          // …
+          Action::Approve => expense.approve(actor)?,               // ExpenseError      → UseCaseError::Refused
+          // …
+      }
+      let version = persistence::update(&mut transaction, &expense, found.version, self.clock.now()).await?;
+                                                                    // PersistenceError  → UseCaseError::Storage
+    </script>
+    <p>(The comments are added here; they're not in the file.) Three different error types flow into one function
+      returning <code>Result&lt;_, UseCaseError&gt;</code>, and no line converts anything by hand. If a conversion
+      were missing, the <code>?</code> would fail to compile with "the trait <code>From&lt;…&gt;</code> is not
+      implemented".</p>
+  </div>
+
+  <h2>When there's no <code>From</code>: <code>map_err</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/mod.rs" data-line="470">
+    let changed = api
+        .transition
+        .execute(action, team, id, user.id(), reason.as_deref())
+        .await
+        .map_err(|e| problem::failure(&e))?;
+  </script>
+  <p>At the web boundary, a <code>UseCaseError</code> becomes a <code>Problem</code> through an explicit function
+    rather than <code>From</code>. The mapping is a deliberate decision (which status, which message) that deserves a
+    name you can search for (lesson 58).</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TS, an error thrown deep in the database driver arrives at your Express error handler untouched and
+      untyped. Rust forces every layer boundary to say what it does with the errors from below: wrap them
+      (<code>#[from]</code>), translate them (<code>map_err</code>), or handle them (<code>match</code>). That's more
+      to write, but you can always tell where an HTTP 500 came from.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">In a function returning <code>Result&lt;_, UseCaseError&gt;</code>, <code>expense.approve(actor)?</code>
+      fails. What does the function return?</p>
+    <ul class="options">
+      <li>The ExpenseError itself, with no conversion</li>
+      <li data-correct>UseCaseError::Refused, wrapping the original ExpenseError</li>
+      <li>A generic error built from text</li>
+      <li>UseCaseError::NotFound, used for every refusal</li>
+    </ul>
+    <div class="explain"><code>?</code> calls the <code>From&lt;ExpenseError&gt;</code> impl generated by
+      <code>#[from]</code>, which wraps it in <code>Refused</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You add a call returning <code>Result&lt;_, StorageError&gt;</code> and use <code>?</code>, but
+      <code>UseCaseError</code> has no matching variant. What happens?</p>
+    <ul class="options">
+      <li>The error is silently converted into text</li>
+      <li data-correct>Compile error: From&lt;StorageError&gt; isn't implemented for it</li>
+      <li>It compiles; the error is boxed automatically</li>
+      <li>It panics when the call first fails</li>
+    </ul>
+    <div class="explain">Add a <code>#[from]</code> variant, write a <code>From</code> impl, or use
+      <code>map_err</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does the web layer use <code>map_err(|e| problem::failure(&amp;e))</code> instead of a
+      <code>From</code> impl?</p>
+    <ul class="options">
+      <li>Problem lives in another crate, so From is impossible</li>
+      <li data-correct>Mapping errors to HTTP is a decision worth naming</li>
+      <li>map_err is faster than From for large error types</li>
+      <li>From only works with the ? operator inside loops</li>
+    </ul>
+    <div class="explain">Either would compile. A named function makes the status mapping easy to find, read and test
+      (it has its own tests in <code>web/problem.rs</code>).</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>Rust by Example, <a href="https://doc.rust-lang.org/rust-by-example/error/multiple_error_types/reenter_question_mark.html">"Other
+      uses of ?"</a> and the neighbouring pages on wrapping errors.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

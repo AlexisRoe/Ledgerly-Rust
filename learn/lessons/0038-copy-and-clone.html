@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copy and Clone</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and borrowing</p>
+  <h1><code>Copy</code> and <code>Clone</code></h1>
+  <p class="lede">Some types are so small and simple that "moving" them just copies them. Others can be duplicated,
+    but only when you ask with <code>.clone()</code>. Which is which is part of each type's design.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can tell why <code>actor</code> and the ids are passed around freely while a <code>String</code> moves,
+      and why <code>pool.clone()</code> and <code>clock.clone()</code> in Ledgerly are cheap while
+      <code>expense.clone()</code> would not be.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Name four ways a value gets moved.</summary>
+      <div>Assignment, passing by value, <code>for x in collection</code>, calling a method that takes
+        <code>self</code>. (37)</div></details>
+    <details><summary>What does the E0382 message point at?</summary>
+      <div>Where the value was created, where it moved, and where it was used after the move. (37)</div></details>
+  </div>
+
+  <h2>Two traits</h2>
+  <table>
+    <thead><tr><th></th><th><code>Copy</code></th><th><code>Clone</code></th></tr></thead>
+    <tbody>
+      <tr><td>What happens on <code>let b = a;</code></td><td><code>a</code> is copied bit for bit; both stay usable</td><td><code>a</code> moves (unless the type is also <code>Copy</code>)</td></tr>
+      <tr><td>How to duplicate</td><td>implicitly, always</td><td>explicitly: <code>a.clone()</code></td></tr>
+      <tr><td>Cost</td><td>always cheap (a few bytes, no heap)</td><td>whatever the type does: maybe a deep copy</td></tr>
+      <tr><td>Who has it</td><td>numbers, <code>bool</code>, <code>char</code>, <code>&amp;T</code>, small enums and structs of <code>Copy</code> fields</td><td>almost everything, including <code>String</code>, <code>Vec</code>, <code>Arc</code></td></tr>
+    </tbody>
+  </table>
+  <p>A type gets them by <code>#[derive(Clone, Copy)]</code>, and <code>Copy</code> is only allowed if every field
+    is <code>Copy</code>. A type that owns heap memory (<code>String</code>, <code>Vec</code>) can never be
+    <code>Copy</code>, because two owners of one buffer would free it twice
+    (<a href="https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html#stack-only-data-copy">Book 4.1, "Stack-Only
+    Data: Copy"</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: Copy by design</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="224">
+      pub fn approve(&mut self, actor: Actor) -> Result<(), ExpenseError> {
+          self.status = self.allowed_target(actor, Action::Approve)?;
+          Ok(())
+      }
+    </script>
+    <p><code>Actor</code> (a user id plus a role), <code>Action</code>, <code>ExpenseStatus</code>, <code>Role</code>,
+      every id type and even <code>Money</code> derive <code>Copy</code>. So <code>approve</code> takes
+      <code>actor</code> <em>by value</em> and passes it on to <code>allowed_target</code>, and the caller still has
+      its own <code>actor</code>. Accessors return copies: <code>pub const fn money(&amp;self) -&gt; Money</code>. These
+      types behave like JS primitives.</p>
+    <p>By contrast <code>Merchant</code> wraps a <code>String</code>, so it's <code>Clone</code> but not
+      <code>Copy</code>, and its accessor lends it: <code>fn merchant(&amp;self) -&gt; &amp;Merchant</code>.</p>
+  </div>
+
+  <h2>Cheap clones: handles to shared things</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/mod.rs" data-line="73">
+    Self {
+        batch: BatchCreateExpenses::new(
+            pool.clone(),
+            clock.clone(),
+            memberships.clone(),
+            events.clone(),
+            limits.max_batch_size,
+        ),
+        // … one clone per use case …
+  </script>
+  <p>Eight use cases each get "the" database pool and "the" clock. <code>PgPool</code> and <code>Arc&lt;dyn
+    Clock&gt;</code> are <strong>handles</strong>: cloning one copies a pointer and bumps a reference count, and all
+    clones share the same pool. It's a JS reference, made explicit (<a data-lesson="42"></a>). Cloning an
+    <code>Expense</code> would really duplicate its strings and vector. So when you see <code>.clone()</code>, ask what
+    the type is before worrying about cost.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In JS, primitives copy and objects share, and you can't choose. In Rust, each type decides: a struct of two
+      ids can be as cheap to pass as a number (<code>Copy</code>), a big struct requires an explicit
+      <code>.clone()</code> so the cost is visible, and sharing is a deliberate <code>Arc</code>. Sprinkling
+      <code>.clone()</code> to silence move errors works, but borrowing (next lesson) is usually the better fix.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why can <code>Actor</code> be passed to two functions in a row without <code>.clone()</code>?</p>
+    <ul class="options">
+      <li>Function parameters are always passed by reference in Rust</li>
+      <li data-correct>Actor is Copy, so each pass makes a copy</li>
+      <li>The compiler clones it automatically whenever it is needed</li>
+      <li>Actor is stored in a global and never moves</li>
+    </ul>
+    <div class="explain"><code>Actor</code> derives <code>Copy</code> (it's an id and a role), so it's copied like a
+      number.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which type <em>cannot</em> derive <code>Copy</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>struct Actor { id: UserId, role: Role }</code></li>
+      <li><code>enum Category { Travel, Meals }</code></li>
+      <li data-correct><code>struct Merchant(String)</code></li>
+      <li><code>struct Version(i64)</code></li>
+    </ul>
+    <div class="explain"><code>String</code> owns heap memory, so it isn't <code>Copy</code>, and a struct can only
+      be <code>Copy</code> if all its fields are.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>pool.clone()</code> on a <code>PgPool</code> do?</p>
+    <ul class="options">
+      <li>Opens a second set of database connections</li>
+      <li data-correct>Makes another handle to the same shared pool</li>
+      <li>Copies every open connection into new memory</li>
+      <li>Moves the pool and leaves the original empty</li>
+    </ul>
+    <div class="explain">The pool is reference-counted inside. Clones share it, which is why every use case can hold
+      its own <code>PgPool</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html">4.1</a>, sections
+      "Variables and Data Interacting with Clone" and "Stack-Only Data: Copy".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

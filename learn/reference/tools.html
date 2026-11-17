@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: tools and commands</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Tools and commands</h1>
+  <p class="lede">Section 1 on one page. TypeScript/Node equivalent on the left, Rust on the right.</p>
+
+  <h2>Tools</h2>
+  <table>
+    <thead><tr><th>Node / TS</th><th>Rust</th><th>Ledgerly config</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>nvm / volta</td><td>rustup</td><td><code>rust-toolchain.toml</code></td><td>Proxies read the file on every call; no shell hook needed</td></tr>
+      <tr><td><code>.nvmrc</code></td><td><code>rust-toolchain.toml</code></td><td><code>channel = "1.99.1"</code></td><td><code>components</code> adds rustfmt, clippy</td></tr>
+      <tr><td>volta / asdf for all tools</td><td>mise</td><td><code>mise.toml</code></td><td>Rust, just, nextest, cargo-deny, sqlx-cli, Node</td></tr>
+      <tr><td>npm + tsc + jest</td><td>cargo</td><td><code>Cargo.toml</code></td><td>Build, run, test, docs, dependencies</td></tr>
+      <tr><td><code>package-lock.json</code></td><td><code>Cargo.lock</code></td><td>root, one per workspace</td><td><code>--locked</code> ≈ <code>npm ci</code></td></tr>
+      <tr><td>npm registry</td><td>crates.io</td><td></td><td>docs for every crate on docs.rs</td></tr>
+      <tr><td><code>node_modules</code> + <code>dist</code></td><td><code>target/</code></td><td>root</td><td>Deletable; deps compiled from source</td></tr>
+      <tr><td>pnpm workspaces</td><td>Cargo workspace</td><td>root <code>[workspace]</code></td><td><code>members = ["crates/*"]</code></td></tr>
+      <tr><td>Prettier</td><td>rustfmt</td><td><code>rustfmt.toml</code></td><td><code>max_width = 120</code></td></tr>
+      <tr><td>ESLint</td><td>clippy</td><td><code>[workspace.lints]</code>, <code>clippy.toml</code></td><td>Has full type info</td></tr>
+      <tr><td>tsserver</td><td>rust-analyzer</td><td>VS Code extension</td><td>Inlay hints = inferred types</td></tr>
+      <tr><td>npm audit + license-checker</td><td>cargo-deny</td><td><code>deny.toml</code></td><td>advisories, licences, bans, sources</td></tr>
+      <tr><td>Vitest</td><td>cargo-nextest</td><td><code>.config/nextest.toml</code></td><td>Doesn't run doc tests</td></tr>
+      <tr><td>npm scripts</td><td>just</td><td><code>justfile</code></td><td><code>just</code> lists recipes</td></tr>
+      <tr><td>husky + lint-staged</td><td>pre-commit</td><td><code>.pre-commit-config.yaml</code></td><td><code>pre-commit install</code> once</td></tr>
+      <tr><td><code>.env</code> for tools</td><td><code>.cargo/config.toml</code></td><td><code>[env]</code></td><td><code>SQLX_OFFLINE = "true"</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>cargo commands</h2>
+  <table>
+    <thead><tr><th>Command</th><th>≈ Node</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>cargo new x</code></td><td><code>npm init</code></td><td>New package with <code>src/main.rs</code> (<code>--lib</code> for a library)</td></tr>
+      <tr><td><code>cargo check</code></td><td><code>tsc --noEmit</code></td><td>Analyse only; fastest feedback</td></tr>
+      <tr><td><code>cargo build [--release]</code></td><td><code>tsc</code> / bundle</td><td><code>target/debug</code> or <code>target/release</code></td></tr>
+      <tr><td><code>cargo run [--bin x] [-- args]</code></td><td><code>npm start</code></td><td>Build and run</td></tr>
+      <tr><td><code>cargo test [filter]</code></td><td><code>vitest -t filter</code></td><td>Unit, integration and doc tests</td></tr>
+      <tr><td><code>cargo test -- --nocapture</code></td><td></td><td>Show <code>println!</code> output from passing tests</td></tr>
+      <tr><td><code>cargo add x [-F feat]</code></td><td><code>npm i x</code></td><td>Edit <code>Cargo.toml</code></td></tr>
+      <tr><td><code>cargo tree [-p x]</code></td><td><code>npm ls</code></td><td>Dependency tree</td></tr>
+      <tr><td><code>cargo doc --open</code></td><td>TypeDoc</td><td>Docs for you and all deps</td></tr>
+      <tr><td><code>cargo fmt [--check]</code></td><td><code>prettier [--check]</code></td><td>Format</td></tr>
+      <tr><td><code>cargo clippy</code></td><td><code>eslint</code></td><td>Lint</td></tr>
+      <tr><td><code>-p name</code></td><td><code>--filter name</code></td><td>One workspace member</td></tr>
+      <tr><td><code>--locked</code></td><td><code>npm ci</code></td><td>Fail if the lock would change</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Ledgerly's just recipes</h2>
+  <table>
+    <thead><tr><th>Recipe</th><th>Runs</th><th>Docker</th></tr></thead>
+    <tbody>
+      <tr><td><code>just fmt</code> / <code>fmt-check</code></td><td><code>cargo fmt --all [--check]</code></td><td>no</td></tr>
+      <tr><td><code>just clippy</code></td><td><code>cargo clippy --workspace --all-targets --locked -- -D warnings</code></td><td>no</td></tr>
+      <tr><td><code>just deny</code></td><td><code>cargo deny check</code></td><td>no</td></tr>
+      <tr><td><code>just test</code></td><td>nextest (all but parity), then doc tests</td><td>yes</td></tr>
+      <tr><td><code>just check</code></td><td>vendor-check, fmt-check, clippy, deny, test, config-check, openapi-lint</td><td>yes</td></tr>
+      <tr><td><code>just verify</code></td><td>check + parity</td><td>yes</td></tr>
+      <tr><td><code>just deps</code> → <code>just run</code></td><td>Compose services, then <code>cargo run --bin ledgerly</code></td><td>yes</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Manifest keys at a glance</h2>
+  <script type="text/x-code" data-lang="toml">
+    [package]                 # name, version, edition ("2024"), rust-version (≈ engines)
+    name = "ledgerly-expenses" # used in code as ledgerly_expenses
+    version.workspace = true  # inherit from root [workspace.package]
+
+    [lints]
+    workspace = true          # opt into root [workspace.lints]
+
+    [dependencies]            # ≈ dependencies
+    serde.workspace = true    # version from root [workspace.dependencies]
+    sqlx = { workspace = true, features = ["macros"] }  # + compile-time feature
+
+    [dev-dependencies]        # ≈ devDependencies (tests, examples, benches)
+
+    [features]                # this crate's own optional parts
+    testing = []
+
+    [[bin]]                   # an extra or renamed binary
+    name = "ledgerly"
+    path = "src/main.rs"
+  </script>
+
+  <h2>Lint levels</h2>
+  <p><code>allow</code> (off) · <code>warn</code> · <code>deny</code> (error, overridable below with a reason) ·
+    <code>forbid</code> (error, not overridable). Ledgerly: <code>unsafe_code = "forbid"</code>;
+    <code>unwrap_used</code>, <code>expect_used</code>, <code>panic</code>, <code>todo</code>,
+    <code>unimplemented</code> = <code>deny</code> outside tests.</p>
+
+  <p>Lessons: <a data-lesson="1"></a> · <a data-lesson="2"></a> · <a data-lesson="3"></a> · <a data-lesson="4"></a> ·
+    <a data-lesson="5"></a> · <a data-lesson="6"></a></p>
+</main>
+</body>
+</html>

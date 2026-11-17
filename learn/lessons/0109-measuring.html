@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Measuring: release builds, benchmarks, profiles</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Memory and performance</p>
+  <h1>Measuring: release builds, benchmarks, profiles</h1>
+  <p class="lede">Performance intuition is unreliable, in any language. Rust adds a trap of its own: debug builds can
+    be 10–50× slower than release builds, and differently so. Measure the build you ship.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read a <code>[profile.release]</code>, run a fair micro-benchmark with <code>black_box</code>, and know
+      which tool to reach for: criterion for benchmarks, a sampling profiler for "where does the time go".</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why can a generic closure call be much faster than a <code>dyn Fn</code> call?</summary>
+      <div>It can be inlined, and the optimiser can then simplify the surrounding code. (108)</div></details>
+    <details><summary>Name two hidden allocations.</summary>
+      <div><code>format!</code>/<code>to_string</code>, <code>clone</code>, <code>collect</code>, regrowing a
+        <code>Vec</code>. (107)</div></details>
+  </div>
+
+  <h2>Debug vs release</h2>
+  <p><code>cargo build</code> and <code>cargo test</code> use the <strong>dev</strong> profile: no optimisation, fast
+    compiles, debug assertions and overflow checks on. <code>cargo build --release</code> optimises
+    (<a href="https://doc.rust-lang.org/cargo/reference/profiles.html">Cargo: profiles</a>). Never judge speed from a
+    debug build.</p>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="toml" data-src="Cargo.toml" data-line="86">
+      [profile.release]
+      lto = "fat"
+      codegen-units = 1
+      strip = "symbols"
+      panic = "unwind"
+    </script>
+    <p><code>lto = "fat"</code> optimises across all crates at link time, and <code>codegen-units = 1</code> lets the
+      optimiser see each crate whole: slower builds, faster binary. <code>strip</code> drops symbols for a smaller
+      image. <code>panic = "unwind"</code> (the default, written down) keeps a panic in one request from killing the
+      process.</p>
+  </div>
+
+  <h2>A micro-benchmark, and its traps</h2>
+  <script type="text/x-code" data-lang="bash">
+    cd learn/playground
+    cargo run --bin bench             # debug
+    cargo run --release --bin bench   # release
+  </script>
+  <p>Run both. On the author's machine, release made building 100k strings with one presized buffer 2.7× faster than
+    100k <code>format!</code>s, while in debug the two were the same. The benchmark uses
+    <code>std::hint::black_box</code>, which hides a value from the optimiser
+    (<a href="https://doc.rust-lang.org/std/hint/fn.black_box.html">std: black_box</a>). Without it the optimiser
+    may delete work whose result is unused, or compute it at compile time, and you'd be measuring nothing.</p>
+  <p>For real measurements use <a href="https://bheisler.github.io/criterion.rs/book/">criterion</a>: it warms up,
+    repeats, and reports confidence intervals and changes since the last run. Benchmarks live in <code>benches/</code>
+    and run with <code>cargo bench</code>.</p>
+
+  <h2>Profiling: where does the time go?</h2>
+  <p>A benchmark answers "how fast is this?"; a profiler answers "what is slow?". On macOS and Linux,
+    <a href="https://github.com/mstange/samply">samply</a> records a release binary and opens the result in the Firefox
+    profiler: <code>samply record ./target/release/ledgerly</code>. Set <code>debug = true</code> in
+    <code>[profile.release]</code> (temporarily) so function names show up. For a running async service, add
+    <code>tokio-console</code> or look at the tracing spans you already have: Ledgerly's are exported to
+    OpenTelemetry.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Node has one build and a JIT that warms up while running; you profile with <code>--inspect</code> and the
+      Chrome DevTools. Rust's optimisation happens entirely at compile time and depends on the profile. That makes
+      results reproducible, and it means a test suite's timings (debug) say nothing about production (release).</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p>Run <code>learn/playground/src/bin/bench.rs</code> in both profiles and compare the six lines. Then delete one
+      <code>black_box</code> in the "sum" benchmarks and see what the release build does with it.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Your test suite shows a function takes 6 ms. What does that say about production?</p>
+    <ul class="options">
+      <li>Production will take the same 6 ms</li>
+      <li data-correct>Little: tests run unoptimised debug builds instead</li>
+      <li>Production will be exactly twice as fast</li>
+      <li>Production will be slower because of tracing</li>
+    </ul>
+    <div class="explain">Measure with <code>--release</code>; debug builds can be many times slower.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>black_box(x)</code> do in a benchmark?</p>
+    <ul class="options">
+      <li>Measures the time it takes to compute x</li>
+      <li data-correct>Stops the optimiser from removing or precomputing work</li>
+      <li>Runs x on a separate thread to isolate it</li>
+      <li>Hides x from the debugger and the profiler</li>
+    </ul>
+    <div class="explain">It returns <code>x</code> unchanged, but the optimiser must assume anything could have
+      happened to it.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>lto = "fat"</code> trade?</p>
+    <ul class="options">
+      <li>Smaller binaries for slower code at runtime</li>
+      <li data-correct>Longer builds for optimisation across all crates</li>
+      <li>Safety checks for a faster development build</li>
+      <li>Debug symbols for a faster linker step</li>
+    </ul>
+    <div class="explain">Link-time optimisation lets the optimiser inline across crate boundaries.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://nnethercote.github.io/perf-book/">The Rust Performance Book</a>: "Benchmarking", "Build
+      Configuration" and "Profiling" chapters. Short, practical, and current.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: concurrency and async internals</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Concurrency and async internals · Review</p>
+  <h1>Review: concurrency and async internals</h1>
+  <p class="lede">Mixed practice on lessons 97–104, with earlier sections interleaved, then a tour of every
+    concurrent piece of Ledgerly's startup.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>Recall first, quizzes second, the tour last. The <a href="../reference/concurrency.html">cheat sheet</a> is
+      for afterwards.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary><code>Send</code> vs <code>Sync</code>?</summary>
+      <div><code>Send</code>: may be moved to another thread. <code>Sync</code>: <code>&amp;T</code> may be shared
+        between threads. (98)</div></details>
+    <details><summary>The four Tokio channels and one use for each?</summary>
+      <div><code>mpsc</code> job queue, <code>oneshot</code> a reply, <code>watch</code> current state (shutdown flag),
+        <code>broadcast</code> events to every listener. (100)</div></details>
+    <details><summary>What two things must <code>poll</code> do when it returns <code>Pending</code>?</summary>
+      <div>Not block, and arrange for the waker to be called when progress is possible. (101)</div></details>
+    <details><summary>Why are compiler-generated futures pinned?</summary>
+      <div>They may hold references into themselves, so they must not move once polled. (102)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">A handler keeps a <code>RefCell</code> in its state. What does the compiler say?</p>
+    <ul class="options">
+      <li>Nothing, as long as only one request uses it</li>
+      <li data-correct>An error: RefCell isn't Sync, so it can't be shared</li>
+      <li>A warning that suggests replacing it with a Cell</li>
+      <li>Nothing, but every request panics on its first use</li>
+    </ul>
+    <div class="explain">axum shares state across worker threads, so it must be <code>Send + Sync</code>. (84, 98)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You need to cache keys fetched over HTTP, fetching at most once at a time. Which lock?</p>
+    <ul class="options" data-fixed>
+      <li><code>std::sync::Mutex</code></li>
+      <li data-correct><code>tokio::sync::Mutex</code></li>
+      <li><code>std::cell::RefCell</code></li>
+      <li><code>AtomicBool</code></li>
+    </ul>
+    <div class="explain">The lock is held across the fetch's <code>.await</code>, like Ledgerly's <code>Issuer</code>. (99)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Ownership) In a <code>for</code> loop you spawn a Tokio task per id, using a shared
+      <code>Arc&lt;Pool&gt;</code>. What goes inside the loop?</p>
+    <ul class="options">
+      <li>Nothing special; the task simply borrows the pool</li>
+      <li data-correct>let pool = Arc::clone(&amp;pool); then async move</li>
+      <li>pool.lock().await, then spawn the task with the guard</li>
+      <li>Box::pin(pool), then spawn with the pinned pool</li>
+    </ul>
+    <div class="explain">Each task owns its own <code>Arc</code>: <code>'static</code> and cheap. (82, 97)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A <code>select!</code> loop reads a socket with <code>read_exact</code> in one branch and a tick in the
+      other. What can go wrong?</p>
+    <ul class="options">
+      <li>Nothing; every Tokio method is cancel-safe anyway</li>
+      <li data-correct>A tick cancels a half-done read, losing bytes</li>
+      <li>The tick branch never runs while it's reading</li>
+      <li>The socket closes after every loop iteration</li>
+    </ul>
+    <div class="explain"><code>read_exact</code> isn't cancel-safe. (103)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Errors) <code>spawn_blocking(f).await</code> returns <code>Result&lt;T, JoinError&gt;</code>. When is it
+      <code>Err</code>?</p>
+    <ul class="options">
+      <li>When f returned a Result that was Err</li>
+      <li data-correct>When f panicked, or the task was cancelled</li>
+      <li>When the blocking pool has no free threads</li>
+      <li>When f took longer than the default timeout</li>
+    </ul>
+    <div class="explain">The outer <code>Result</code> is about the task; <code>f</code>'s own result is inside
+      <code>T</code>. (25, 104)</div>
+  </div>
+
+  <h2>Tour: Ledgerly's concurrency</h2>
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code</span>
+    <ol>
+      <li>Open <a class="src" data-src="crates/app/src/main.rs" data-line="32"></a>. Which runtime flavour does Ledgerly
+        build, and why does <code>main</code> build it by hand instead of using <code>#[tokio::main]</code>? (Hint:
+        read what happens before and after.)</li>
+      <li>In <a class="src" data-src="crates/app/src/lib.rs" data-line="375"></a> (<code>serve</code>), list everything that runs
+        concurrently while the server is up. Which are joined, which spawned, which aborted?</li>
+      <li>Search for <code>spawn_blocking</code>. Why is each call there?</li>
+      <li>Search for <code>Mutex</code> outside <code>tests</code>. Which mutex type does each use, and does it ever
+        live across an <code>.await</code>?</li>
+    </ol>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="../reference/concurrency.html">concurrency cheat sheet</a>. Deeper reading: the
+      <a href="https://tokio.rs/tokio/tutorial">Tokio tutorial</a> from "Shared state" to the end.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

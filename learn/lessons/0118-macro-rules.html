@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>macro_rules! from scratch</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Writing macros</p>
+  <h1><code>macro_rules!</code> from scratch</h1>
+  <p class="lede">Lesson 61 taught you to read macro calls. A declarative macro is a <code>match</code> on syntax: each
+    rule has a pattern of code fragments and a template that the matched fragments are pasted into.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can write a <code>macro_rules!</code> macro with fragment specifiers and simple repetition, and read Ledgerly's
+      <code>display_as_text!</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why does <code>println!</code> have a <code>!</code>?</summary>
+      <div>It's a macro: it takes a variable number of arguments and checks the format string at compile time. (8, 61)</div></details>
+    <details><summary>What does the orphan rule forbid?</summary>
+      <div>A foreign trait for a foreign type. (91)</div></details>
+  </div>
+
+  <h2>Anatomy</h2>
+  <script type="text/x-code" data-lang="rust">
+    macro_rules! square {
+        ($value:expr) => {          // rule: pattern => template
+            ($value) * ($value)
+        };
+    }
+    square!(1 + 2)   // expands to (1 + 2) * (1 + 2) = 9, not 1 + 2 * 1 + 2 = 5
+  </script>
+  <p>Macros work on <strong>syntax trees</strong>, not text: <code>$value:expr</code> captures a whole expression, so
+    precedence can't leak the way it does with C's <code>#define</code>. Rules are tried top to bottom; the first match
+    wins. Expansion happens at compile time, before type checking.</p>
+
+  <table>
+    <thead><tr><th>Fragment</th><th>Matches</th></tr></thead>
+    <tbody>
+      <tr><td><code>expr</code></td><td>an expression: <code>1 + 2</code>, <code>f(x)</code>, <code>"text"</code></td></tr>
+      <tr><td><code>ident</code></td><td>a name: <code>Merchant</code>, <code>prod_needs_the_database_url</code></td></tr>
+      <tr><td><code>ty</code></td><td>a type: <code>Vec&lt;u8&gt;</code></td></tr>
+      <tr><td><code>literal</code></td><td><code>"SPRING_DATASOURCE_URL"</code>, <code>42</code></td></tr>
+      <tr><td><code>meta</code></td><td>attribute content, such as the <code>doc = "…"</code> inside <code>#[…]</code></td></tr>
+      <tr><td><code>tt</code></td><td>any single token tree: the escape hatch</td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://doc.rust-lang.org/reference/macros-by-example.html">Reference: macros by example</a>.)</p>
+
+  <h2>Repetition</h2>
+  <p><code>$( … ),*</code> in a pattern matches zero or more comma-separated items (<code>+</code>: one or more,
+    <code>?</code>: optional). The same <code>$( … )*</code> in the template repeats once per match, using the variables
+    captured inside.</p>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/text.rs" data-line="140">
+      macro_rules! display_as_text {
+          ($($name:ident),+) => {
+              $(impl fmt::Display for $name {
+                  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                      f.write_str(&self.0)
+                  }
+              })+
+          };
+      }
+
+      display_as_text!(Merchant, Note, RejectionReason);
+    </script>
+    <p>Three identical <code>Display</code> impls, written once. The pattern takes one or more type names; the template
+      repeats the whole <code>impl</code> block for each. Without the macro, a fix to one impl could easily miss the other two.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS has no macros; you'd write a generic helper, a decorator, or a code generator script. Rust reaches for a macro
+      when a function can't do the job: generating items (impls, structs, tests), taking a variable number of
+      arguments, or checking something at compile time. If a function or a generic works, prefer it (lesson 120).</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex118_macro_rules.rs</code>: <code>square!</code>, a <code>string_map!</code> literal
+      with repetition, and your own <code>display_as_text!</code>. Run <code>cargo test ex118</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why is <code>square!(1 + 2)</code> 9 even if the template were <code>$value * $value</code>?</p>
+    <ul class="options">
+      <li>Because Rust evaluates macro arguments only once</li>
+      <li data-correct>An expr fragment stays one expression, grouped</li>
+      <li>Because the compiler adds parentheses to all macros</li>
+      <li>It would actually be 5, like in C</li>
+    </ul>
+    <div class="explain">Macros substitute syntax trees, not text. (The parentheses are still good style.)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>$($name:ident),+</code> match?</p>
+    <ul class="options">
+      <li>Exactly one identifier, then a plus sign</li>
+      <li data-correct>One or more identifiers, separated by commas</li>
+      <li>Zero or more expressions, separated by commas</li>
+      <li>Any tokens at all, up to the bracket</li>
+    </ul>
+    <div class="explain"><code>+</code> = one or more; the separator is the <code>,</code> before it.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">When does a macro expand?</p>
+    <ul class="options">
+      <li>At run time, each time the line executes</li>
+      <li data-correct>At compile time, before types are checked</li>
+      <li>At link time, after all crates are compiled</li>
+      <li>When the binary is loaded into memory</li>
+    </ul>
+    <div class="explain">Then the expanded code is type-checked like hand-written code.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch20-05-macros.html">20.5 "Macros"</a>, then
+      <a href="https://veykril.github.io/tlborm/">The Little Book of Rust Macros</a> for patterns and pitfalls.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

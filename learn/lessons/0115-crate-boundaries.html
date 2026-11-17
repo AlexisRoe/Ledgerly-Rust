@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Module and crate boundaries</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Designing Rust code</p>
+  <h1>Module and crate boundaries</h1>
+  <p class="lede">Where you draw module and crate lines decides what the compiler can enforce for you, how fast you
+    build, and what you promise other code. Ledgerly is a worked example of drawing them on purpose.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can decide between a module and a separate crate, use features for optional code, and know what semver
+      means for a Rust library's public API.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What do <code>pub(crate)</code> and <code>pub use</code> do?</summary>
+      <div>Visible inside this crate only; re-export an item at a new path. (13)</div></details>
+    <details><summary>What does the orphan rule allow inside your crate?</summary>
+      <div>Implementing a trait for a type if either is local. (91)</div></details>
+  </div>
+
+  <h2>Module or crate?</h2>
+  <table>
+    <thead><tr><th>A module</th><th>A separate crate</th></tr></thead>
+    <tbody>
+      <tr><td>organises code; privacy is per module, <code>pub(crate)</code> sees everything</td><td>a hard wall: only <code>pub</code> items cross it</td></tr>
+      <tr><td>cyclic references between modules are fine</td><td>the dependency graph must be acyclic: the compiler enforces layering</td></tr>
+      <tr><td>recompiled with the whole crate</td><td>compiled separately and in parallel, cached when unchanged</td></tr>
+      <tr><td>no extra files</td><td>its own <code>Cargo.toml</code>, dependencies and features</td></tr>
+    </tbody>
+  </table>
+  <p>Split into crates when you want a boundary the compiler enforces, or when build times suffer. Inside a crate,
+    modules plus <code>pub(crate)</code> are enough.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: ADR 0010</span>
+    <script type="text/x-code" data-lang="text" data-src="docs/adr/0010-one-crate-per-module.md" data-line="3">
+      Each Spring Modulith module from Ledgerly-Java (`identity`, `teams`, `expenses`, `receipts`, `imports`, `audit`, plus `shared`) becomes its own crate in a Cargo workspace, exposing only a facade and its events. A thin `app` crate wires them together. Crate visibility turns the module boundaries that Java checked in tests (ArchUnit, `ModularityTest`) into compile errors, and the dependency graph between crates must match Java's module arrows.
+    </script>
+    <p>Java needs a test (ArchUnit) to catch <code>expenses</code> reaching into <code>receipts</code>' internals. In Rust,
+      the internals are simply not visible, and a dependency cycle can't even be declared. The architecture test in
+      <code>crates/app/tests/architecture.rs</code> (lesson 72) checks the remaining rule: which arrows exist.</p>
+  </div>
+
+  <h2>Features: optional code</h2>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="toml" data-src="crates/shared/Cargo.toml" data-line="12">
+      [features]
+      # Test helpers for other crates' tests, such as `FixedClock` and `TestDatabase`. Never enabled in the `ledgerly`
+      # binary.
+      testing = []
+    </script>
+    <script type="text/x-code" data-lang="toml" data-src="crates/expenses/Cargo.toml" data-line="27">
+      ledgerly-shared = { workspace = true, features = ["testing"] }
+    </script>
+    <p>Code under <code>#[cfg(any(test, feature = "testing"))]</code> (like <code>FixedClock</code>, lesson 84) only
+      exists when a crate asks for it, here in <code>expenses</code>' <code>[dev-dependencies]</code>. Features are
+      <strong>additive</strong>: Cargo builds one copy of each crate with the union of all features requested anywhere in
+      the build, so a feature must only add things, never change or remove behaviour
+      (<a href="https://doc.rust-lang.org/cargo/reference/features.html">Cargo: features</a>).</p>
+  </div>
+
+  <h2>Semver for public APIs</h2>
+  <p>For a published library, every <code>pub</code> item is a promise. Breaking changes need a new major version
+    (for <code>0.x</code> crates: a new minor). Some are less obvious than in TS: adding a variant to a public enum
+    breaks other crates' exhaustive <code>match</code>es (unless it's <code>#[non_exhaustive]</code>), adding a public
+    field breaks struct literals, and adding a trait impl can make method calls ambiguous. The
+    <a href="https://doc.rust-lang.org/cargo/reference/semver.html">Cargo semver reference</a> lists them all; the
+    <code>cargo-semver-checks</code> tool checks them. Ledgerly publishes nothing (<code>publish = false</code>), so its
+    crates can change freely together.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In a TS monorepo, package boundaries are enforced by convention and lint rules (<code>exports</code> maps,
+      eslint-plugin-boundaries), and deep imports can sneak past them. A Rust crate boundary can't be bypassed: there is no
+      path to a private item. That makes "one crate per module" a cheap, strong architecture tool.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why does Ledgerly use a crate, not a module, per business module?</p>
+    <ul class="options">
+      <li>Because Cargo can't compile very large single crates</li>
+      <li data-correct>Crate walls turn boundary violations into compile errors</li>
+      <li>Because modules can't contain async functions or traits</li>
+      <li>Because each crate is deployed as a service</li>
+    </ul>
+    <div class="explain">What Java checks with ArchUnit, Rust's compiler checks for free.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why must Cargo features be additive?</p>
+    <ul class="options">
+      <li>Because features can only add dependencies, nothing more</li>
+      <li data-correct>One build gets the union of all requested features</li>
+      <li>Because removing code with features is a syntax error</li>
+      <li>Because cargo-deny rejects any features that remove things</li>
+    </ul>
+    <div class="explain">If crate A turns a feature on, crate B gets it too. It must not break B.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In a published library, which change is breaking?</p>
+    <ul class="options">
+      <li>Adding a new public function to a module</li>
+      <li data-correct>Adding a variant to an exhaustive public enum</li>
+      <li>Adding a private field to a private struct</li>
+      <li>Fixing a typo in a doc comment's example</li>
+    </ul>
+    <div class="explain">Callers' exhaustive <code>match</code>es stop compiling.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Cargo Book on <a href="https://doc.rust-lang.org/cargo/reference/features.html">features</a> and
+      <a href="https://doc.rust-lang.org/cargo/reference/semver.html">SemVer compatibility</a>, and Ledgerly's own
+      <a class="src" data-src="docs/adr/0010-one-crate-per-module.md"></a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

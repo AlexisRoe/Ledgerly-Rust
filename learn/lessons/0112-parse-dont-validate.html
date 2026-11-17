@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parse, don't validate, in depth</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Designing Rust code</p>
+  <h1>Parse, don't validate, in depth</h1>
+  <p class="lede">Lesson 26 named the idea. This lesson is the design technique: make invalid values impossible to
+    construct, so code that receives a value never has to check it again.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can design a type with a private field and a fallible constructor, route serde through the same constructor,
+      and decide where in a program parsing should happen.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>When should an error be an enum, and when <code>anyhow</code>?</summary>
+      <div>Enum when callers handle it; anyhow when they only report it. (111)</div></details>
+    <details><summary>What does a newtype cost at run time?</summary>
+      <div>Nothing: same size and layout as the wrapped value. (26, 106)</div></details>
+  </div>
+
+  <h2>The recipe</h2>
+  <ol>
+    <li><strong>A newtype with a private field:</strong> <code>pub struct Merchant(String);</code>. Outside the module,
+      nobody can write <code>Merchant(any_string)</code>.</li>
+    <li><strong>One fallible constructor</strong> that checks and normalises: <code>Merchant::new(&amp;str) -&gt;
+      Result&lt;Self, InvalidInput&gt;</code>. Also the place to trim, lowercase, round.</li>
+    <li><strong>Read-only access:</strong> <code>as_str()</code>, <code>Display</code>. No <code>&amp;mut</code> to the inside,
+      no <code>Deref</code> (lesson 93).</li>
+    <li><strong>Every entry point uses it:</strong> JSON through <code>#[serde(try_from = "String")]</code>, the database
+      through the row conversion, tests through the same <code>new</code>.</li>
+  </ol>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/text.rs" data-line="1">
+      //! The free-text fields of an expense, as types that can only hold valid text.
+      //!
+      //! Java counterpart: the private `validMerchant` and `validNote` methods and the reason check in `reject` of
+      //! `expenses/internal/domain/Expense.java`. Java checks a `String` every time it enters the aggregate; here the
+      //! check runs once, in the constructor, and a `Merchant` that exists is valid.
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/text.rs" data-line="46">
+      /// # Errors
+      ///
+      /// `InvalidInput` for field `merchant` if the text is blank, or longer than the cap after stripping.
+      pub fn new(text: &str) -> Result<Self, InvalidInput> {
+          if text::is_blank(text) {
+              return Err(InvalidInput::new("merchant", "Merchant is required"));
+          }
+    </script>
+    <p>The module doc states the design. Note the second constructor just above it, <code>stored</code>: it's
+      <code>pub(crate)</code> and skips the checks, because rows in the database were checked when they were written, and Java reads
+      the column as it is. A deliberate, visible, crate-private back door.</p>
+  </div>
+
+  <h2>Where to parse: at the edge</h2>
+  <p>Parse as soon as untyped data enters (request body, query string, CSV row, environment variable) and pass typed
+    values inward. The domain then takes <code>Merchant</code>, <code>Money</code>, <code>TeamId</code>, never
+    <code>&amp;str</code>. In TS you'd do the same with zod at the boundary; the difference is that zod's output type
+    is still a plain <code>string</code>, so nothing stops other code from passing an unchecked one. A Rust newtype
+    can't be faked.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS branded types (<code>string &amp; { __brand: "Merchant" }</code>) give the name but not the guarantee: a cast
+      makes one from anything. Rust's privacy is enforced by the compiler, and the only constructor is yours. The cost is
+      writing <code>as_str()</code> and conversions; the gain is that a whole class of "did anyone validate this?"
+      questions disappears.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex112_parse_dont_validate.rs</code>: an <code>Email</code> type with a private field,
+      an infallible accessor that relies on the invariant, and a <code>TryFrom&lt;String&gt;</code> so JSON goes through
+      the same check. Run <code>cargo test ex112</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why is <code>Merchant</code>'s field private?</p>
+    <ul class="options">
+      <li>Private fields make the struct smaller overall</li>
+      <li data-correct>So new, with checks, is the door</li>
+      <li>Because tuple struct fields can't be public</li>
+      <li>So serde can't serialise the merchant text</li>
+    </ul>
+    <div class="explain">Privacy turns "valid" from a convention into a guarantee.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">With <code>#[serde(try_from = "String")]</code>, what happens to <code>{"email": "nope"}</code>?</p>
+    <ul class="options">
+      <li>It deserialises, and validation happens later on</li>
+      <li data-correct>Deserialisation fails with the constructor's own error</li>
+      <li>serde silently replaces it with a default</li>
+      <li>It panics inside the serde derive code</li>
+    </ul>
+    <div class="explain">serde builds the <code>String</code>, then calls your <code>TryFrom</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Where should a CSV import turn text cells into typed values?</p>
+    <ul class="options">
+      <li>In the database layer, just before saving</li>
+      <li data-correct>Right after reading each row, at the edge</li>
+      <li>In every domain function that uses a value</li>
+      <li>Nowhere; strings are fine inside the domain</li>
+    </ul>
+    <div class="explain">Parse once at the boundary; the rest of the code works with types that can't be wrong.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>Alexis King's essay <a href="https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/">"Parse, don't
+      validate"</a> (Haskell examples, readable without Haskell), and serde's
+      <a href="https://serde.rs/container-attrs.html#try_from">try_from attribute</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>From domain error to HTTP problem</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Error handling the Ledgerly way</p>
+  <h1>From domain error to HTTP problem</h1>
+  <p class="lede">The last step: how "the expense is a draft and can't be approved" becomes
+    <code>409 Conflict</code> with a <code>problem+json</code> body. This is Ledgerly's version of an Express error
+    middleware, built from two exhaustive <code>match</code>es.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can trace any refusal from the domain to the HTTP status and body the client sees, and you know which file
+      to change if a new error kind needs a status.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Error type of each layer?</summary>
+      <div><code>ExpenseError</code> (domain), <code>PersistenceError</code>, <code>UseCaseError</code>
+        (application), <code>Problem</code> (web). (55)</div></details>
+    <details><summary>Why no <code>_</code> arm when matching an error enum?</summary>
+      <div>So a new variant fails to compile until someone decides how to handle it. (23, 31)</div></details>
+  </div>
+
+  <h2>The path</h2>
+  <script type="text/x-code" data-lang="text" data-label="POST …/expenses/{id}:approve on a draft">
+    Expense::approve          → Err(ExpenseError::InvalidTransition { from: Draft, action: Approve })
+      ? in TransitionExpense  → Err(UseCaseError::Refused(…))                 (#[from])
+      map_err in the handler  → problem::failure(&e) → problem::refusal(…)
+                              → Problem::new(ErrorCode::ExpenseInvalidTransition, "Expense is DRAFT and cannot APPROVE")
+      handler returns Err(problem); axum calls IntoResponse
+                              → 409, Content-Type: application/problem+json, JSON body
+  </script>
+
+  <div class="ledgerly">
+    <span class="box-label">Step 1: use-case error → problem</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/problem.rs" data-line="30">
+      pub(crate) fn failure(error: &UseCaseError) -> Problem {
+          match error {
+              UseCaseError::NotFound => Problem::not_found(),
+              UseCaseError::Stale => Problem::precondition_failed(),
+              // …
+              UseCaseError::Refused(refused) => refusal(refused),
+              // …
+              UseCaseError::Storage(PersistenceError::Conflict { .. }) => Problem::precondition_failed(),
+              UseCaseError::Storage(storage @ (PersistenceError::Corrupt { .. } | PersistenceError::Database(_))) => {
+                  tracing::error!(error = %storage, "Unhandled exception");
+                  Problem::internal_error()
+              }
+          }
+      }
+    </script>
+    <p>Patterns from section 4 at work: nested enum patterns (<code>Storage(PersistenceError::Conflict { .. })</code>),
+      an <code>@</code> binding, and no <code>_</code>. A database error is logged and becomes a bare 500 with no
+      detail that could leak internals.</p>
+  </div>
+  <div class="ledgerly">
+    <span class="box-label">Step 2: domain refusal → problem</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/problem.rs" data-line="15">
+      pub(crate) fn refusal(error: &ExpenseError) -> Problem {
+          match error {
+              ExpenseError::InvalidTransition { .. } => Problem::new(ErrorCode::ExpenseInvalidTransition, error.to_string()),
+              ExpenseError::SelfDealing { .. } => Problem::new(ErrorCode::ExpenseSelfDealing, error.to_string()),
+              ExpenseError::NotDraft { .. } => Problem::new(ErrorCode::ExpenseNotDraft, error.to_string()),
+              ExpenseError::Forbidden(forbidden) => Problem::forbidden(forbidden.to_string()),
+              ExpenseError::RuleViolated(rule) => Problem::new(ErrorCode::ExpenseRuleViolated, *rule),
+              ExpenseError::InvalidInput(invalid) => Problem::invalid_request(invalid.field, invalid.message.clone()),
+          }
+      }
+    </script>
+    <p><code>error.to_string()</code> is the thiserror message, which is Java's message. The status comes from the
+      <code>ErrorCode</code>:</p>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/web/problem.rs" data-line="137">
+      Self::ExpenseInvalidTransition => (
+          "EXPENSE_INVALID_TRANSITION",
+          "invalid-transition",
+          "Illegal workflow transition",
+          StatusCode::CONFLICT,
+      ),
+    </script>
+  </div>
+  <div class="ledgerly">
+    <span class="box-label">Step 3: the handler's return type</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/mod.rs" data-line="456">
+      async fn transition(
+          State(api): State<ExpensesApi>,
+          user: CurrentUser,
+          parameters: PathParameters,
+          request: Request,
+          action: Action,
+      ) -> Result<Response, Problem> {
+    </script>
+    <p>The handler returns <code>Result&lt;Response, Problem&gt;</code>, so every <code>?</code> inside can bail out
+      with a <code>Problem</code>. axum turns both <code>Ok</code> and <code>Err</code> into an HTTP response, because
+      <code>Problem</code> implements axum's <code>IntoResponse</code> trait (in <code>shared/src/web/problem.rs</code>).</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>An Express error middleware receives <code>err: any</code> and usually ends in
+      <code>res.status(err.status ?? 500)</code>. A new error class silently becomes a 500. Here a new
+      <code>ExpenseError</code> variant doesn't compile until <code>refusal</code> gives it a status, and the test
+      <code>every_domain_refusal_has_javas_status_code_and_message</code> checks that the status and message match
+      Ledgerly-Java.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Which file decides the HTTP status for <code>ExpenseError::SelfDealing</code>?</p>
+    <ul class="options">
+      <li>The domain's error.rs file, via an attribute there</li>
+      <li data-correct>The web layer's problem.rs, plus ErrorCode in shared</li>
+      <li>The app crate's lib.rs, in the panic layer</li>
+      <li>The OpenAPI contract, read at runtime by axum</li>
+    </ul>
+    <div class="explain"><code>refusal</code> picks the <code>ErrorCode</code>; the code's entry holds the status. The
+      domain knows nothing about HTTP.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does the client get for a database failure?</p>
+    <ul class="options">
+      <li>The full sqlx error text, to help debugging</li>
+      <li data-correct>A bare 500; details go only to logs</li>
+      <li>A 503 asking the client to retry later</li>
+      <li>A 404, so the database stays hidden there</li>
+    </ul>
+    <div class="explain">The <code>Storage(Corrupt | Database)</code> arm logs and returns
+      <code>Problem::internal_error()</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You add <code>ExpenseError::Archived</code>. What's the first thing that fails?</p>
+    <ul class="options">
+      <li>A parity test, the next time it runs</li>
+      <li data-correct>The match in refusal stops compiling at once</li>
+      <li>Nothing; it defaults to an internal server error</li>
+      <li>The OpenAPI linter, since the code is unknown</li>
+    </ul>
+    <div class="explain">The exhaustive <code>match</code> is the first guard. Tests and the contract check
+      follow.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>Read Ledgerly's own <a class="src" data-src="crates/expenses/src/web/problem.rs"></a> top to bottom, including
+      its tests, and skim RFC 9457's "Problem Details" format via the <code>api/openapi.yaml</code> <code>Problem</code>
+      schema. For axum's side, the <a href="https://docs.rs/axum/latest/axum/error_handling/index.html">axum error
+      handling docs</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

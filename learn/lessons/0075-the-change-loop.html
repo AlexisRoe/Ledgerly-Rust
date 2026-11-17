@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The change loop</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Making changes</p>
+  <h1>The change loop</h1>
+  <p class="lede">You can read Ledgerly now. Changing it is a loop: edit, let the compiler talk, fix, test. This lesson
+    sets up the loop and the safety net for the three exercises that follow.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can make a change on a practice branch, get fast feedback without Docker, read any compiler error top to
+      bottom, and throw the change away cleanly.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Fastest command to check a change compiles?</summary>
+      <div><code>cargo check</code> (or just save: rust-analyzer runs it). (3, 6)</div></details>
+    <details><summary>Which tests run without Docker?</summary>
+      <div>Pure unit tests, such as the domain's: <code>cargo test -p ledgerly-expenses domain</code>. (67)</div></details>
+  </div>
+
+  <h2>Before you start: a practice branch</h2>
+  <script type="text/x-code" data-lang="bash">
+    $ git switch -c practice/rejection-reason     # experiment freely here
+    # … the exercise …
+    $ git restore .                               # throw away uncommitted changes
+    $ git switch -                                # back to where you were
+    $ git branch -D practice/rejection-reason     # delete the practice branch
+  </script>
+  <p>The exercises change Ledgerly's behaviour, which in the real project only happens through Ledgerly-Java first
+    (the contract, the schema and the behaviour are Java's). So they stay on a practice branch and are never pushed.</p>
+
+  <h2>The loop</h2>
+  <div class="steps">
+    <ol>
+      <li><strong>Edit</strong> in VS Code. rust-analyzer underlines errors within a second or two of saving.</li>
+      <li><strong>Read the first error</strong> (<code>cargo check -p ledgerly-expenses</code> in a terminal shows them
+        in full). Fix the first one only. Later errors are often consequences of it.</li>
+      <li><strong>Run the narrowest tests</strong>: <code>cargo test -p ledgerly-expenses domain</code> (seconds, no
+        Docker). Widen later: the whole crate, then <code>just test</code>.</li>
+      <li><strong>Lint and format</strong>: <code>cargo clippy -p ledgerly-expenses --all-targets -- -D warnings</code>
+        and <code>cargo fmt</code>.</li>
+      <li><strong>Before a real commit</strong>: <code>just check</code> (Docker), as CI does.</li>
+    </ol>
+  </div>
+
+  <h2>Reading a compiler error, top to bottom</h2>
+  <script type="text/x-code" data-lang="text" data-label="cargo check -p ledgerly-expenses (real output after adding ExpenseStatus::Archived)">
+    error[E0004]: non-exhaustive patterns: `ExpenseStatus::Archived` not covered
+      --> crates/expenses/src/domain/action.rs:69:15
+       |
+    69 |         match from {
+       |               ^^^^ pattern `ExpenseStatus::Archived` not covered
+       |
+    note: `ExpenseStatus` defined here
+      --> crates/expenses/src/domain/status.rs:10:10
+       |
+    10 | pub enum ExpenseStatus {
+       |          ^^^^^^^^^^^^^
+    ...
+    16 |     Archived,
+       |     -------- not covered
+       = note: the matched value is of type `ExpenseStatus`
+    help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+       |
+    90 ~             },
+    91 ~             ExpenseStatus::Archived => todo!(),
+       |
+  </script>
+  <ol>
+    <li><strong>Headline</strong>: the error code and the rule broken. <code>rustc --explain E0004</code> gives the long
+      version.</li>
+    <li><strong>Location</strong>: <code>--&gt;</code> file:line:column (click it in the VS Code terminal).</li>
+    <li><strong>Labels</strong>: <code>^^^</code> marks the problem, <code>---</code> marks related places.</li>
+    <li><strong><code>note:</code></strong> gives context, and <strong><code>help:</code></strong> suggests a fix, often a
+      literal diff (<code>~</code> lines). Read the suggestion critically: here it proposes <code>todo!()</code>,
+      which Ledgerly's lints forbid, and a wildcard, which would defeat the point. Write a real arm.</li>
+  </ol>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>With <code>tsc</code>, a long list of errors often means many independent problems, and you can run the code
+      anyway. Rust's errors cascade more (one wrong type causes several follow-ups) and nothing runs until they're
+      gone, so fix from the top and re-check often. The upside of the strictness: once it compiles, the remaining
+      failures are mostly logic, and the tests point straight at them.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">You have 14 compiler errors after one change. What do you do first?</p>
+    <ul class="options">
+      <li>Fix them in any order, easiest first</li>
+      <li data-correct>Fix the first one, then check again</li>
+      <li>Revert, since 14 errors means a mistake</li>
+      <li>Add wildcard arms wherever the errors point</li>
+    </ul>
+    <div class="explain">Later errors are often caused by the first. One fix can clear many.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">The compiler's <code>help:</code> suggests adding <code>todo!()</code>. Should you?</p>
+    <ul class="options">
+      <li>Yes, the compiler's suggestions are always correct</li>
+      <li data-correct>No, it panics and Ledgerly's lints forbid it</li>
+      <li>Yes, but only inside the domain modules</li>
+      <li>No, because todo isn't valid Rust syntax</li>
+    </ul>
+    <div class="explain">It's a placeholder to get compiling. In Ledgerly, write the real decision instead.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which command gives the fastest test feedback for a domain change?</p>
+    <ul class="options" data-fixed>
+      <li><code>just verify</code></li>
+      <li><code>just test</code></li>
+      <li data-correct><code>cargo test -p ledgerly-expenses domain</code></li>
+      <li><code>just parity</code></li>
+    </ul>
+    <div class="explain">One crate, filtered to the pure tests, no Docker.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><code>docs/local-setup.md</code> §4 "Day to day" in this repo, and the
+      <a href="../reference/change-loop.html">change loop cheat sheet</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

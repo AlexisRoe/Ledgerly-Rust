@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rustfmt, clippy, rust-analyzer, cargo-deny, nextest</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Setting up and the toolbox</p>
+  <h1>rustfmt, clippy, rust-analyzer, cargo-deny, nextest</h1>
+  <p class="lede">Prettier, ESLint, the TS language server, <code>npm audit</code> and a faster Jest, each with a
+    config file in the repo root.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can say what each quality tool checks, find its config in Ledgerly, and set up VS Code so the compiler's
+      knowledge shows up while you read.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>How does a member crate pick up the workspace's lint settings?</summary>
+      <div><code>[lints] workspace = true</code> in its own <code>Cargo.toml</code>.</div></details>
+    <details><summary>What's the npm equivalent of <code>cargo build --locked</code>?</summary>
+      <div><code>npm ci</code>: fail instead of changing the lock file.</div></details>
+  </div>
+
+  <h2>The map</h2>
+  <table>
+    <thead><tr><th>Rust tool</th><th>TS equivalent</th><th>Ledgerly config</th><th>Run with</th></tr></thead>
+    <tbody>
+      <tr><td>rustfmt</td><td>Prettier</td><td><code>rustfmt.toml</code></td><td><code>cargo fmt</code></td></tr>
+      <tr><td>clippy</td><td>ESLint</td><td><code>[workspace.lints]</code>, <code>clippy.toml</code></td><td><code>cargo clippy</code></td></tr>
+      <tr><td>rust-analyzer</td><td>tsserver (VS Code's TS support)</td><td>none needed</td><td>the VS Code extension</td></tr>
+      <tr><td>cargo-deny</td><td><code>npm audit</code> + license-checker</td><td><code>deny.toml</code></td><td><code>cargo deny check</code></td></tr>
+      <tr><td>cargo-nextest</td><td>Vitest (faster, parallel)</td><td><code>.config/nextest.toml</code></td><td><code>cargo nextest run</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>rustfmt: one style, almost no options</h2>
+  <script type="text/x-code" data-lang="toml" data-src="rustfmt.toml" data-line="1">
+    edition = "2024"
+    max_width = 120
+  </script>
+  <p>Like Prettier, rustfmt has opinions and few knobs. Ledgerly only widens lines to 120 characters. Every Rust
+    project looks the same, which makes reading other people's crates easier. <code>cargo fmt --all --check</code>
+    is the CI form: it fails instead of rewriting files.</p>
+
+  <h2>clippy: 700+ lints, in levels</h2>
+  <p>The compiler (<code>rustc</code>) already warns about unused variables and similar problems. Clippy adds
+    hundreds of lints on top: correctness, style, performance, and "restriction" lints that a project opts into
+    (<a href="https://doc.rust-lang.org/clippy/lints.html">lint list</a>). Every lint has a <strong>level</strong>
+    (<a href="https://doc.rust-lang.org/rustc/lints/levels.html">rustc: lint levels</a>):</p>
+  <table>
+    <thead><tr><th>Level</th><th>ESLint</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>allow</code></td><td><code>"off"</code></td><td>Silent</td></tr>
+      <tr><td><code>warn</code></td><td><code>"warn"</code></td><td>Warning (Ledgerly's CI turns warnings into errors with <code>-D warnings</code>)</td></tr>
+      <tr><td><code>deny</code></td><td><code>"error"</code></td><td>Error; can still be overridden lower down, with a reason</td></tr>
+      <tr><td><code>forbid</code></td><td>(none)</td><td>Error that nothing below may override</td></tr>
+    </tbody>
+  </table>
+  <script type="text/x-code" data-lang="toml" data-src="clippy.toml" data-line="1">
+    # The denies in Cargo.toml `[workspace.lints.clippy]` apply to production code only.
+    allow-unwrap-in-tests = true
+    allow-expect-in-tests = true
+    allow-panic-in-tests = true
+    allow-indexing-slicing-in-tests = true
+  </script>
+  <p>So <code>.unwrap()</code> is banned in production code but fine in tests: a panicking test is just a failing
+    test.</p>
+
+  <h2>rust-analyzer: let the compiler talk while you read</h2>
+  <p>Install the <strong>rust-analyzer</strong> extension in VS Code (not the old "Rust" extension). For this
+    course, three features matter most:</p>
+  <ul>
+    <li><strong>Inlay hints</strong> show inferred types in grey after <code>let</code> bindings and parameter names
+      at call sites, as if the code had full annotations. They're the best reading aid there is.</li>
+    <li><strong>Hover</strong> shows a type's docs, and <strong>Go to Definition</strong> (<kbd>F12</kbd>) works into
+      dependencies and the standard library.</li>
+    <li><strong>Errors inline</strong>: it runs <code>cargo check</code> on save.</li>
+  </ul>
+
+  <h2>cargo-deny: what may enter the dependency tree</h2>
+  <script type="text/x-code" data-lang="toml" data-src="deny.toml">
+    [advisories]
+    version = 2
+    # A yanked version is refused like an advisory: the author withdrew it for a reason.
+    yanked = "deny"
+
+    [licenses]
+    version = 2
+    # Permissive licences only. Extend this list only with a reason next to the new entry.
+    allow = [
+        "MIT",
+        "Apache-2.0",
+        # …
+    ]
+  </script>
+  <p>Four checks: <strong>advisories</strong> (known vulnerabilities from the RustSec database, like
+    <code>npm audit</code>), <strong>licenses</strong>, <strong>bans</strong> (forbidden or duplicate crates) and
+    <strong>sources</strong> (only crates.io, no random git URLs)
+    (<a href="https://embarkstudios.github.io/cargo-deny/">cargo-deny book</a>).</p>
+
+  <h2>nextest: the test runner</h2>
+  <p><code>cargo test</code> is built in. <a href="https://nexte.st/">cargo-nextest</a> runs each test in its own
+    process, in parallel, with timeouts. Ledgerly's integration tests start servers, so a hanging test must be killed
+    (see <code>.config/nextest.toml</code>). Nextest doesn't run doc tests, so <code>just test</code> also runs
+    <code>cargo test --doc</code>.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TypeScript, the linter and the type checker are separate worlds, and ESLint can't see types without extra
+      setup. Clippy <em>is</em> the compiler with more checks: it has full type information for every lint. And
+      because rustfmt is the official formatter, there's no Prettier-vs-StandardJS debate to have.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it</span>
+    <ol>
+      <li>In VS Code, install <em>rust-analyzer</em>, open <code>crates/app/src/main.rs</code> and wait for indexing
+        to finish. Look at the grey type hints after <code>let config</code> and <code>let runtime</code>.</li>
+      <li>Hover over <code>ExitCode</code>, then <kbd>F12</kbd> into it. You're now reading the standard library.</li>
+      <li>In a terminal: <code>cargo clippy -p ledgerly-shared</code> (should finish without warnings) and
+        <code>cargo fmt --all --check</code>.</li>
+    </ol>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Which tool would complain about a GPL-licensed dependency?</p>
+    <ul class="options" data-fixed>
+      <li>rustfmt</li>
+      <li>clippy</li>
+      <li data-correct>cargo-deny</li>
+      <li>nextest</li>
+    </ul>
+    <div class="explain"><code>deny.toml</code>'s <code>[licenses] allow</code> list contains only permissive
+      licences, so <code>cargo deny check</code> fails on anything else.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's the difference between <code>deny</code> and <code>forbid</code>?</p>
+    <ul class="options">
+      <li>Deny errors in CI only, forbid errors everywhere</li>
+      <li data-correct>Forbid can't be overridden lower down; deny can</li>
+      <li>Forbid applies to clippy, deny to the compiler</li>
+      <li>There is none; they're aliases of each other</li>
+    </ul>
+    <div class="explain">A <code>deny</code> can be relaxed on one item with <code>#[allow(...)]</code> or
+      <code>#[expect(...)]</code>. A <code>forbid</code> can't. That's why <code>unsafe_code</code> is
+      <code>forbid</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why may tests call <code>.unwrap()</code> in Ledgerly?</p>
+    <ul class="options">
+      <li>Tests are compiled without any clippy lints</li>
+      <li data-correct>clippy.toml allows it in test code</li>
+      <li>Each test file has an allow attribute</li>
+      <li>unwrap never panics inside a test function</li>
+    </ul>
+    <div class="explain"><code>allow-unwrap-in-tests = true</code> in <code>clippy.toml</code>. A panic in a test
+      just fails that test, which is what you want.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://doc.rust-lang.org/clippy/">The Clippy book</a> (the "Usage" and "Configuration" pages), and
+      the <a href="https://rust-analyzer.github.io/">rust-analyzer</a> manual's VS Code section.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

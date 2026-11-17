@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Traits are interfaces, but nominal</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits and generics</p>
+  <h1>Traits are interfaces, but nominal</h1>
+  <p class="lede">A <code>trait</code> lists methods a type promises to have, like an <code>interface</code>. The
+    difference: having the right methods isn't enough. A type implements a trait only when someone writes
+    <code>impl Trait for Type</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read Ledgerly's <code>Clock</code> trait and its two implementations, explain default methods and
+      supertraits (<code>: fmt::Debug + Send + Sync</code>), and say why tests can swap in a fixed clock.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>impl Into&lt;String&gt;</code> in a parameter mean?</summary>
+      <div>"Any type that implements the trait <code>Into&lt;String&gt;</code>." (44)</div></details>
+    <details><summary>Where do methods of a struct live?</summary>
+      <div>In an <code>impl Type { … }</code> block, separate from the struct definition. (21)</div></details>
+  </div>
+
+  <h2>Defining and implementing</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      interface Clock {
+        now(): Date;
+        today?(): LocalDate;     // no default bodies in interfaces
+      }
+
+      class SystemClock implements Clock {
+        now() { return new Date(); }
+      }
+      // structural: ANY object with now() is a Clock
+      const fake: Clock = { now: () => new Date(0) };
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/clock.rs" data-line="19">
+      pub trait Clock: fmt::Debug + Send + Sync {
+          /// The current instant.
+          fn now(&self) -> DateTime<Utc>;
+
+          /// The current date in UTC: Java's `LocalDate.now(clock)`.
+          fn today(&self) -> NaiveDate {
+              self.now().date_naive()
+          }
+      }
+      // …
+      impl Clock for SystemClock {
+          fn now(&self) -> DateTime<Utc> {
+              Utc::now()
+          }
+      }
+    </script>
+  </div>
+  <ul>
+    <li><strong>Required methods</strong> have only a signature (<code>now</code>). <strong>Default methods</strong>
+      have a body (<code>today</code>) that implementors get for free and may override. It's like an abstract class
+      method, without the inheritance.</li>
+    <li><strong><code>impl Clock for SystemClock</code></strong> is a separate block from <code>impl SystemClock</code>.
+      A type collects its abilities one trait at a time.</li>
+    <li><strong>Supertraits</strong>: <code>trait Clock: fmt::Debug + Send + Sync</code> means "every
+      <code>Clock</code> must also be debug-printable and safe to share between threads". That's how
+      <code>Arc&lt;dyn Clock&gt;</code> can be used by every request (lesson 53).</li>
+  </ul>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a seam for tests</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/clock.rs" data-line="76">
+      #[cfg(any(test, feature = "testing"))]
+      impl Clock for FixedClock {
+          fn now(&self) -> DateTime<Utc> {
+              *self.lock()
+          }
+    </script>
+    <p>The domain never asks the OS for the time; it gets a <code>&amp;dyn Clock</code>. Production passes
+      <code>SystemClock</code>, tests pass a <code>FixedClock</code> set to "2026-11-05T10:00:00Z", so a rule like
+      "<code>incurredOn</code> must not be in the future" is testable. The same pattern appears in
+      <code>config::Environment</code> (the process environment, or a <code>HashMap</code> in tests) and in
+      <code>MembershipLookup</code>, <code>ReceiptChecks</code>, <code>Publisher</code>.</p>
+  </div>
+
+  <h2>You can implement traits for types you didn't write</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/app/src/config.rs" data-line="61">
+    impl<S: std::hash::BuildHasher> Environment for HashMap<&str, &str, S> {
+        fn var(&self, name: &str) -> Option<String> {
+            self.get(name).map(|value| (*value).to_owned())
+        }
+  </script>
+  <p>Ledgerly makes the standard library's <code>HashMap</code> an <code>Environment</code>, so a test can write
+    <code>Config::from_environment(&amp;HashMap::from([("SPRING_PROFILES_ACTIVE", "prod")]))</code>. The one limit
+    (the "orphan rule"): either the trait or the type must be defined in your crate
+    (<a href="https://doc.rust-lang.org/book/ch10-02-traits.html">Book 10.2</a>).</p>
+
+  <h2>Traits must be in scope to call their methods</h2>
+  <p>Remember <code>use std::fmt::Write as _;</code> from lesson 12? Trait methods only work when the trait is
+    imported. That's why files that call <code>"TRAVEL".parse::&lt;Category&gt;()</code> don't need anything
+    special (<code>FromStr</code> is in the prelude), while code calling <code>write!</code> on a
+    <code>String</code> needs <code>std::fmt::Write</code>.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS is structural: <code>{ now: () =&gt; … }</code> <em>is</em> a <code>Clock</code>. Rust is nominal: a type
+      with a <code>now</code> method is not a <code>Clock</code> until <code>impl Clock for …</code> says so. In
+      exchange you get default methods, implementations for foreign types, and operators driven by traits
+      (<code>==</code> is <code>PartialEq</code>, <code>+</code> is <code>Add</code>, <code>{}</code> is
+      <code>Display</code>), which is the next lesson.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex49_traits.rs</code>: a <code>Notifier</code> trait with a default method, two
+      implementations, and a function that works with any of them. Run <code>cargo test ex49</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A struct has a method <code>fn now(&amp;self) -&gt; DateTime&lt;Utc&gt;</code> but no
+      <code>impl Clock</code>. Can it be passed as <code>&amp;dyn Clock</code>?</p>
+    <ul class="options">
+      <li>Yes, the shape matches the trait's methods</li>
+      <li data-correct>No, Rust needs an explicit impl Clock block</li>
+      <li>Yes, but only if it also derives Debug</li>
+      <li>No, only enums can implement trait methods</li>
+    </ul>
+    <div class="explain">Traits are nominal. Add <code>impl Clock for MyClock { fn now(&amp;self) … }</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Does <code>FixedClock</code> have a <code>today()</code> method?</p>
+    <ul class="options">
+      <li>No, it only implements the required now method</li>
+      <li data-correct>Yes, it inherits the trait's default implementation</li>
+      <li>Only if FixedClock writes its own today body</li>
+      <li>No, default methods only apply to SystemClock</li>
+    </ul>
+    <div class="explain">Default methods come with the trait. <code>today</code> calls whatever <code>now</code> the
+      implementor provides, so a fixed clock gets a fixed day.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>trait Clock: fmt::Debug + Send + Sync</code> require?</p>
+    <ul class="options">
+      <li>That Clock's methods return values of those traits</li>
+      <li data-correct>That every implementor also implements those three traits</li>
+      <li>That Clock inherits fields from those three types</li>
+      <li>That clocks are only used inside debug builds</li>
+    </ul>
+    <div class="explain">They're supertraits: requirements on implementors, so code holding a <code>dyn Clock</code>
+      can debug-print it and share it across threads.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch10-02-traits.html">10.2 "Traits: Defining Shared
+      Behavior"</a>, up to "Traits as Parameters".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

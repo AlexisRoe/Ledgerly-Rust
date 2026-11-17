@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loops: loop, while, for</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Control flow</p>
+  <h1>Loops: <code>loop</code>, <code>while</code>, <code>for</code></h1>
+  <p class="lede">Three loops. <code>for</code> always iterates over something, so there's no C-style
+    <code>for (let i = 0; …)</code>, and <code>loop</code> can return a value.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read every loop in Ledgerly: <code>for</code> over a collection or a range, <code>while</code>,
+      <code>loop</code> with <code>break</code>, and labelled breaks out of nested loops.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>How do you write TS's <code>a ? b : c</code> in Rust?</summary>
+      <div><code>if a { b } else { c }</code>. Both branches must have the same type. (29)</div></details>
+    <details><summary>What's the difference between <code>v[i]</code> and <code>v.get(i)</code>?</summary>
+      <div><code>v[i]</code> panics when out of range; <code>get</code> returns an <code>Option</code>. (19)</div></details>
+  </div>
+
+  <h2><code>for</code>: always over an iterator</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      for (const status of ExpenseStatus.ALL) { … }
+      for (let i = 0; i < 10; i++) { … }
+      for (let i = 0; i <= 10; i++) { … }
+      items.forEach((item, index) => { … });
+      for (const [key, value] of map) { … }
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      for status in ExpenseStatus::ALL { … }
+      for i in 0..10 { … }            // range: 0 to 9
+      for i in 0..=10 { … }           // inclusive: 0 to 10
+      for (index, item) in items.iter().enumerate() { … }
+      for (key, value) in &map { … }
+    </script>
+  </div>
+  <p><code>a..b</code> is a <strong>range</strong> value (end excluded), and <code>a..=b</code> includes the end. Ranges
+    also slice: <code>&amp;v[1..3]</code>. Looping over <code>&amp;items</code> borrows the items, while looping
+    over <code>items</code> (no <code>&amp;</code>) <em>consumes</em> the collection, which is why you'll see
+    <code>for x in &amp;list</code> so often. Section 5 explains why.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: nested <code>for</code> over two enums</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="695">
+      let mut legal = 0;
+      let mut illegal = 0;
+      for from in ExpenseStatus::ALL {
+          for action in Action::ALL {
+              let mut e = in_status(from);
+              let result = perform(&mut e, action);
+              // … count legal and illegal transitions …
+          }
+      }
+      assert_eq!((legal, illegal), (6, 24));
+    </script>
+    <p>5 statuses × 6 actions = 30 pairs, checked in one test. This is where the <code>ALL</code> arrays from lesson
+      22 earn their keep.</p>
+  </div>
+
+  <h2><code>while</code> and <code>loop</code></h2>
+  <p><code>while cond { … }</code> is TS's <code>while</code>. <code>loop { … }</code> is <code>while (true)</code>,
+    and it's the one you'll see when the exit condition sits in the middle:</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/receipts/src/scanner.rs" data-line="146">
+    async fn read_reply(socket: &mut TcpStream, timeout: Duration) -> Result<String, ScanError> {
+        let mut reply = Vec::new();
+        let mut byte = [0_u8; 1];
+        loop {
+            let read = within(timeout, socket.read(&mut byte)).await?;
+            if read == 0 || byte[0] == 0 {
+                break;
+            }
+            if reply.len() == MAX_REPLY {
+                return Err(ScanError::UnexpectedReply);
+            }
+            reply.push(byte[0]);
+        }
+        // …
+  </script>
+  <p>The virus scanner's reply is read one byte at a time until a NUL byte or the end of the stream, with a cap so a
+    misbehaving scanner can't fill memory. Three exits: <code>break</code> (done), <code>return Err</code>
+    (too long), and the <code>?</code> on the read (I/O error or timeout).</p>
+  <h3><code>break</code> with a value, and labels</h3>
+  <script type="text/x-code" data-lang="rust">
+    let attempt = loop {
+        if try_connect() { break 3; }      // `loop` is an expression: break carries its value
+    };
+
+    'rows: for row in rows {               // a label: 'name:
+        for cell in row {
+            if cell.is_empty() { continue 'rows; }  // skip to the next row
+        }
+    }
+  </script>
+  <p>Labels look like lifetimes (<code>'name</code>) but are unrelated. JS has labels too, but they're rarely
+    used.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>No index-based <code>for</code> means no off-by-one bugs from <code>&lt;=</code> vs <code>&lt;</code>, and
+      no <code>i</code> leaking out of the loop. In idiomatic Rust, many loops disappear entirely in favour of iterator
+      chains (<code>.iter().map().filter().collect()</code>, lesson 46), much like you'd prefer
+      <code>.map()</code> over a <code>for</code> loop in TS.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex30_loops.rs</code>: a range loop, a <code>loop</code> that breaks with a value,
+      and a labelled <code>continue</code>. Run <code>cargo test ex30</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">How many times does <code>for i in 1..5</code> run?</p>
+    <ul class="options" data-fixed>
+      <li>3</li>
+      <li data-correct>4</li>
+      <li>5</li>
+      <li>6</li>
+    </ul>
+    <div class="explain"><code>1..5</code> is 1, 2, 3, 4 (end excluded). <code>1..=5</code> would run 5 times.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's the TS equivalent of <code>loop { … }</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>do { … } while (false)</code></li>
+      <li data-correct><code>while (true) { … }</code></li>
+      <li><code>for (const x of xs) { … }</code></li>
+      <li><code>setInterval(() =&gt; { … })</code></li>
+    </ul>
+    <div class="explain">An endless loop, left with <code>break</code> or <code>return</code>. Unlike
+      <code>while (true)</code>, it's an expression that can produce a value via <code>break value</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In <code>read_reply</code>, which line leaves the loop when the scanner sends too much?</p>
+    <ul class="options">
+      <li>The break after checking for a NUL byte</li>
+      <li data-correct>The return Err when the length hits the cap</li>
+      <li>The question mark after the socket read call</li>
+      <li>The push, which panics once the vector fills</li>
+    </ul>
+    <div class="explain"><code>if reply.len() == MAX_REPLY { return Err(ScanError::UnexpectedReply); }</code> leaves
+      the whole function, not just the loop.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch03-05-control-flow.html">3.5 "Control Flow"</a>, the
+      "Repetition with Loops" half (returning values from loops, loop labels).</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Capstone 3: storage behind a trait</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Capstone: a service from scratch</p>
+  <h1>Capstone 3: storage behind a trait</h1>
+  <p class="lede">Handlers shouldn't know where links live. Define a port (a trait) for what the service needs from
+    storage, and an in-memory adapter that every request can share safely.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>Your <code>store.rs</code> has a dyn-compatible <code>LinkStore</code> trait, a <code>MemoryStore</code> using
+      <code>RwLock&lt;HashMap&gt;</code>, a <code>StoreError</code>, and tests including one that shares the store across threads.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why are Ledgerly's ports <code>Send + Sync</code> supertraits?</summary>
+      <div>So <code>Arc&lt;dyn Port&gt;</code> can be shared by handlers on every worker thread. (98)</div></details>
+    <details><summary><code>Mutex</code> or <code>RwLock</code> for a map read on every request and written rarely?</summary>
+      <div><code>RwLock</code>: many readers at once. (99)</div></details>
+  </div>
+
+  <h2>Start from these tests</h2>
+  <script type="text/x-code" data-lang="rust">
+    #[test]
+    fn a_slug_is_taken_once() {
+        let store = MemoryStore::default();
+        store.insert(link("abc")).unwrap();
+        assert_eq!(store.insert(link("abc")), Err(StoreError::Taken(Slug::parse("abc").unwrap())));
+    }
+
+    #[test]
+    fn is_shareable_between_threads() {
+        let store: Arc<dyn LinkStore> = Arc::new(MemoryStore::default());
+        std::thread::scope(|scope| {
+            for n in 0..4 {
+                let store = &store;
+                scope.spawn(move || store.insert(link(&format!("link-{n}"))).unwrap());
+            }
+        });
+        assert!(store.get(&Slug::parse("link-3").unwrap()).is_some());
+    }
+  </script>
+  <p>(Write a small <code>link(slug: &amp;str) -&gt; Link</code> helper in the test module; tests may unwrap.)</p>
+
+  <h2>Decisions to make</h2>
+  <ul>
+    <li><strong>Methods take <code>&amp;self</code></strong>, not <code>&amp;mut self</code>: the store is shared, so it must
+      handle mutation inside (interior mutability, lesson 84).</li>
+    <li><strong>Sync or async methods?</strong> In memory, nothing waits, so sync. A Postgres adapter would return
+      <code>BoxFuture</code>s (lesson 92); say so in the trait's docs.</li>
+    <li><strong>"Taken" is checked inside one lock:</strong> a <code>get</code> followed by a separate <code>insert</code>
+      would let two requests claim the same slug between the two calls. The entry API does both atomically.</li>
+    <li><strong><code>get</code> returns an owned <code>Link</code></strong> (a clone): a reference couldn't outlive the
+      lock guard.</li>
+  </ul>
+
+  <div class="ledgerly">
+    <span class="box-label">Reference solution</span>
+    <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/store.rs" data-line="21">
+      pub trait LinkStore: fmt::Debug + Send + Sync {
+          /// # Errors
+          ///
+          /// [`StoreError::Taken`] if a link with the same slug exists; nothing is changed then.
+          fn insert(&self, link: Link) -> Result<(), StoreError>;
+
+          fn get(&self, slug: &Slug) -> Option<Link>;
+
+          /// Adds `count` visits to the link, if it exists.
+          fn add_visits(&self, slug: &Slug, count: u64);
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/store.rs" data-line="40">
+      fn insert(&self, link: Link) -> Result<(), StoreError> {
+          // A panic while holding the lock can't leave a half-written map entry behind, so poisoning is ignored.
+          let mut links = self.links.write().unwrap_or_else(PoisonError::into_inner);
+          match links.entry(link.slug.clone()) {
+              Entry::Occupied(_) => Err(StoreError::Taken(link.slug)),
+              Entry::Vacant(slot) => {
+                  slot.insert(link);
+                  Ok(())
+              }
+          }
+      }
+    </script>
+    <p>The match on <code>Entry</code> is the long form of <code>or_insert</code>, needed here because the occupied case is an
+      error. The poisoning comment records a decision, as Ledgerly's <code>FixedClock</code> does.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In Node, a <code>Map</code> in module scope is a perfectly good in-memory store, because only one callback runs at a
+      time. With Tokio's worker threads, the same map needs a lock, and the "check, then insert" race is real, not
+      theoretical. The compiler won't let you forget the lock; avoiding the race is still your job.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why does <code>get</code> return <code>Option&lt;Link&gt;</code> rather than <code>Option&lt;&amp;Link&gt;</code>?</p>
+    <ul class="options">
+      <li>Because references can't be wrapped in an Option</li>
+      <li data-correct>A reference couldn't outlive the read lock's guard</li>
+      <li>Because cloning is faster than borrowing it here</li>
+      <li>Because dyn traits can't ever return references</li>
+    </ul>
+    <div class="explain">The guard is dropped when <code>get</code> returns; the data behind it is only safe while it's held.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What goes wrong with <code>if self.get(&amp;slug).is_none() { self.put(link) }</code>?</p>
+    <ul class="options">
+      <li>Nothing; both calls happen at the same instant</li>
+      <li data-correct>Two requests can pass the check, then both insert</li>
+      <li>It deadlocks, because get keeps the lock held</li>
+      <li>It doesn't compile, because get borrows self mutably</li>
+    </ul>
+    <div class="explain">Check and insert must happen under one lock: the entry API.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The std docs for <a href="https://doc.rust-lang.org/std/sync/struct.RwLock.html">RwLock</a> (read the note on
+      poisoning) and <a href="https://doc.rust-lang.org/std/collections/hash_map/enum.Entry.html">Entry</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

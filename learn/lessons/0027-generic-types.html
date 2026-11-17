@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Generic types you'll see everywhere</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1>Generic types you'll see everywhere</h1>
+  <p class="lede"><code>Array&lt;T&gt;</code>, <code>Promise&lt;T&gt;</code>, <code>Map&lt;K, V&gt;</code>:
+    you already read generics. Rust's are the same idea, just nested deeper. Here's how to read the deep ones from the
+    outside in.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read a type like <code>Arc&lt;Mutex&lt;HashMap&lt;String, Entry&gt;&gt;&gt;</code> or
+      <code>Result&lt;Option&lt;Versioned&lt;Expense&gt;&gt;, PersistenceError&gt;</code> out loud and say what each
+      layer adds.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's a newtype, and what does it cost at runtime?</summary>
+      <div>A one-field tuple struct like <code>struct TeamId(Uuid)</code>. It costs nothing at runtime.</div></details>
+    <details><summary>What does "parse, don't validate" mean in Ledgerly?</summary>
+      <div>Validate once in a constructor that returns a new type (e.g. <code>Merchant</code>). Holding the type is
+        proof of validity.</div></details>
+  </div>
+
+  <h2>Defining a generic type</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      interface Versioned<T> {
+        value: T;
+        version: Version;
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/version.rs" data-line="43">
+      #[derive(Debug, Clone, PartialEq, Eq)]
+      pub struct Versioned<T> {
+          pub value: T,
+          pub version: Version,
+      }
+    </script>
+  </div>
+  <p>Identical idea. A <code>Versioned&lt;Expense&gt;</code> is an expense plus the version number used for
+    optimistic locking (HTTP <code>ETag</code>/<code>If-Match</code>). The aggregate itself stays free of database
+    concerns. Constraints such as <code>&lt;T extends …&gt;</code> are lesson 52.</p>
+
+  <h2>The containers to know by heart</h2>
+  <table>
+    <thead><tr><th>Rust</th><th>TS</th><th>Adds</th></tr></thead>
+    <tbody>
+      <tr><td><code>Vec&lt;T&gt;</code></td><td><code>T[]</code></td><td>many, growable</td></tr>
+      <tr><td><code>Option&lt;T&gt;</code></td><td><code>T | undefined</code></td><td>maybe absent</td></tr>
+      <tr><td><code>Result&lt;T, E&gt;</code></td><td>T, or throws E</td><td>may fail</td></tr>
+      <tr><td><code>HashMap&lt;K, V&gt;</code></td><td><code>Map&lt;K, V&gt;</code></td><td>lookup by key (<code>std::collections</code>)</td></tr>
+      <tr><td><code>HashSet&lt;T&gt;</code></td><td><code>Set&lt;T&gt;</code></td><td>unique values</td></tr>
+      <tr><td><code>Box&lt;T&gt;</code></td><td>(implicit everywhere in JS)</td><td>on the heap, one owner (lesson 42)</td></tr>
+      <tr><td><code>Arc&lt;T&gt;</code></td><td>(implicit everywhere in JS)</td><td>shared by many owners, across threads (lesson 42)</td></tr>
+      <tr><td><code>Mutex&lt;T&gt;</code></td><td>(none: JS is single-threaded)</td><td>one writer at a time (lesson 64)</td></tr>
+      <tr><td><code>Pin&lt;Box&lt;dyn Future&lt;…&gt;&gt;&gt;</code></td><td><code>Promise&lt;…&gt;</code></td><td>a boxed async computation (section 10)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Reading from the outside in</h2>
+  <p>Read the outermost type first. Each layer answers one question:</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/persistence/mod.rs" data-line="46">
+    ) -> Result<Option<Versioned<Expense>>, PersistenceError> {
+  </script>
+  <ol>
+    <li><code>Result&lt;…, PersistenceError&gt;</code>: the call may fail with a persistence error.</li>
+    <li><code>Option&lt;…&gt;</code>: if it worked, there may be nothing.</li>
+    <li><code>Versioned&lt;…&gt;</code>: if there's something, it comes with a version.</li>
+    <li><code>Expense</code>: and it's an expense.</li>
+  </ol>
+  <p>"Might fail; if not, maybe an expense with its version."</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: the rate limiter's state</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/ratelimit.rs" data-line="96">
+      buckets: Arc<Mutex<HashMap<String, Entry>>>,
+    </script>
+    <p><code>Arc</code>: shared by every request handler. <code>Mutex</code>: only one may change it at a time.
+      <code>HashMap&lt;String, Entry&gt;</code>: one entry per client key. In Node you'd write
+      <code>const buckets = new Map&lt;string, Entry&gt;()</code> and be done, because one thread and a GC make the
+      first two layers unnecessary. Rust runs handlers on many threads in parallel and has no GC, so the sharing and
+      locking must be spelled out.</p>
+  </div>
+
+  <h2>Type aliases name the scary ones</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/receipt_checks.rs" data-line="43">
+    pub type SummaryFuture<'a> = Pin<Box<dyn Future<Output = sqlx::Result<ReceiptSummary>> + Send + 'a>>;
+  </script>
+  <p><code>type</code> works exactly like TS's <code>type X = …</code>: a new <em>name</em>, not a new type. Read it
+    as "a boxed future that eventually yields a <code>ReceiptSummary</code> or a database error". Its parts
+    (<code>Pin</code>, <code>dyn</code>, <code>Send</code>, <code>'a</code>) come in sections 5, 7 and 10. Until then,
+    you can treat it like a <code>Promise&lt;ReceiptSummary&gt;</code>. Also note
+    <code>sqlx::Result&lt;T&gt;</code>: many crates define a <code>Result</code> alias with their error type built
+    in.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS generics are erased: <code>Array&lt;number&gt;</code> and <code>Array&lt;string&gt;</code> are the same at
+      runtime. Rust generates separate machine code for each concrete type ("monomorphization"), so
+      <code>Vec&lt;u8&gt;</code> and <code>Vec&lt;Expense&gt;</code> are really different. It's fast, and it's why the
+      type must be known at compile time, which is where the turbofish comes in.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Read <code>Option&lt;Vec&lt;Rejection&gt;&gt;</code> out loud.</p>
+    <ul class="options">
+      <li>A list where each rejection may be missing</li>
+      <li data-correct>Maybe a list of rejections, maybe nothing</li>
+      <li>A rejection that may hold a list inside</li>
+      <li>A list that is guaranteed to be non-empty</li>
+    </ul>
+    <div class="explain">Outside in: <code>Option</code> (maybe), <code>Vec</code> (a list), of
+      <code>Rejection</code>. A list of maybe-rejections would be <code>Vec&lt;Option&lt;Rejection&gt;&gt;</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does the rate limiter need <code>Arc&lt;Mutex&lt;…&gt;&gt;</code> where Node needs only a
+      <code>Map</code>?</p>
+    <ul class="options">
+      <li>Rust maps can't hold strings as their keys</li>
+      <li data-correct>Many threads share and change it, without a GC</li>
+      <li>HashMap is slower without a Mutex around it</li>
+      <li>Arc and Mutex are required for any struct field</li>
+    </ul>
+    <div class="explain"><code>Arc</code> handles shared ownership (who frees it), <code>Mutex</code> handles
+      concurrent writes. Node avoids both with one thread and a GC.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>pub type SummaryFuture&lt;'a&gt; = …</code> create?</p>
+    <ul class="options">
+      <li>A new distinct type, like a newtype</li>
+      <li data-correct>A shorter name for an existing type</li>
+      <li>A trait that all futures can implement</li>
+      <li>A macro that expands into future code</li>
+    </ul>
+    <div class="explain">A type alias is interchangeable with what it names, unlike a newtype.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch10-01-syntax.html">10.1 "Generic Data Types"</a> (in
+      struct and enum definitions, plus "Performance of Code Using Generics" on monomorphization), and
+      <a href="https://doc.rust-lang.org/book/ch08-03-hash-maps.html">8.3 "Hash Maps"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

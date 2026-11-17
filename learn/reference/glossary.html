@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Glossary</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Glossary</h1>
+  <p class="lede">The words this course uses, each defined once. The nearest TypeScript idea is in brackets where one
+    exists. (For Ledgerly's <em>business</em> vocabulary, such as claimant, approver or reimburse, see the repo's own
+    <code>GLOSSARY.md</code>.)</p>
+
+  <h2>Tooling</h2>
+  <table>
+    <tbody>
+      <tr><td><strong>toolchain</strong></td><td>A compiler, cargo and standard library at one version, managed by rustup. (a Node version)</td></tr>
+      <tr><td><strong>edition</strong></td><td>An opt-in language dialect per crate (2024 here); editions mix freely.</td></tr>
+      <tr><td><strong>package</strong></td><td>One <code>Cargo.toml</code> and the crates it builds. (an npm package)</td></tr>
+      <tr><td><strong>crate</strong></td><td>One unit of compilation: a library (<code>lib.rs</code>) or a binary (<code>main.rs</code>).</td></tr>
+      <tr><td><strong>workspace</strong></td><td>Several packages sharing one lock file and <code>target/</code>. (a pnpm workspace)</td></tr>
+      <tr><td><strong>feature</strong></td><td>An optional, compile-time part of a crate, switched on by dependents.</td></tr>
+      <tr><td><strong>builder</strong></td><td>A value that collects settings step by step and validates them in <code>build()</code>.</td></tr>
+      <tr><td><strong>doc test</strong></td><td>A code block in a doc comment, compiled and run by <code>cargo test</code>.</td></tr>
+      <tr><td><strong>semver</strong></td><td>Version numbers that signal breaking changes; for crates, Cargo's rules decide what counts as breaking.</td></tr>
+      <tr><td><strong>lint level</strong></td><td><code>allow</code>, <code>warn</code>, <code>deny</code> (overridable error), <code>forbid</code> (final error).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Code organisation</h2>
+  <table>
+    <tbody>
+      <tr><td><strong>module</strong></td><td>A namespace in the crate's tree, declared with <code>mod</code>; usually one file.</td></tr>
+      <tr><td><strong>path</strong></td><td>An item's address: <code>crate::domain::Action</code>, <code>super::x</code>, <code>std::sync::Arc</code>.</td></tr>
+      <tr><td><strong>item</strong></td><td>Anything declared at module level: fn, struct, enum, trait, impl, const, mod, use.</td></tr>
+      <tr><td><strong>visibility</strong></td><td>Who may use an item: private (default), <code>pub(crate)</code>, <code>pub</code>. (export)</td></tr>
+      <tr><td><strong>re-export</strong></td><td><code>pub use</code>: publishing an item at a new path. (<code>export { X } from</code>)</td></tr>
+      <tr><td><strong>facade</strong></td><td>A Ledgerly crate's deliberately small public API.</td></tr>
+      <tr><td><strong>fragment specifier</strong></td><td>The kind of syntax a macro variable captures: <code>$x:expr</code>, <code>$n:ident</code>.</td></tr>
+      <tr><td><strong>hygiene</strong></td><td>Local names inside a macro can't clash with the caller's.</td></tr>
+      <tr><td><strong>procedural macro</strong></td><td>A Rust function run by the compiler that turns tokens into tokens: derive, attribute or function-like.</td></tr>
+      <tr><td><strong><code>unsafe</code></strong></td><td>Code where the programmer vouches for rules the compiler can't check.</td></tr>
+      <tr><td><strong>undefined behaviour</strong></td><td>What breaking those rules causes: anything may happen, including seeming to work.</td></tr>
+      <tr><td><strong>attribute</strong></td><td><code>#[…]</code> / <code>#![…]</code>: a compile-time instruction on an item.</td></tr>
+      <tr><td><strong>macro</strong></td><td>Code that writes code at compile time, called with <code>!</code> or used as a derive/attribute.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Types</h2>
+  <table>
+    <tbody>
+      <tr><td><strong>struct</strong></td><td>A named type with fields. (an interface plus its data)</td></tr>
+      <tr><td><strong>tuple struct / newtype</strong></td><td>A struct with unnamed fields; with one field, a zero-cost distinct wrapper. (a branded type)</td></tr>
+      <tr><td><strong>enum</strong></td><td>A type with a fixed set of variants, each optionally carrying data. (a discriminated union)</td></tr>
+      <tr><td><strong>variant</strong></td><td>One case of an enum, such as <code>ExpenseStatus::Draft</code>.</td></tr>
+      <tr><td><strong><code>Option&lt;T&gt;</code></strong></td><td><code>Some(T)</code> or <code>None</code>: a value that may be absent. (<code>T | undefined</code>)</td></tr>
+      <tr><td><strong><code>Result&lt;T, E&gt;</code></strong></td><td><code>Ok(T)</code> or <code>Err(E)</code>: an operation that may fail.</td></tr>
+      <tr><td><strong>unit <code>()</code></strong></td><td>The type with one value: "nothing to return". (<code>void</code>)</td></tr>
+      <tr><td><strong>slice</strong></td><td>A borrowed view into contiguous data: <code>&amp;[T]</code>, <code>&amp;str</code>.</td></tr>
+      <tr><td><strong>niche</strong></td><td>An impossible bit pattern (a null reference) that an enum reuses as its tag, so <code>Option&lt;&amp;T&gt;</code> costs nothing.</td></tr>
+      <tr><td><strong>monomorphisation</strong></td><td>Compiling one specialised copy of a generic function per type it's used with.</td></tr>
+      <tr><td><strong>release profile</strong></td><td>Cargo's optimised build settings (<code>--release</code>); tests use the unoptimised dev profile.</td></tr>
+      <tr><td><strong>generic</strong></td><td>A type or function with type parameters, <code>Vec&lt;T&gt;</code>; monomorphized per use.</td></tr>
+      <tr><td><strong>type alias</strong></td><td><code>type X = …;</code>: a new name, not a new type.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Ownership</h2>
+  <table>
+    <tbody>
+      <tr><td><strong>owner</strong></td><td>The variable or field responsible for a value; exactly one at a time.</td></tr>
+      <tr><td><strong>move</strong></td><td>Transfer of ownership by assignment, passing or consuming; the old name becomes unusable.</td></tr>
+      <tr><td><strong>drop</strong></td><td>Releasing a value (memory, transaction, lock) when its owner goes out of scope.</td></tr>
+      <tr><td><strong><code>Copy</code></strong></td><td>A trait for small values that are copied instead of moved.</td></tr>
+      <tr><td><strong><code>Clone</code></strong></td><td>A trait for explicit duplication with <code>.clone()</code>; cost depends on the type.</td></tr>
+      <tr><td><strong>borrow / reference</strong></td><td>Temporary access without ownership: <code>&amp;T</code> (shared, read) or <code>&amp;mut T</code> (exclusive, write).</td></tr>
+      <tr><td><strong>borrow checker</strong></td><td>The compiler pass enforcing "many readers or one writer, never outliving the value".</td></tr>
+      <tr><td><strong>lifetime</strong></td><td>A name (<code>'a</code>) for how long a borrow is valid; <code>'static</code> = the whole program.</td></tr>
+      <tr><td><strong>lifetime elision</strong></td><td>The three rules that fill in lifetimes you don't write.</td></tr>
+      <tr><td><strong>interior mutability</strong></td><td>Changing data through a shared <code>&amp;</code>, made safe by a type (<code>Cell</code>, <code>RefCell</code>, <code>Mutex</code>).</td></tr>
+      <tr><td><strong>RAII</strong></td><td>A resource released by its owner's <code>Drop</code> at scope end. (<code>try/finally</code>, <code>using</code>)</td></tr>
+      <tr><td><strong><code>Cow</code></strong></td><td>"Clone on write": borrowed or owned data behind one type.</td></tr>
+      <tr><td><strong>smart pointer</strong></td><td>A pointer type that owns its target: <code>Box</code> (one owner), <code>Rc</code>/<code>Arc</code> (shared).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Behaviour</h2>
+  <table>
+    <tbody>
+      <tr><td><strong>method / associated function</strong></td><td>A function in an <code>impl</code> with / without a <code>self</code> parameter. (instance / static method)</td></tr>
+      <tr><td><strong>trait</strong></td><td>A set of methods a type implements explicitly. (an interface, nominal)</td></tr>
+      <tr><td><strong>trait bound</strong></td><td>A requirement on a type parameter: <code>T: Display</code>. (<code>T extends …</code>)</td></tr>
+      <tr><td><strong>trait object</strong></td><td><code>dyn Trait</code> behind a pointer: an implementation chosen at runtime.</td></tr>
+      <tr><td><strong>derive</strong></td><td>Generating a trait implementation with <code>#[derive(…)]</code>.</td></tr>
+      <tr><td><strong><code>Send</code> / <code>Sync</code></strong></td><td>Safe to move to / share between threads.</td></tr>
+      <tr><td><strong>associated type</strong></td><td>A type an impl fixes once, like <code>Iterator::Item</code>.</td></tr>
+      <tr><td><strong>blanket impl</strong></td><td>An impl for every type meeting a bound: <code>impl&lt;T: Display&gt; ToString for T</code>.</td></tr>
+      <tr><td><strong>extension trait</strong></td><td>A local trait adding methods to a foreign type; works where imported.</td></tr>
+      <tr><td><strong>orphan rule / coherence</strong></td><td>An impl needs a local trait or a local type, so each (trait, type) has one impl.</td></tr>
+      <tr><td><strong>dyn compatible</strong></td><td>A trait usable as <code>dyn Trait</code>: no generic methods, no <code>Self</code> by value, no <code>async fn</code>.</td></tr>
+      <tr><td><strong>vtable</strong></td><td>The table of method pointers behind a <code>dyn Trait</code>.</td></tr>
+      <tr><td><strong>typestate</strong></td><td>States as types, so illegal transitions don't compile.</td></tr>
+      <tr><td><strong><code>PhantomData</code></strong></td><td>A zero-sized field marking a type parameter as used.</td></tr>
+      <tr><td><strong>closure</strong></td><td>An anonymous function capturing its environment: <code>|x| x + 1</code>. (arrow function)</td></tr>
+      <tr><td><strong>iterator</strong></td><td>A lazy sequence with adapters (<code>map</code>, <code>filter</code>) and consumers (<code>collect</code>).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Control flow and errors</h2>
+  <table>
+    <tbody>
+      <tr><td><strong>expression / statement</strong></td><td>Code that produces a value / code ending in <code>;</code> that produces <code>()</code>.</td></tr>
+      <tr><td><strong>pattern</strong></td><td>A shape to match and destructure, used in <code>let</code>, <code>match</code>, parameters.</td></tr>
+      <tr><td><strong>exhaustive</strong></td><td>Covering every possible value; required of every <code>match</code>.</td></tr>
+      <tr><td><strong>refutable pattern</strong></td><td>A pattern that might not match (<code>Some(x)</code>); needs <code>if let</code> / <code>let … else</code>.</td></tr>
+      <tr><td><strong><code>?</code> operator</strong></td><td>Unwraps <code>Ok</code>/<code>Some</code>, or returns the converted error from the function.</td></tr>
+      <tr><td><strong>error context</strong></td><td>An explanation added to an error on its way up (<code>anyhow</code>'s <code>.context</code>).</td></tr>
+      <tr><td><strong>smart constructor</strong></td><td>The one fallible function that creates a type with a private field, so every value is valid.</td></tr>
+      <tr><td><strong>panic</strong></td><td>Unwinding on a bug (failed <code>unwrap</code>, index out of bounds); not for expected errors.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Async</h2>
+  <table>
+    <tbody>
+      <tr><td><strong>future</strong></td><td>A lazy async computation; does nothing until awaited. (a Promise that doesn't start itself)</td></tr>
+      <tr><td><strong>runtime</strong></td><td>The library that polls futures and schedules tasks: Tokio. (Node's event loop)</td></tr>
+      <tr><td><strong>task</strong></td><td>A future spawned onto the runtime with <code>tokio::spawn</code>, possibly on another thread.</td></tr>
+      <tr><td><strong>waker</strong></td><td>The handle a future leaves behind so the executor knows when to poll it again.</td></tr>
+      <tr><td><strong>executor</strong></td><td>The loop that polls woken futures (Tokio's scheduler; a toy <code>block_on</code>).</td></tr>
+      <tr><td><strong><code>Pin</code></strong></td><td>A pointer whose target won't move again; needed for self-referential futures.</td></tr>
+      <tr><td><strong>cancel safety</strong></td><td>Whether dropping a future mid-way loses work; matters in <code>select!</code> loops.</td></tr>
+      <tr><td><strong>blocking</strong></td><td>Long work between two <code>.await</code>s; belongs in <code>spawn_blocking</code>.</td></tr>
+      <tr><td><strong>actor</strong></td><td>A task that owns some state and is driven by messages on a channel.</td></tr>
+      <tr><td><strong>atomic</strong></td><td>A lock-free, thread-safe integer or flag (<code>AtomicUsize</code>).</td></tr>
+      <tr><td><strong>extractor</strong></td><td>An axum handler parameter type that pulls its value out of the request.</td></tr>
+    </tbody>
+  </table>
+</main>
+</body>
+</html>

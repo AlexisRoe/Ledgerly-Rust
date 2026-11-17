@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Strings: String vs &amp;str</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1>Strings: <code>String</code> vs <code>&amp;str</code></h1>
+  <p class="lede">TypeScript has one <code>string</code>. Rust has two, because it cares who <em>owns</em> the bytes.
+    This is your first taste of ownership.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can say why a Ledgerly function takes <code>&amp;str</code> but returns <code>String</code> (or the other
+      way round), convert between the two, and avoid the "length" trap that Ledgerly's <code>text.rs</code> exists
+      for.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's <code>'a'</code> and what's <code>"a"</code>?</summary>
+      <div>A <code>char</code> and a string (a <code>&amp;'static str</code>, as you'll see now).</div></details>
+    <details><summary>Where must you always write types?</summary>
+      <div>Function signatures: every parameter and the return type.</div></details>
+  </div>
+
+  <h2>Two types, one idea</h2>
+  <table>
+    <thead><tr><th></th><th><code>String</code></th><th><code>&amp;str</code> ("string slice")</th></tr></thead>
+    <tbody>
+      <tr><td>What it is</td><td>Owned, growable text on the heap</td><td>A borrowed <em>view</em> into text someone else owns</td></tr>
+      <tr><td>Analogy</td><td>A document you have</td><td>Someone pointing at a paragraph of a document</td></tr>
+      <tr><td>Can change it?</td><td>Yes, if <code>mut</code> (<code>push_str</code>)</td><td>No</td></tr>
+      <tr><td>Literals</td><td></td><td><code>"MEMBER"</code> is <code>&amp;'static str</code>: stored in the binary, valid forever</td></tr>
+      <tr><td>Make one</td><td><code>s.to_owned()</code>, <code>s.to_string()</code>, <code>String::from(s)</code>, <code>format!(…)</code></td><td><code>&amp;string</code>, <code>string.as_str()</code>, <code>&amp;string[0..3]</code></td></tr>
+    </tbody>
+  </table>
+  <p>Rule of thumb, used throughout Ledgerly:</p>
+  <ul>
+    <li><strong>Parameters take <code>&amp;str</code></strong>: the function only reads, and callers can pass a
+      literal or a <code>&amp;String</code>.</li>
+    <li><strong>Return <code>String</code> when you create new text</strong>, because the caller must own it.</li>
+    <li><strong>Return <code>&amp;str</code> when you hand back part of the input</strong>, with no copy.</li>
+    <li><strong>Struct fields use <code>String</code></strong>, because the struct must own its data.</li>
+  </ul>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: all four rules in one file</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/text.rs" data-line="31">
+      /// `String.strip()`: the text without leading and trailing Java whitespace.
+      #[must_use]
+      pub fn strip(text: &str) -> &str {
+          text.trim_matches(is_java_whitespace)
+      }
+      // …
+      pub fn truncate_utf16(text: &str, limit: usize) -> String {
+          let mut kept = String::new();
+          // … kept.push(c) for each character that fits …
+          kept
+      }
+    </script>
+    <p><code>strip</code> returns a <em>view of its input</em> with the ends cut off, with no allocation.
+      <code>truncate_utf16</code> may add a <code>'?'</code>, so it builds a new <code>String</code>.</p>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/text.rs" data-line="34">
+      pub struct Merchant(String);
+      // …
+          pub fn new(text: &str) -> Result<Self, InvalidInput> {
+              // … checks …
+              Ok(Self(stripped.to_owned()))
+          }
+
+          #[must_use]
+          pub fn as_str(&self) -> &str {
+              &self.0
+          }
+    </script>
+    <p><code>Merchant</code> <em>owns</em> its text (a <code>String</code> field). <code>new</code> borrows the
+      input and copies the stripped part with <code>to_owned()</code>. <code>as_str</code> lends a view
+      without copying.</p>
+  </div>
+
+  <h2>Building text</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const msg = `Merchant is longer than ${MAX_LEN}`;
+      let csv = "";
+      csv += row;
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      let msg = format!("Merchant is longer than {}", Self::MAX_LEN); // String
+      let mut csv = String::new();
+      csv.push_str(&row);                                             // append a &str
+      let both = first + &second;  // String + &str → String (consumes `first`)
+    </script>
+  </div>
+
+  <h2>The length trap</h2>
+  <p>A Rust string is <strong>UTF-8 bytes</strong>. A JS string is <strong>UTF-16 units</strong>. They count
+    differently:</p>
+  <table>
+    <thead><tr><th>Text</th><th>JS <code>.length</code></th><th>Rust <code>.len()</code> (bytes)</th><th><code>.chars().count()</code></th></tr></thead>
+    <tbody>
+      <tr><td><code>"abc"</code></td><td>3</td><td>3</td><td>3</td></tr>
+      <tr><td><code>"€"</code></td><td>1</td><td>3</td><td>1</td></tr>
+      <tr><td><code>"😀"</code></td><td>2</td><td>4</td><td>1</td></tr>
+    </tbody>
+  </table>
+  <p>Java counts like JS, and Ledgerly's limits ("merchant at most 200") must match Java. That's why
+    <code>Merchant::new</code> checks <code>text::utf16_len(stripped)</code> and not <code>stripped.len()</code>. For
+    the same reason Rust won't let you write <code>s[0]</code>: a byte index could land in the middle of a
+    character. Iterate with <code>.chars()</code> instead (<a href="https://doc.rust-lang.org/book/ch08-02-strings.html">Book
+    8.2</a>).</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>JS strings are immutable values that the GC shares freely. Rust has to know who frees the bytes:
+      <code>String</code> frees its buffer when it goes out of scope, and a <code>&amp;str</code> must never outlive the
+      text it points into. The compiler checks that (section 5). For now, read <code>&amp;</code> as "borrowed, read
+      only" and a type without <code>&amp;</code> as "owned".</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex18_strings.rs</code>: write a <code>strip</code>-like function returning
+      <code>&amp;str</code>, a label builder returning <code>String</code>, and count characters correctly. Run
+      <code>cargo test ex18</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why does <code>strip(text: &amp;str)</code> return <code>&amp;str</code> and not
+      <code>String</code>?</p>
+    <ul class="options">
+      <li>&amp;str is the only type functions can return</li>
+      <li data-correct>The result is part of the input, uncopied</li>
+      <li>String values can't contain whitespace characters at all</li>
+      <li>Returning String would need an unsafe block first</li>
+    </ul>
+    <div class="explain">Trimming only moves the start and end of the view. Returning a borrowed slice avoids an
+      allocation.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A struct needs to keep a user's name after the request ends. Which field type?</p>
+    <ul class="options" data-fixed>
+      <li><code>name: &amp;str</code></li>
+      <li data-correct><code>name: String</code></li>
+      <li><code>name: char</code></li>
+      <li><code>name: &amp;'static str</code></li>
+    </ul>
+    <div class="explain">The struct must own its text. A <code>&amp;str</code> field would borrow from something that
+      may be gone. <code>&amp;'static str</code> only fits text known at compile time.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's <code>"😀".len()</code> in Rust?</p>
+    <ul class="options" data-fixed>
+      <li>1</li>
+      <li>2</li>
+      <li data-correct>4</li>
+      <li>It doesn't compile</li>
+    </ul>
+    <div class="explain"><code>len()</code> counts UTF-8 bytes. The emoji takes 4 bytes, 2 UTF-16 units (what JS
+      and Java report) and 1 <code>char</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How do you turn a <code>&amp;str</code> into a <code>String</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>&amp;text</code></li>
+      <li data-correct><code>text.to_owned()</code></li>
+      <li><code>text.as_str()</code></li>
+      <li><code>*text</code></li>
+    </ul>
+    <div class="explain"><code>to_owned()</code> (or <code>to_string()</code>, <code>String::from</code>) copies the
+      bytes into a new owned <code>String</code>. The others go the other way or don't compile.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch08-02-strings.html">8.2 "Storing UTF-8 Encoded Text with
+      Strings"</a>. Section <a href="https://doc.rust-lang.org/book/ch04-03-slices.html">4.3 "The Slice Type"</a>
+      explains <code>&amp;str</code> as a slice, but it builds on ownership, so save it for section 5 if it feels
+      early.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Numbers: one number becomes many</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1>Numbers: one <code>number</code> becomes many</h1>
+  <p class="lede">TypeScript has <code>number</code> (a 64-bit float) and <code>bigint</code>. Rust has twelve
+    integer types and two float types, and it never converts between them on its own.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>u32</code>, <code>i64</code>, <code>usize</code> and <code>u8</code> in Ledgerly and say
+      why each was picked. You also know why Ledgerly writes <code>u32::try_from(x)</code> and
+      <code>saturating_add</code> instead of <code>as</code> and <code>+</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's the difference between <code>let</code> and <code>let mut</code>?</summary>
+      <div><code>let</code> can't be changed at all. <code>let mut</code> can be reassigned and modified.</div></details>
+    <details><summary>A <code>pub struct</code> has fields without <code>pub</code>. What can other modules do?</summary>
+      <div>Use the type, but not read or set the fields directly, or build it with <code>Struct { … }</code>. They
+        must go through its functions.</div></details>
+  </div>
+
+  <h2>The types</h2>
+  <table>
+    <thead><tr><th>Type</th><th>Range / meaning</th><th>Seen in Ledgerly as</th></tr></thead>
+    <tbody>
+      <tr><td><code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code>, <code>u128</code></td><td>unsigned: 0 … 2ⁿ−1</td><td><code>u32</code> page sizes, counts; <code>u8</code> currency decimals; <code>u64</code> byte sizes</td></tr>
+      <tr><td><code>i8</code> … <code>i128</code></td><td>signed: −2ⁿ⁻¹ … 2ⁿ⁻¹−1</td><td><code>i64</code> to match Postgres <code>bigint</code></td></tr>
+      <tr><td><code>usize</code> / <code>isize</code></td><td>pointer-sized (64-bit on your Mac)</td><td>lengths and indexes: <code>.len()</code> returns <code>usize</code></td></tr>
+      <tr><td><code>f32</code>, <code>f64</code></td><td>IEEE floats, <code>f64</code> = JS <code>number</code></td><td>hardly anywhere, on purpose</td></tr>
+    </tbody>
+  </table>
+  <p>Literals: <code>1_000_000</code> (underscores for readability, like JS), <code>0xff</code>, <code>5u8</code>
+    (suffix sets the type). Without a hint, an integer literal is <code>i32</code> and a float is <code>f64</code>
+    (<a href="https://doc.rust-lang.org/book/ch03-02-data-types.html">Book 3.2</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: types as documentation</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/config/mod.rs" data-line="23">
+      pub struct Limits {
+          /// Largest page of a list.
+          pub max_page_size: u32,
+          /// Most items in one batch request, and the chunk size of an import.
+          pub max_batch_size: u32,
+          /// Largest uploaded file, in bytes.
+          pub max_upload_size: u64,
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/receipt_checks.rs" data-line="16">
+      /// The counts are unsigned, so the negative counts Java's record has to reject cannot be written down.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+      pub struct ReceiptSummary {
+          accepted: u32,
+          pending_scan: u32,
+      }
+    </script>
+    <p>Picking <code>u32</code> instead of a signed type <em>removes</em> a validation: a negative receipt count
+      can't exist, so no code has to check for one.</p>
+  </div>
+
+  <h2>No silent conversions</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const size: number = 50;
+      const bytes: number = 1_048_576;
+      size + bytes;            // fine, both are number
+      0.1 + 0.2;               // 0.30000000000000004
+      2 ** 53 + 1 === 2 ** 53; // true! precision lost
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      let size: u32 = 50;
+      let bytes: u64 = 1_048_576;
+      // size + bytes;          // error[E0308]: expected `u64`, found `u32`
+      u64::from(size) + bytes;  // lossless widening: always fine
+      u32::try_from(bytes)      // narrowing may fail → Result
+          .unwrap_or(u32::MAX); // decide what happens if it does
+    </script>
+  </div>
+  <ul>
+    <li><code>From</code> exists only for conversions that can't lose information (<code>u32</code> →
+      <code>u64</code>). <code>TryFrom</code> returns a <code>Result</code> for those that can.</li>
+    <li><code>x as u32</code> also converts, but <strong>silently truncates</strong> (<code>300 as u8</code> is
+      <code>44</code>). Ledgerly avoids <code>as</code> for numbers.</li>
+  </ul>
+
+  <h2>Overflow is your decision</h2>
+  <p><code>255u8 + 1</code>? In a debug build, arithmetic overflow <strong>panics</strong>. In a release build it
+    silently wraps around to 0 (<a href="https://doc.rust-lang.org/book/ch03-02-data-types.html#integer-overflow">Book
+    3.2, "Integer Overflow"</a>). Neither is good for a backend, so every integer type has explicit methods:</p>
+  <table>
+    <thead><tr><th>Method</th><th>On overflow</th><th>Returns</th></tr></thead>
+    <tbody>
+      <tr><td><code>a.checked_add(b)</code></td><td>tells you</td><td><code>Option</code>: <code>None</code> on overflow</td></tr>
+      <tr><td><code>a.saturating_add(b)</code></td><td>sticks at the max/min</td><td>the number</td></tr>
+      <tr><td><code>a.wrapping_add(b)</code></td><td>wraps around</td><td>the number</td></tr>
+    </tbody>
+  </table>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/export.rs" data-line="122">
+    let room = usize::try_from(self.cap.saturating_sub(self.sent)).unwrap_or(usize::MAX);
+    rows.truncate(room);
+    self.sent = self.sent.saturating_add(u32::try_from(rows.len()).unwrap_or(u32::MAX));
+  </script>
+  <p>The CSV export counts rows sent against a cap. <code>saturating_sub</code> can't go below zero, and
+    <code>try_from</code> converts between <code>u32</code> and <code>usize</code> explicitly. In the
+    <code>domain</code> modules, Ledgerly turns on the clippy lint <code>arithmetic_side_effects</code>, which makes a
+    bare <code>+</code> on numbers an error. You saw that <code>#![cfg_attr(…, deny(…))]</code> line in
+    <a data-lesson="11"></a>.</p>
+
+  <h2>Money is never a float</h2>
+  <p>Like <code>dinero.js</code> or <code>decimal.js</code> in TS projects, Ledgerly stores amounts as a
+    <strong>decimal</strong>: <code>Money { amount: Decimal, currency: Currency }</code>, with
+    <code>Decimal</code> from the <code>rust_decimal</code> crate. Adding two amounts is
+    <code>money.checked_add(&amp;other)</code>, which returns an error when the currencies differ.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS has one number type, so mixing is never an error and precision loss is invisible. Rust makes every width
+      and every conversion explicit. That's noisy at first, but it's where a whole class of "negative count",
+      "lost cents" and "overflowed ID" bugs disappears.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex16_numbers.rs</code>: sum receipt counts without overflowing, convert safely
+      between widths, and work in cents. Run <code>cargo test ex16</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why is <code>ReceiptSummary::accepted</code> a <code>u32</code> and not an <code>i32</code>?</p>
+    <ul class="options">
+      <li>u32 is faster on 64-bit processors</li>
+      <li data-correct>A negative count simply can't be represented</li>
+      <li>Postgres stores counts as unsigned integers</li>
+      <li>i32 can't hold more than 255 receipts</li>
+    </ul>
+    <div class="explain">The type rules out invalid values, so no runtime check is needed. The doc comment says
+      exactly that.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>let n: u64 = 7; let m: u32 = 3; n + m</code> do?</p>
+    <ul class="options">
+      <li>Returns 10 as a u64 value</li>
+      <li>Returns 10 as a u32 value</li>
+      <li data-correct>Fails to compile: mismatched types</li>
+      <li>Panics at runtime with an overflow</li>
+    </ul>
+    <div class="explain">Rust never widens implicitly. Write <code>n + u64::from(m)</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You need <code>u32</code> from a <code>usize</code> length and don't want silent truncation.
+      Which do you write?</p>
+    <ul class="options" data-fixed>
+      <li><code>len as u32</code></li>
+      <li data-correct><code>u32::try_from(len)</code></li>
+      <li><code>u32::from(len)</code></li>
+      <li><code>len.into::&lt;u32&gt;()</code></li>
+    </ul>
+    <div class="explain"><code>try_from</code> returns a <code>Result</code> you must handle. <code>as</code>
+      truncates silently, and <code>From&lt;usize&gt;</code> isn't implemented for <code>u32</code> because it could
+      lose data.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What is <code>200u8.checked_add(100)</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>300</code></li>
+      <li><code>44</code></li>
+      <li><code>255</code></li>
+      <li data-correct><code>None</code></li>
+    </ul>
+    <div class="explain">300 doesn't fit in a <code>u8</code> (max 255). <code>checked_add</code> returns
+      <code>None</code>, <code>saturating_add</code> would give 255, <code>wrapping_add</code> 44.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch03-02-data-types.html">3.2 "Data Types"</a>, the
+      "Scalar Types" half. Rust by Example's <a href="https://doc.rust-lang.org/rust-by-example/primitives.html">Primitives</a>
+      has quick runnable snippets.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

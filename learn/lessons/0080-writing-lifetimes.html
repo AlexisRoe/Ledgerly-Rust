@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Writing lifetime annotations</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and lifetimes in depth</p>
+  <h1>Writing lifetime annotations</h1>
+  <p class="lede">Lesson 41 taught you to <em>read</em> <code>'a</code>. This one teaches you to write it: the three
+    rules the compiler uses to fill lifetimes in for you, and what to write when they aren't enough.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can predict when a function signature needs explicit lifetimes, and write them so the result borrows
+      from the right argument.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does a lifetime describe: how long a value lives, or how long a borrow is valid?</summary>
+      <div>How long a borrow is valid. Lifetimes never make a value live longer; they only let the compiler check
+        that no reference outlives what it points to. (41)</div></details>
+    <details><summary>What's the difference between <code>&amp;str</code> and <code>String</code>?</summary>
+      <div><code>String</code> owns its text; <code>&amp;str</code> borrows a view into text someone else owns. (18)</div></details>
+    <details><summary>Which error do you get for using a value after it moved?</summary>
+      <div>E0382. (40)</div></details>
+  </div>
+
+  <h2>Why TypeScript never asks</h2>
+  <p>In TypeScript every object lives as long as something references it; the garbage collector guarantees it. A
+    function can return any reference it likes. Rust has no GC, so when a function returns a reference, the
+    compiler must know <em>which input</em> it borrows from. Only then can it check, at each call site, that the
+    caller doesn't drop that input while still using the result.</p>
+  <p>A lifetime parameter is that piece of information. It's a generic parameter, like <code>T</code>, but for
+    "how long": <code>fn longer&lt;'a&gt;(a: &amp;'a str, b: &amp;'a str) -&gt; &amp;'a str</code> reads "for some
+    span <code>'a</code> during which both <code>a</code> and <code>b</code> are valid, the result is valid too". The
+    caller doesn't pick <code>'a</code>; the compiler infers the shortest span that works.</p>
+
+  <h2>The three elision rules</h2>
+  <p>Most signatures have no <code>'a</code> because the compiler fills it in with three fixed rules
+    (<a href="https://doc.rust-lang.org/reference/lifetime-elision.html">Reference: lifetime elision</a>):</p>
+  <div class="steps">
+    <ol>
+      <li>Every reference in the <strong>parameters</strong> gets its own lifetime.</li>
+      <li>If there is <strong>exactly one</strong> input lifetime, every reference in the result gets it.</li>
+      <li>If a parameter is <code>&amp;self</code> or <code>&amp;mut self</code>, every reference in the result
+        gets <strong>self's</strong> lifetime.</li>
+    </ol>
+  </div>
+  <p>If the result still has a reference without a lifetime after these rules, you get
+    <strong>E0106 "missing lifetime specifier"</strong>, and you write it yourself. The rules are a guess about the
+    common case, not inference from the body: the compiler never looks inside the function to decide.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: rule 2 at work</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/database/migrations.rs" data-line="48">
+      fn java_lines(text: &str) -> impl Iterator<Item = &str> {
+    </script>
+    <p>One input reference, so the <code>&amp;str</code> items borrow from <code>text</code>. Written out, it's
+      <code>fn java_lines&lt;'a&gt;(text: &amp;'a str) -&gt; impl Iterator&lt;Item = &amp;'a str&gt;</code>. Each
+      line is a slice of the migration file's text: nothing is copied.</p>
+  </div>
+
+  <h2>When you must write them</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="rust">
+      // E0106: two inputs, no self. Which one does the result borrow from?
+      fn find(items: &[String], name: &str) -> Option<&String>
+
+      // The result borrows from `items` only; `name` keeps its own,
+      // unnamed lifetime and may be dropped right after the call.
+      fn find<'a>(items: &'a [String], name: &str) -> Option<&'a String>
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      // Could return either input, so both share 'a. The result
+      // is valid only as long as the SHORTER-lived of the two.
+      fn longer<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if b.len() > a.len() { b } else { a }
+      }
+    </script>
+  </div>
+  <p>Give the result the lifetime of exactly the inputs it can borrow from, and no more. Tying <code>name</code> to
+    <code>'a</code> as well would compile, but it would force callers to keep <code>name</code> alive as long as they
+    use the result, for no reason.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Generics in TS describe <em>what</em> a value is; lifetime parameters describe <em>how long</em> a borrow
+      may be used. They don't exist at run time at all, and they never change what the code does: a lifetime error
+      is the compiler refusing a program it can't prove safe. The fix is usually a better signature, or returning
+      an owned value (<code>String</code>) instead of a reference.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex80_lifetimes.rs</code>: implement <code>longer</code> and <code>after</code>,
+      then uncomment <code>find</code> and its test, read E0106, and add the one lifetime it needs. Run
+      <code>cargo test ex80</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Does <code>fn first(words: &amp;[String]) -&gt; &amp;str</code> need explicit lifetimes?</p>
+    <ul class="options">
+      <li>Yes, every function returning a reference needs them</li>
+      <li data-correct>No, rule two applies: there is one input</li>
+      <li>No, because the compiler reads the function body</li>
+      <li>Yes, because slices always need named lifetimes</li>
+    </ul>
+    <div class="explain">One input lifetime, so the output gets it. The compiler never reads the body to decide.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A method <code>fn name(&amp;self, fallback: &amp;str) -&gt; &amp;str</code> returns
+      <code>fallback</code> sometimes. What happens?</p>
+    <ul class="options">
+      <li>It compiles, since rule one gives each input a lifetime</li>
+      <li data-correct>Rule three ties the result to self; fallback fails</li>
+      <li>It compiles, but returning fallback panics at run time</li>
+      <li>The compiler silently picks the shorter of the two lifetimes</li>
+    </ul>
+    <div class="explain">With <code>&amp;self</code>, elision assumes the result borrows from <code>self</code>. To
+      return either, write <code>fn name&lt;'a&gt;(&amp;'a self, fallback: &amp;'a str) -&gt; &amp;'a str</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does <code>longer</code> give both parameters the same <code>'a</code>?</p>
+    <ul class="options">
+      <li>Two parameters can't have two different lifetimes</li>
+      <li data-correct>The result may borrow from either of them</li>
+      <li>It makes the function faster at run time</li>
+      <li>It forces both strings to have equal length</li>
+    </ul>
+    <div class="explain">The result can only be trusted while <em>both</em> are alive, and one shared
+      <code>'a</code> says exactly that.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does adding a lifetime annotation change in the compiled program?</p>
+    <ul class="options">
+      <li>Values stay in memory for the annotated duration</li>
+      <li data-correct>Nothing; it only changes what the compiler accepts</li>
+      <li>References become reference-counted for the annotated duration</li>
+      <li>The function is copied once for each lifetime</li>
+    </ul>
+    <div class="explain">Lifetimes are erased after checking. They describe; they never extend.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html">10.3 "Validating References
+      with Lifetimes"</a>, and the exact rules in the
+      <a href="https://doc.rust-lang.org/reference/lifetime-elision.html">Reference on lifetime elision</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

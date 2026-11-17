@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Comparison and operator traits</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits in depth</p>
+  <h1>Comparison and operator traits</h1>
+  <p class="lede">In Rust, <code>==</code>, <code>&lt;</code>, <code>+</code> and <code>sort()</code> are all traits.
+    Deriving them is one line, but each comes with a contract. And sometimes the right design is to leave one out on
+    purpose.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can write <code>Ord</code> by hand, overload <code>+</code> and <code>.sum()</code>, and explain why
+      Ledgerly's <code>Money</code> has neither <code>Ord</code> nor <code>+</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why does <code>HashMap&lt;String, _&gt;::get("x")</code> work?</summary>
+      <div><code>String: Borrow&lt;str&gt;</code>, which promises the same hash and equality. (93)</div></details>
+    <details><summary>Why doesn't <code>Role</code> derive <code>Ord</code>?</summary>
+      <div>So permission checks go through <code>includes</code>, never <code>&gt;=</code>. (50)</div></details>
+  </div>
+
+  <h2>The four comparison traits</h2>
+  <table>
+    <thead><tr><th>Trait</th><th>Gives</th><th>Contract</th></tr></thead>
+    <tbody>
+      <tr><td><code>PartialEq</code></td><td><code>==</code>, <code>!=</code></td><td>symmetric, transitive</td></tr>
+      <tr><td><code>Eq</code></td><td>(marker)</td><td>also reflexive: <code>a == a</code>. Not true for <code>f64</code> (<code>NaN</code>), so floats aren't <code>Eq</code></td></tr>
+      <tr><td><code>PartialOrd</code></td><td><code>&lt;</code>, <code>&lt;=</code>…</td><td>may answer "incomparable" (<code>None</code>)</td></tr>
+      <tr><td><code>Ord</code></td><td><code>.cmp()</code>, <code>sort()</code>, <code>max()</code>, <code>BTreeMap</code> keys</td><td>a total order: every pair has an answer</td></tr>
+    </tbody>
+  </table>
+  <p>Plus <code>Hash</code>, which must agree with <code>Eq</code>: equal values, equal hashes. Derives satisfy
+    all of these. A derived <code>Ord</code> compares fields in declaration order and enum variants in declaration
+    order, which is often exactly what you want, and occasionally a silent bug when someone reorders fields.</p>
+
+  <h2>Writing <code>Ord</code> by hand</h2>
+  <script type="text/x-code" data-lang="rust">
+    impl Ord for Task {
+        fn cmp(&self, other: &Self) -> Ordering {
+            other.priority.cmp(&self.priority)                 // high priority first (reversed)
+                .then_with(|| self.title.cmp(&other.title))    // then A→Z
+        }
+    }
+    impl PartialOrd for Task {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    }
+  </script>
+  <p>TS's <code>sort((a, b) =&gt; b.priority - a.priority || a.title.localeCompare(b.title))</code>, but attached to
+    the type. For a one-off order, don't implement <code>Ord</code>: use
+    <code>v.sort_by(|a, b| …)</code> or <code>v.sort_by_key(|t| t.title.clone())</code>.</p>
+
+  <h2>Operators</h2>
+  <p><code>a + b</code> is <code>Add::add(a, b)</code>; <code>-</code>, <code>*</code>, <code>+=</code>,
+    <code>[i]</code>, <code>!</code> have their own traits in <code>std::ops</code>. Implement <code>Add</code> for a
+    <code>Cents(u64)</code> newtype, and <code>std::iter::Sum</code> to make <code>.sum()</code> work too.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: leaving traits out on purpose</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/money/mod.rs" data-line="29">
+      /// `Money` has no `Ord` and no `+`: comparing or adding amounts in different currencies has no answer, so
+      /// [`Money::cmp`] and [`Money::checked_add`] return a `Result`. In Java, `Money` implements `Comparable` and
+      /// throws `CurrencyMismatch` at runtime.
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/money/mod.rs" data-line="145">
+      /// This is deliberately not [`Ord::cmp`]: `Ord` promises an answer for every pair of values.
+    </script>
+    <p><code>Ord</code> is a total order, and <code>Add</code> must return a value; neither can say "these currencies
+      don't mix" except by panicking. So <code>Money</code> offers methods that return a <code>Result</code> instead.
+      The <code>#[expect(clippy::should_implement_trait)]</code> right below silences clippy's suggestion to
+      implement <code>Ord</code>, with the reason written down.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>JS compares objects by reference (<code>{a: 1} !== {a: 1}</code>) and coerces in <code>&lt;</code>. Rust
+      compares by value, through traits, and only types that opt in. A struct without <code>PartialEq</code> can't
+      be compared at all, which is sometimes exactly the design you want.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex94_ordering_and_operators.rs</code>: a hand-written <code>Ord</code>,
+      <code>Add</code> and <code>Sum</code> for <code>Cents</code>, and a currency-aware <code>checked_add</code>. Run
+      <code>cargo test ex94</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why isn't <code>f64</code> <code>Ord</code>, so <code>vec_of_f64.sort()</code> doesn't compile?</p>
+    <ul class="options">
+      <li>Floats are too imprecise to ever be compared</li>
+      <li data-correct>NaN compares with nothing, so no total order</li>
+      <li>Sorting floats needs a separate crate installed first</li>
+      <li>Floats are only comparable with the == operator</li>
+    </ul>
+    <div class="explain">Use <code>sort_by(|a, b| a.total_cmp(b))</code> for floats.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You reorder two fields of a struct that derives <code>Ord</code>. What can change?</p>
+    <ul class="options">
+      <li>Nothing; derived orders always ignore the field order</li>
+      <li data-correct>The sort order, silently, with no compile error</li>
+      <li>The code stops compiling until you fix it</li>
+      <li>Only the Debug output, not any comparison result</li>
+    </ul>
+    <div class="explain">Derived <code>Ord</code> is lexicographic in declaration order.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does <code>Money::cmp</code> return <code>Result&lt;Ordering, MoneyError&gt;</code>?</p>
+    <ul class="options">
+      <li>Because Ord can only be derived, never written</li>
+      <li data-correct>Two currencies have no order; Ord can't say so</li>
+      <li>Because Results compare faster than plain Orderings do</li>
+      <li>Because Java's compareTo method returned a Result too</li>
+    </ul>
+    <div class="explain">A missing trait plus a fallible method makes the impossible case visible to callers.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The std docs for <a href="https://doc.rust-lang.org/std/cmp/trait.Ord.html">Ord</a> (read "Corollaries" and
+      "Derivable") and the <a href="https://doc.rust-lang.org/std/ops/index.html">std::ops</a> module overview.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

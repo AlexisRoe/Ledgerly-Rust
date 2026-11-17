@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Capstone 4: HTTP with axum</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Capstone: a service from scratch</p>
+  <h1>Capstone 4: HTTP with axum</h1>
+  <p class="lede">Three routes, one shared state, one error type that knows its status code, and tests that call the
+    router in-process, the way Ledgerly's web tests do.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>Your <code>web.rs</code> serves the three endpoints, turns every error into a problem response, and has tests using
+      <code>tower::ServiceExt::oneshot</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What is an axum extractor?</summary>
+      <div>A handler parameter type that pulls its value from the request: <code>State</code>, <code>Path</code>,
+        <code>Json</code>. (70)</div></details>
+    <details><summary>What does <code>#[from]</code> on an error variant give you in a handler?</summary>
+      <div><code>?</code> converts the inner error into that variant automatically. (55)</div></details>
+  </div>
+
+  <h2>Start from this test helper and one test</h2>
+  <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/web.rs" data-line="168">
+    async fn call(router: &Router, method: &str, uri: &str, body: Option<&str>) -> (StatusCode, Response) {
+  </script>
+  <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/web.rs" data-line="234">
+    async fn redirects_and_counts_the_visit() {
+        let mut world = world();
+        call(
+            &world.router,
+            "POST",
+            "/links",
+            Some(r#"{"target":"https://example.org/x","slug":"go-x"}"#),
+        )
+        .await;
+        let (status, response) = call(&world.router, "GET", "/go-x", None).await;
+        assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(response.headers()[header::LOCATION], "https://example.org/x");
+        assert_eq!(
+            world.visits.try_recv().map(|slug| slug.to_string()),
+            Ok("go-x".to_owned())
+        );
+    }
+  </script>
+  <p>Open the solution's test module for the full helper and the other four tests; write the handlers to make them pass.</p>
+
+  <h2>Decisions to make</h2>
+  <ul>
+    <li><strong>State:</strong> <code>Arc&lt;dyn LinkStore&gt;</code>, an <code>mpsc::Sender&lt;Slug&gt;</code> for visits,
+      and an <code>Arc&lt;AtomicU64&gt;</code> counter for generated slugs. Everything in state is cloned per request,
+      so keep it cheap.</li>
+    <li><strong>One error enum, one <code>IntoResponse</code>:</strong> handlers return <code>Result&lt;_, ApiError&gt;</code>
+      and use <code>?</code>; the status mapping lives in one exhaustive <code>match</code>.</li>
+    <li><strong>An invalid slug in a GET is a 404</strong>, not a 400: from the client's view, that link just doesn't exist.</li>
+    <li><strong>Redirects never wait for the counter:</strong> <code>try_send</code>, not <code>send().await</code>. A full queue
+      loses a count, not latency.</li>
+  </ul>
+
+  <div class="ledgerly">
+    <span class="box-label">Reference solution</span>
+    <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/web.rs" data-line="74">
+      let target = Target::parse(&body.target)?;
+      let link = match body.slug {
+          Some(slug) => {
+              let link = Link::new(Slug::parse(&slug)?, target);
+              state.store.insert(link.clone())?;
+              link
+          }
+          // Generated slugs may collide with chosen ones: take the next number until one is free.
+          None => loop {
+              let slug = Slug::generate(state.next_number.fetch_add(1, Ordering::Relaxed));
+              let link = Link::new(slug, target.clone());
+              match state.store.insert(link.clone()) {
+                  Ok(()) => break link,
+                  Err(StoreError::Taken(_)) => {}
+              }
+          },
+      };
+    </script>
+    <p>Three <code>?</code>s with three different error types, each converted by <code>#[from]</code>. <code>loop</code> is an
+      expression: <code>break link</code> is its value. The exhaustive match on <code>StoreError</code> means a new store error
+      would have to be handled here.</p>
+    <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/web.rs" data-line="126">
+      impl IntoResponse for ApiError {
+          fn into_response(self) -> Response {
+              let status = match &self {
+                  Self::Invalid(_) => StatusCode::BAD_REQUEST,
+                  Self::Conflict(_) => StatusCode::CONFLICT,
+                  Self::NotFound => StatusCode::NOT_FOUND,
+              };
+    </script>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In Express, an error thrown in a handler reaches an error middleware with whatever type it has, and you map it there
+      with <code>instanceof</code>. In axum, the handler's return type says which errors exist, and the compiler checks the
+      mapping is complete. Ledgerly does exactly this, at scale (lesson 58).</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why <code>try_send</code> for visits instead of <code>send().await</code>?</p>
+    <ul class="options">
+      <li>Because send().await isn't allowed in axum handlers</li>
+      <li data-correct>A full queue must never slow the redirect</li>
+      <li>Because try_send guarantees that no visit is lost</li>
+      <li>Because try_send is the only cancel-safe sending method</li>
+    </ul>
+    <div class="explain">A trade-off made on purpose, and logged when it happens.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How do the tests call the router without opening a port?</p>
+    <ul class="options">
+      <li>By starting a server on a random port</li>
+      <li data-correct>oneshot drives the Router as a tower Service</li>
+      <li>By calling each handler function directly instead</li>
+      <li>By mocking axum with a fake router type</li>
+    </ul>
+    <div class="explain">A <code>Router</code> is a tower <code>Service</code>; <code>ServiceExt::oneshot</code> drives it once.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>axum's docs on <a href="https://docs.rs/axum/latest/axum/error_handling/index.html">error handling</a> and
+      <a href="https://docs.rs/axum/latest/axum/extract/index.html">extractors</a>, and its
+      <a href="https://github.com/tokio-rs/axum/tree/main/examples/testing">testing example</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

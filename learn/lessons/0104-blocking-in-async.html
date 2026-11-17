@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blocking inside async</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Concurrency and async internals</p>
+  <h1>Blocking inside async</h1>
+  <p class="lede">Async code runs on a few worker threads that tasks take turns on. A task that computes for 50 ms
+    without an <code>.await</code> holds its thread for 50 ms. Move such work to the blocking pool.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can recognise blocking code in an async function, move it to <code>spawn_blocking</code>, and explain why
+      Ledgerly hashes passwords there.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What happens to a task when its future is dropped?</summary>
+      <div>It's cancelled at its current <code>.await</code>; code after it never runs. (103)</div></details>
+    <details><summary>Why must <code>poll</code> never block?</summary>
+      <div>It would hold the executor thread and stall every task waiting for it. (101)</div></details>
+  </div>
+
+  <h2>What counts as blocking</h2>
+  <p>"Blocking" means spending a long time between two <code>.await</code>s. A rule of thumb from a Tokio maintainer:
+    more than 10–100 µs (<a href="https://ryhl.io/blog/async-what-is-blocking/">Alice Ryhl: "Async: What is blocking?"</a>).</p>
+  <ul>
+    <li>CPU-heavy work: password hashing, compression, parsing a large CSV, image processing;</li>
+    <li>synchronous I/O: <code>std::fs</code>, <code>std::net</code>, a blocking HTTP client, <code>std::thread::sleep</code>;</li>
+    <li>waiting on a <code>std::sync::Mutex</code> that someone holds for a long time.</li>
+  </ul>
+
+  <h2>The fix</h2>
+  <script type="text/x-code" data-lang="rust">
+    let count = tokio::task::spawn_blocking(move || count_primes(limit))   // runs on the blocking pool
+        .await                                                             // the task yields meanwhile
+        .unwrap_or(0);                                                     // Err(JoinError) if it panicked
+  </script>
+  <p>Tokio keeps a separate, larger pool of threads for blocking work
+    (<a href="https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html">spawn_blocking</a>). The async task awaits
+    the result like any other future, and its worker thread is free meanwhile. For lots of parallel CPU work, a
+    dedicated pool (the <code>rayon</code> crate) is the better tool.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/identity/src/application/mod.rs" data-line="45">
+      /// Hashes on Tokio's blocking pool: Argon2 takes tens of milliseconds of CPU.
+      async fn hash_password(password: SecretString) -> Result<PasswordHash, UseCaseError> {
+          tokio::task::spawn_blocking(move || password::hash(&password))
+              .await
+              .map_err(|_| UseCaseError::Crypto("password hashing stopped"))?
+              .map_err(|HashingFailed| UseCaseError::Crypto("password hashing failed"))
+      }
+    </script>
+    <p>Argon2 is slow on purpose (that's what makes stolen hashes expensive to crack). Done inline, every login
+      would freeze a worker thread for tens of milliseconds, and a burst of logins would stall unrelated requests.
+      Two <code>?</code>-like steps: the first <code>map_err</code> handles the task failing (a panic), the second
+      the hashing itself failing. The password moves into the closure as a <code>SecretString</code>.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In Node, CPU work blocks <em>the</em> event loop, and everything stops; you notice fast. With Tokio's multi-threaded
+      runtime, one blocked worker leaves the others running, so the damage is quieter: latency spikes under load,
+      timers firing late. Same mistake, harder to spot. Tests on a <code>current_thread</code> runtime make it visible.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex104_blocking.rs</code>: count primes on the blocking pool, and prove on a
+      single-threaded runtime that a ticker keeps ticking while you do. Then call <code>count_primes</code> directly and
+      watch the test fail. Run <code>cargo test ex104</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Which of these belongs in <code>spawn_blocking</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>sqlx::query(…).fetch_one(&amp;pool).await</code></li>
+      <li data-correct><code>argon2.hash_password(…)</code></li>
+      <li><code>tokio::time::sleep(d).await</code></li>
+      <li><code>reqwest::get(url).await</code></li>
+    </ul>
+    <div class="explain">The others are async and yield while waiting. Hashing is pure CPU work.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does Ledgerly's <code>hash_password</code> have two <code>map_err</code>s?</p>
+    <ul class="options">
+      <li>One for each of the two password fields</li>
+      <li data-correct>One for the task failing, one for hashing</li>
+      <li>One for debug builds, one for release builds</li>
+      <li>One for Argon2 and another one for bcrypt</li>
+    </ul>
+    <div class="explain"><code>JoinHandle</code> gives <code>Result&lt;Result&lt;Hash, HashingFailed&gt;, JoinError&gt;</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A handler reads a 200 MB file with <code>std::fs::read</code>. What's the risk?</p>
+    <ul class="options">
+      <li>None, because std::fs is async under Tokio</li>
+      <li data-correct>A worker thread is blocked, slowing other requests</li>
+      <li>The file is read twice, once per thread</li>
+      <li>The compiler rejects std::fs in async functions</li>
+    </ul>
+    <div class="explain">Use <code>tokio::fs</code> (which uses the blocking pool) or <code>spawn_blocking</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://ryhl.io/blog/async-what-is-blocking/">"Async: What is blocking?"</a> by Alice Ryhl: the
+      clearest explanation there is, with the options for each kind of blocking work.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

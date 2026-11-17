@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: traits and generics</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits and generics · Review</p>
+  <h1>Review: traits and generics</h1>
+  <p class="lede">Mixed practice on lessons 49–53 with earlier sections interleaved, then a "find the
+    implementations" exercise in VS Code.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>After this review you have the whole core language. Sections 8–12 apply it to errors, async, tests and
+      libraries.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>Required method vs default method?</summary>
+      <div>A required method has only a signature, and each implementor writes it. A default method has a body in
+        the trait. (49)</div></details>
+    <details><summary>Which trait makes <code>.parse::&lt;X&gt;()</code> work, and which makes
+      <code>.to_string()</code> work?</summary>
+      <div><code>FromStr</code>, and <code>Display</code>. (51)</div></details>
+    <details><summary>Generics vs <code>dyn</code> in one sentence each.</summary>
+      <div>Generics: the type is fixed at compile time, one copy per type, fast. <code>dyn</code>: one copy, chosen at
+        runtime, behind a pointer. (52, 53)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">What makes <code>assert_eq!(a, b)</code> compile for two <code>Expense</code> values?</p>
+    <ul class="options">
+      <li>All structs support equality checks by default</li>
+      <li data-correct>Expense derives PartialEq and Debug, both needed</li>
+      <li>assert_eq compares the two memory addresses instead</li>
+      <li>Expense implements Display, which is used for comparing</li>
+    </ul>
+    <div class="explain"><code>==</code> comes from <code>PartialEq</code>; the failure message needs
+      <code>Debug</code>. (50)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Code in <code>expenses</code> needs the number of receipts but can't depend on the
+      <code>receipts</code> crate. What's Ledgerly's solution?</p>
+    <ul class="options">
+      <li>Copy the receipts code into the expenses crate</li>
+      <li data-correct>expenses defines a trait, and receipts implements it</li>
+      <li>Query the receipts table directly with raw SQL</li>
+      <li>Make both crates depend on each other</li>
+    </ul>
+    <div class="explain"><code>ReceiptChecks</code> lives in <code>expenses</code> and is passed in as
+      <code>Arc&lt;dyn ReceiptChecks&gt;</code>. The dependency points the allowed way. (53)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which bound lets a generic function print its argument with <code>{}</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>T: Debug</code></li>
+      <li data-correct><code>T: Display</code></li>
+      <li><code>T: ToString + Clone</code></li>
+      <li><code>T: Into&lt;String&gt;</code></li>
+    </ul>
+    <div class="explain"><code>{}</code> needs <code>Display</code>; <code>{:?}</code> needs <code>Debug</code>. (50, 52)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Ownership) A use case stores <code>clock: Arc&lt;dyn Clock&gt;</code>. Eight use cases share one
+      clock. How many clocks exist?</p>
+    <ul class="options">
+      <li>Eight, because every Arc clone copies the clock</li>
+      <li data-correct>One; the eight Arcs point to the same clock</li>
+      <li>Nine: the original plus one copy per use case</li>
+      <li>None until the first use case calls clock.now()</li>
+    </ul>
+    <div class="explain">Cloning an <code>Arc</code> adds an owner, not a clock. (42)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Data types) Why does <code>Role</code> not derive <code>Ord</code>?</p>
+    <ul class="options">
+      <li>Enums can't derive Ord in the 2024 edition</li>
+      <li data-correct>So rank checks go through includes, not comparisons</li>
+      <li>Roles are stored as text, which can't sort</li>
+      <li>Ord would make Role larger than one byte</li>
+    </ul>
+    <div class="explain">A missing trait is a design rule: <code>role &gt;= Approver</code> can't be written, and
+      <code>role.includes(Approver)</code> is the only way. (22, 50)</div>
+  </div>
+
+  <h2>Find the implementations</h2>
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code</span>
+    <ol>
+      <li>Open <a class="src" data-src="crates/shared/src/clock.rs" data-line="19"></a>, put the cursor on
+        <code>Clock</code>, and use "Go to Implementations" (<kbd>⌘</kbd><kbd>F12</kbd>). How many implementations
+        are there, and which ones exist only in tests?</li>
+      <li>Do the same for <code>ReceiptChecks</code> in <code>crates/expenses/src/receipt_checks.rs</code>. Which
+        crate provides the production implementation?</li>
+      <li>Find every <code>impl From&lt;…&gt; for</code> in <code>crates/expenses/src/web/dto.rs</code> (search for
+        <code>impl From</code>). What does each convert?</li>
+    </ol>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="../reference/traits.html">traits and generics cheat sheet</a>. Optional deeper reading:
+      <a href="https://doc.rust-lang.org/book/ch20-02-advanced-traits.html">Book 20.2 "Advanced Traits"</a>
+      (associated types, supertraits).</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Capstone 2: the domain, types first</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Capstone: a service from scratch</p>
+  <h1>Capstone 2: the domain, types first</h1>
+  <p class="lede">The domain module holds the service's rules, with no HTTP, no storage and no async. Write the tests
+    first, then the types that make them pass.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>Your <code>domain.rs</code> has <code>Slug</code>, <code>Target</code>, <code>Link</code> and <code>DomainError</code>,
+      each impossible to construct in an invalid state, with unit tests.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>The four parts of "parse, don't validate"?</summary>
+      <div>Private field, one fallible constructor, read-only access, every entry point uses it. (112)</div></details>
+    <details><summary>When does a function deserve a <code>Result</code> and when not?</summary>
+      <div>When it can fail for reasons the caller must handle. A generator that always produces a valid value doesn't. (25, 111)</div></details>
+  </div>
+
+  <h2>Start from these tests</h2>
+  <script type="text/x-code" data-lang="rust">
+    #[test]
+    fn slugs_are_short_lowercase_words() {
+        assert_eq!(Slug::parse("team-offsite").map(|s| s.to_string()), Ok("team-offsite".to_owned()));
+        assert_eq!(Slug::parse("ab"), Err(DomainError::InvalidSlug));
+        assert_eq!(Slug::parse("Team"), Err(DomainError::InvalidSlug));
+        assert_eq!(Slug::parse("links"), Err(DomainError::ReservedSlug("links".to_owned())));
+    }
+
+    #[test]
+    fn generated_slugs_count_in_base_36() {
+        let slugs: Vec<String> = [0, 1, 35, 36].map(|n| Slug::generate(n).to_string()).to_vec();
+        assert_eq!(slugs, ["0000", "0001", "000z", "0010"]);
+    }
+
+    #[test]
+    fn targets_are_http_urls() {
+        assert!(Target::parse(" https://example.org/a ").is_ok());
+        for bad in ["ftp://x", "https://", "example.org", "https://a b"] {
+            assert_eq!(Target::parse(bad), Err(DomainError::InvalidTarget), "{bad}");
+        }
+    }
+  </script>
+
+  <h2>Decisions to make</h2>
+  <ul>
+    <li><strong>Which derives?</strong> <code>Slug</code> becomes a <code>HashMap</code> key: it needs <code>Eq</code> and
+      <code>Hash</code>. Tests compare errors: <code>DomainError</code> needs <code>PartialEq</code>.</li>
+    <li><strong><code>generate</code> returns <code>Slug</code>, not <code>Result</code>:</strong> its output is valid by
+      construction, so don't make callers handle an impossible error.</li>
+    <li><strong>Error messages</strong> come from <code>#[error(…)]</code> and can use constants:
+      <code>min = Slug::MIN_LEN</code>. They'll appear in API responses, so they're user-facing text.</li>
+    <li><strong><code>Display</code> for <code>Slug</code>:</strong> handy for logs and for <code>to_string()</code>.</li>
+  </ul>
+
+  <div class="ledgerly">
+    <span class="box-label">Reference solution (compare after you're green)</span>
+    <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/domain.rs" data-line="6">
+      /// Why a value was refused. Every variant becomes a 400 response.
+      #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+      pub enum DomainError {
+          #[error("a slug is {min} to {max} characters of a-z, 0-9 and -", min = Slug::MIN_LEN, max = Slug::MAX_LEN)]
+          InvalidSlug,
+          #[error("the slug {0:?} is reserved")]
+          ReservedSlug(String),
+          #[error("a target is an http or https URL of at most {max} characters, without spaces", max = Target::MAX_LEN)]
+          InvalidTarget,
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/domain.rs" data-line="30">
+      pub fn parse(text: &str) -> Result<Self, DomainError> {
+          let valid_char = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-';
+          if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&text.len()) || !text.chars().all(valid_char) {
+              return Err(DomainError::InvalidSlug);
+          }
+          if Self::RESERVED.contains(&text) {
+              return Err(DomainError::ReservedSlug(text.to_owned()));
+          }
+          Ok(Self(text.to_owned()))
+      }
+    </script>
+    <p>A closure as a named predicate, a range's <code>contains</code> for the length check, an early return per rule. The
+      rest of the file: <a class="src" data-src="learn/capstone/src/domain.rs" data-line="44"></a> (<code>generate</code>) and
+      <a class="src" data-src="learn/capstone/src/domain.rs" data-line="87"></a> (<code>Target::parse</code>, with a match guard).</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In a TS service the domain is often interfaces plus validation functions called from the controller. Here the
+      domain types <em>are</em> the validation: a handler can't forget to check a slug, because it can't get a
+      <code>Slug</code> without checking.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why must <code>Slug</code> derive <code>Hash</code> and <code>Eq</code>?</p>
+    <ul class="options">
+      <li>Because every newtype must derive both of them</li>
+      <li data-correct>The store uses it as a HashMap key</li>
+      <li>Because serde needs Hash to serialise a String</li>
+      <li>Because Display can't be written without them</li>
+    </ul>
+    <div class="explain">Map keys need <code>Eq + Hash</code>, and they must agree (lesson 94).</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does <code>Slug::generate</code> return <code>Slug</code>, not <code>Result&lt;Slug, _&gt;</code>?</p>
+    <ul class="options">
+      <li>Because functions taking numbers can never fail</li>
+      <li data-correct>Its output is always valid; errors are impossible</li>
+      <li>Because the counter guarantees slugs are unique</li>
+      <li>Because a Result would need an extra allocation</li>
+    </ul>
+    <div class="explain">Uniqueness is the store's job (next lesson); validity is guaranteed by construction.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>Your own lesson <a data-lesson="112"></a>, and the <a href="https://doc.rust-lang.org/std/primitive.char.html">char</a>
+      docs for the <code>is_ascii_*</code> helpers.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: syntax and modules</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Basic syntax and code organisation · Review</p>
+  <h1>Review: syntax and modules</h1>
+  <p class="lede">Mixed practice on lessons 8–14, with two questions from section 1 mixed in. Then you read a whole
+    real file top to bottom.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>Answer from memory. Every miss tells you which lesson to revisit, and it's better to do that tomorrow than
+      right now.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>Three comment styles: what does each document?</summary>
+      <div><code>//</code> nothing (a note). <code>///</code> the next item. <code>//!</code> the enclosing module
+        or crate.</div></details>
+    <details><summary>A function's last line is <code>self.rank() &gt;= other.rank()</code>. What would a
+      semicolon at the end change?</summary>
+      <div>The body would end in a statement, so it would return <code>()</code>. With <code>-&gt; bool</code>
+        declared, that's E0308 (mismatched types).</div></details>
+    <details><summary>Name the four places a path can start inside a crate (besides external crate names).</summary>
+      <div><code>crate::</code>, <code>super::</code>, <code>self::</code>, and <code>std::</code> (also
+        <code>core::</code>/<code>alloc::</code>).</div></details>
+    <details><summary>Which folder makes each file its own crate that only sees <code>pub</code> items?</summary>
+      <div><code>tests/</code>, for integration tests.</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">Which of these compiles?</p>
+    <ul class="options" data-fixed>
+      <li><code>const LIMIT = 100;</code></li>
+      <li data-correct><code>const LIMIT: u32 = 100;</code></li>
+      <li><code>let LIMIT: u32 = 100; LIMIT = 5;</code></li>
+      <li><code>let mut limit: u32 = "100";</code></li>
+    </ul>
+    <div class="explain">Constants need a type. Reassigning a non-<code>mut</code> binding fails, and
+      <code>"100"</code> is text, not <code>u32</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You created <code>crates/teams/src/web/invite.rs</code>. Which line in which file makes it part
+      of the crate?</p>
+    <ul class="options">
+      <li><code>use invite;</code> in crates/teams/src/lib.rs</li>
+      <li data-correct><code>mod invite;</code> in crates/teams/src/web/mod.rs</li>
+      <li><code>mod web::invite;</code> in crates/teams/src/lib.rs</li>
+      <li><code>pub use invite;</code> in crates/teams/Cargo.toml</li>
+    </ul>
+    <div class="explain">The parent module declares its child. <code>web</code>'s code is in
+      <code>web/mod.rs</code>, so that's where <code>mod invite;</code> goes.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In <code>crates/expenses/src/web/mod.rs</code>, what's <code>self::dto::ExpenseResponse</code>?</p>
+    <ul class="options">
+      <li>A type in the external crate called dto</li>
+      <li>A type in the crate root's dto module</li>
+      <li data-correct>A type in web's child module dto</li>
+      <li>A type in the parent of web's module</li>
+    </ul>
+    <div class="explain"><code>self</code> is the current module (<code>web</code>), and <code>dto</code> is its
+      child, declared by <code>mod dto;</code> in the same file.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which statement about <code>ledgerly_expenses</code>'s public API is true?</p>
+    <ul class="options">
+      <li>Every pub item in any of its modules</li>
+      <li data-correct>Only what lib.rs exposes, mainly via pub use</li>
+      <li>Everything, since all crates share one workspace</li>
+      <li>Only items listed in its Cargo.toml exports</li>
+    </ul>
+    <div class="explain">All its modules are private, so the public API is exactly <code>pub fn routes</code> and
+      the <code>pub use</code> lines in <code>lib.rs</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Section 1) Which command shows that <code>rust-toolchain.toml</code> is in effect?</p>
+    <ul class="options" data-fixed>
+      <li>cargo check</li>
+      <li data-correct>rustup show</li>
+      <li>cargo tree</li>
+      <li>just --list</li>
+    </ul>
+    <div class="explain"><code>rustup show</code> prints the active toolchain and why it was chosen ("overridden
+      by …/rust-toolchain.toml").</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Section 1) A crate's manifest has <code>[lints] workspace = true</code>. What does that do?</p>
+    <ul class="options">
+      <li>Runs clippy automatically on every cargo build</li>
+      <li data-correct>Applies the root's [workspace.lints] levels to it</li>
+      <li>Shares one target folder across workspace crates</li>
+      <li>Adds the crate to the workspace members</li>
+    </ul>
+    <div class="explain">Opting in to the shared lint table is per crate. Membership comes from
+      <code>members = ["crates/*"]</code>.</div>
+  </div>
+
+  <h2>Read a whole file</h2>
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code (10 minutes)</span>
+    <p>Open <a class="src" data-src="crates/shared/src/role.rs"></a> and read lines 1–88. You don't know
+      <code>enum</code>, <code>impl</code>, <code>match</code> or traits yet, and that's fine. Mark only what you
+      <em>can</em> now explain:</p>
+    <ol>
+      <li>Which lines are module docs, which are item docs, which are plain comments?</li>
+      <li>Which <code>use</code> lines come from <code>std</code>, an external crate, and this crate?</li>
+      <li>Which functions return by their last expression? Is there any <code>return</code> keyword?</li>
+      <li>Which items are <code>pub</code>, which are private? Why might <code>rank</code> be private?</li>
+    </ol>
+    <details class="reveal"><summary>Notes on 4</summary>
+      <div><code>Role</code>, <code>UnknownRole</code>, <code>ALL</code>, <code>includes</code> and
+        <code>as_str</code> are public. <code>rank</code> is private on purpose: the doc comment on
+        <code>Role</code> says there's deliberately no ordering, so that "at least an approver" can only be asked
+        through <code>includes</code>. Keeping <code>rank</code> private enforces that.</div></details>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>Re-read the cheat sheet at the top of <a href="https://doc.rust-lang.org/book/ch07-02-defining-modules-to-control-scope-and-privacy.html">Book
+      7.2 "Modules Cheat Sheet"</a>. It sums up lessons 11–13 in one screen. Then keep the
+      <a href="../reference/syntax.html">syntax cheat sheet</a> handy.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

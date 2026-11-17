@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Associated types vs generic parameters</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits in depth</p>
+  <h1>Associated types vs generic parameters</h1>
+  <p class="lede">Why is it <code>Iterator&lt;Item = u32&gt;</code> but <code>From&lt;u32&gt;</code>? Both put a type
+    inside a trait, with one real difference: how many times one type may implement the trait.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>type Item</code>, <code>type Error</code> and <code>S::Item</code>, and choose between an
+      associated type and a type parameter when you design a trait.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>impl Trait</code> in a return position mean?</summary>
+      <div>"Some concrete type that implements this trait, which I'm not naming." One type, chosen by the
+        function. (44)</div></details>
+    <details><summary>Generic bound syntax: two ways to write "T must be Display"?</summary>
+      <div><code>fn f&lt;T: Display&gt;(…)</code> or <code>fn f&lt;T&gt;(…) where T: Display</code>. (52)</div></details>
+  </div>
+
+  <h2>Two ways to put a type in a trait</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="rust">
+      // Associated type: the IMPLEMENTOR picks it, once.
+      trait Iterator {
+          type Item;
+          fn next(&mut self) -> Option<Self::Item>;
+      }
+      impl Iterator for Countdown { type Item = u32; … }
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      // Type parameter: one impl PER choice.
+      trait From<T> {
+          fn from(value: T) -> Self;
+      }
+      impl From<Uuid> for TeamId { … }
+      impl From<&str> for Problem { … }   // and more
+    </script>
+  </div>
+  <p>A countdown yields <code>u32</code>s, and only <code>u32</code>s; letting it implement
+    <code>Iterator&lt;u32&gt;</code> and <code>Iterator&lt;String&gt;</code> would make <code>for x in countdown</code>
+    ambiguous. So <code>Item</code> is an output of the impl. A type, though, can be built <em>from</em> many
+    things, so <code>From</code>'s type is an input chosen by the caller.</p>
+  <p><strong>Rule of thumb:</strong> if, for a given implementing type, there's exactly one sensible answer, use an
+    associated type. If callers should be able to choose, use a parameter
+    (<a href="https://doc.rust-lang.org/book/ch20-02-advanced-traits.html">Book 20.2</a>).</p>
+
+  <h2>TypeScript's nearest idea</h2>
+  <script type="text/x-code" data-lang="ts">
+    interface Source<Item> { next(): Item | undefined }   // TS only has parameters…
+    type ItemOf<S> = S extends Source<infer I> ? I : never; // …and recovers "the item type" with infer
+  </script>
+  <p>In Rust you'd write <code>S::Item</code> directly, and a generic function over sources needs only one
+    parameter: <code>fn drain_all&lt;S: Source&gt;(s: &amp;mut S) -&gt; Vec&lt;S::Item&gt;</code>.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: Item and Error</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/web/routing.rs" data-line="116">
+      pub fn operations(&self) -> impl Iterator<Item = (&Method, &'static str)> {
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/persistence/mod.rs" data-line="345">
+      impl TryFrom<ExpenseRow> for Versioned<Expense> {
+          type Error = PersistenceError;
+    </script>
+    <p><code>Item = …</code> pins the associated type in a bound. <code>TryFrom</code> has both kinds: the source
+      type is a parameter (a type can be tried from many sources), and the error is associated (for a given
+      conversion, there is one error type).</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS interfaces can't say "one implementation per type" at all, because a value can satisfy any number of
+      structural types. Rust's traits are implemented explicitly and at most once per (trait, type) pair. That's
+      what makes "the" item type of a type a meaningful thing to ask for.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex88_associated_types.rs</code>: implement a <code>Source</code> trait with an
+      associated type twice, write a generic <code>drain_all</code>, and add a second impl of a trait with a type
+      parameter. Run <code>cargo test ex88</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why is <code>Iterator</code>'s item an associated type, not a parameter?</p>
+    <ul class="options">
+      <li>Associated types are faster at run time</li>
+      <li data-correct>Each iterator yields exactly one kind of item</li>
+      <li>Trait parameters were added to Rust later</li>
+      <li>Parameters can't be used in return types</li>
+    </ul>
+    <div class="explain">One answer per implementing type → associated type.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Can <code>TeamId</code> implement both <code>From&lt;Uuid&gt;</code> and <code>From&lt;[u8; 16]&gt;</code>?</p>
+    <ul class="options">
+      <li>No, a trait is implemented at most once</li>
+      <li data-correct>Yes, each parameter value is a distinct trait</li>
+      <li>Only if both impls live in one block</li>
+      <li>Only when the two impls are generic</li>
+    </ul>
+    <div class="explain"><code>From&lt;Uuid&gt;</code> and <code>From&lt;[u8; 16]&gt;</code> are different traits.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You design a <code>Parser</code> trait whose parsers each produce one output type. Which shape?</p>
+    <ul class="options" data-fixed>
+      <li><code>trait Parser&lt;Output&gt; { fn parse(&amp;self, s: &amp;str) -&gt; Output; }</code></li>
+      <li data-correct><code>trait Parser { type Output; fn parse(&amp;self, s: &amp;str) -&gt; Self::Output; }</code></li>
+      <li><code>trait Parser { fn parse&lt;O&gt;(&amp;self, s: &amp;str) -&gt; O; }</code></li>
+      <li><code>trait Parser { fn parse(&amp;self, s: &amp;str) -&gt; Box&lt;dyn Any&gt;; }</code></li>
+    </ul>
+    <div class="explain">One output per parser → associated type; callers write <code>P::Output</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch20-02-advanced-traits.html">20.2 "Advanced Traits"</a>,
+      sections on associated types and default type parameters.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

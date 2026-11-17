@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Closures vs arrow functions</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Functions, closures and iterators</p>
+  <h1>Closures vs arrow functions</h1>
+  <p class="lede"><code>(x) =&gt; x + 1</code> becomes <code>|x| x + 1</code>. Same idea, same everyday use, plus
+    one new keyword, <code>move</code>, because capturing a variable now has to say whether it borrows or takes
+    ownership.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read closures in Ledgerly (as arguments to <code>map</code>/<code>ok_or_else</code>, stored in a
+      variable, and with <code>move</code>) and write small ones yourself.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>How does Rust do "optional parameters"?</summary>
+      <div>It doesn't. Use different function names, <code>Option</code> parameters, or an argument struct. (44)</div></details>
+    <details><summary>What's TS <code>user?.name ?? "anon"</code> with <code>Option</code>?</summary>
+      <div><code>user.map(|u| u.name).unwrap_or("anon")</code>, give or take borrowing. (24)</div></details>
+  </div>
+
+  <h2>Syntax</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const double = (x: number) => x * 2;
+      const add = (a: number, b: number): number => a + b;
+      const log = () => { console.log("hi"); };
+      items.map((item) => item.name);
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      let double = |x: i32| x * 2;
+      let add = |a: i32, b: i32| -> i32 { a + b };
+      let log = || { println!("hi"); };
+      items.iter().map(|item| item.name());
+    </script>
+  </div>
+  <p>Parameter types are usually inferred from how the closure is used, unlike <code>fn</code> items, which always
+    need them. A closure can read variables from the surrounding scope ("capture" them), exactly like an arrow
+    function (<a href="https://doc.rust-lang.org/book/ch13-01-closures.html">Book 13.1</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: closures as small helpers</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/money/mod.rs" data-line="106">
+      let too_large = || MoneyError::TooLarge {
+          amount: amount.to_string(),
+      };
+      if amount.integer_digits() > MAX_INTEGER_DIGITS {
+          return Err(too_large());
+      }
+      let amount = amount.to_decimal_with_scale(minor_units).ok_or_else(too_large)?;
+    </script>
+    <p>The same error is needed in two places, so it's built by a closure that captures <code>amount</code>. It's
+      called directly (<code>too_large()</code>) and also <em>passed</em> to <code>ok_or_else</code>, which only calls
+      it if there's no value. That's the lazy version of <code>ok_or</code>: no error string is built on the happy
+      path. Note the shadowing: the last line's <code>let amount</code> is a new variable.</p>
+  </div>
+
+  <h2><code>move</code>: take the captured values with you</h2>
+  <p>By default a closure <em>borrows</em> what it captures. That's fine as long as the closure is used right away. But
+    a closure that's stored, returned, or handed to another thread or task may outlive the variables it borrowed, and
+    the compiler refuses. <code>move</code> makes it take ownership (or a copy, for <code>Copy</code> values) instead:</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/mod.rs" data-line="99">
+    let action = |action: Action, template: &'static str, routes: Routes, api: &Self| {
+        let handler = move |state, user, parameters, request| transition(state, user, parameters, request, action);
+  </script>
+  <p>For each of the six transitions, Ledgerly builds a request handler that remembers <em>which</em> action it is.
+    The handler lives in the router for the whole life of the server, long after this setup code returns, so it
+    must own its copy of <code>action</code>: <code>move</code>. You'll see <code>move</code> on almost every closure
+    passed to <code>tokio::spawn</code> for the same reason.</p>
+
+  <h3>Closures have types too: <code>Fn</code>, <code>FnMut</code>, <code>FnOnce</code></h3>
+  <p>When a function accepts a closure, its signature says how it will call it: <code>Fn</code> (call many times,
+    read-only captures), <code>FnMut</code> (many times, may mutate captures), <code>FnOnce</code> (at most once, may
+    consume captures). For example, <code>ok_or_else&lt;F: FnOnce() -&gt; E&gt;</code> calls its closure at most
+    once. You rarely write these, but you'll see them in docs.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>JS closures capture variables by reference, and the GC keeps them alive as long as the closure exists. That's
+      also the source of the classic "every callback sees the last loop value" bug. Rust must decide borrow vs own at
+      compile time, so long-lived closures need <code>move</code>, and the classic bug can't happen: each
+      <code>move</code> closure gets its own value.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex45_closures.rs</code>: a closure stored in a variable, one passed to
+      <code>unwrap_or_else</code>, and a function that returns a <code>move</code> closure. Run
+      <code>cargo test ex45</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What's the Rust for TS <code>(a, b) =&gt; a * b</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>(a, b) =&gt; a * b</code></li>
+      <li><code>fn(a, b) { a * b }</code></li>
+      <li data-correct><code>|a, b| a * b</code></li>
+      <li><code>\a b -&gt; a * b</code></li>
+    </ul>
+    <div class="explain">Pipes around the parameters, then the body expression.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does the handler closure in <code>ExpensesApi::routes</code> need <code>move</code>?</p>
+    <ul class="options">
+      <li>Closures can't capture enum values without moving them first</li>
+      <li data-correct>It outlives the setup code, so owns its action</li>
+      <li>move makes the closure faster when called repeatedly</li>
+      <li>Handlers must always be declared with move there</li>
+    </ul>
+    <div class="explain">A borrowed <code>action</code> would end with the setup function, but the router keeps the
+      handler for the life of the server.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why <code>ok_or_else(too_large)</code> and not <code>ok_or(too_large())</code>?</p>
+    <ul class="options">
+      <li>ok_or doesn't accept error values of this kind</li>
+      <li data-correct>The error is only built when it's needed</li>
+      <li>ok_or_else also converts the error type automatically</li>
+      <li>There's no difference; both forms build it lazily</li>
+    </ul>
+    <div class="explain"><code>ok_or(x)</code> evaluates <code>x</code> first, always (here: formatting a string).
+      <code>ok_or_else(f)</code> calls <code>f</code> only on <code>None</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch13-01-closures.html">13.1 "Closures: Anonymous Functions
+      that Capture Their Environment"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

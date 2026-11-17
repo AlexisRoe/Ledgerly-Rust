@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enums I: plain variants</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1>Enums I: plain variants</h1>
+  <p class="lede">Where TypeScript writes <code>type Category = "TRAVEL" | "MEALS" | …</code>, Rust writes an
+    <code>enum</code>. The values are not strings, and converting to and from text is explicit.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>Category</code>, <code>ExpenseStatus</code>, <code>Action</code> and <code>Role</code>:
+      how they're declared, how a variant is named (<code>Category::Travel</code>), and how they become the strings
+      the API and database use.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>A method takes <code>&amp;mut self</code>. What does that tell you?</summary>
+      <div>It borrows the value and may modify it. The caller needs a mutable binding.</div></details>
+    <details><summary>How do you call an associated function <code>from_code</code> on <code>Currency</code>?</summary>
+      <div><code>Currency::from_code("EUR")</code>.</div></details>
+  </div>
+
+  <h2>Union of literals vs enum</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      type Category = "TRAVEL" | "MEALS" | "OFFICE" | "SOFTWARE" | "OTHER";
+
+      const c: Category = "TRAVEL";
+      c === "TRAVEL";
+      JSON.stringify(c);   // '"TRAVEL"' for free
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/category.rs" data-line="7">
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+      pub enum Category {
+          Travel,
+          Meals,
+          Office,
+          Software,
+          Other,
+      }
+      // let c = Category::Travel;
+      // c == Category::Travel     (needs PartialEq, derived above)
+    </script>
+  </div>
+  <ul>
+    <li>A variant is named through its enum, <code>Category::Travel</code>. Inside <code>impl Category</code> you
+      can write <code>Self::Travel</code>.</li>
+    <li>The value is a tiny tag (one byte here), not text. <code>Category::Travel</code> and <code>"TRAVEL"</code>
+      are unrelated until code connects them.</li>
+    <li><code>derive</code> adds abilities: <code>PartialEq</code> enables <code>==</code>, <code>Copy</code> lets it
+      be copied like a number, <code>Hash</code> lets it be a map key, <code>Debug</code> prints
+      <code>Travel</code> with <code>{:?}</code>.</li>
+  </ul>
+
+  <h2>Text in, text out</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/category.rs" data-line="21">
+    impl Category {
+        /// Every category, in the order Java declares them.
+        pub const ALL: [Self; 5] = [Self::Travel, Self::Meals, Self::Office, Self::Software, Self::Other];
+
+        /// The name as Java, the database and the API write it, such as `TRAVEL`.
+        #[must_use]
+        pub const fn as_str(self) -> &'static str {
+            match self {
+                Self::Travel => "TRAVEL",
+                Self::Meals => "MEALS",
+                Self::Office => "OFFICE",
+                Self::Software => "SOFTWARE",
+                Self::Other => "OTHER",
+            }
+        }
+    }
+  </script>
+  <p>Every plain enum in Ledgerly follows this pattern:</p>
+  <ol>
+    <li><code>ALL</code>: an array of every variant, for loops and for parsing (TS would use an
+      <code>as const</code> array).</li>
+    <li><code>as_str</code>: a <code>match</code> that maps each variant to its wire name. You met
+      <code>match</code> in lesson 9, and lesson 31 covers it fully. The key fact: if a variant is missing, it
+      doesn't compile.</li>
+    <li><code>Display</code> (for <code>{}</code> in <code>format!</code>) and <code>FromStr</code> (for
+      <code>"TRAVEL".parse::&lt;Category&gt;()</code>), the reverse direction, which can fail with
+      <code>UnknownCategory</code>. Lesson 51 shows these.</li>
+  </ol>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: an enum with no ordering, on purpose</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/role.rs" data-line="13">
+      /// A rank within a team. The ladder is Member < Approver < Owner, and a higher rank includes the lower ones.
+      ///
+      /// `Role` deliberately has no `Ord`: the only question to ask is [`Role::includes`], so "at least an approver"
+      /// cannot be written the wrong way round with `<`.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+      pub enum Role {
+          Member,
+          Approver,
+          Owner,
+      }
+    </script>
+    <p>Comparing with <code>&lt;</code> needs the trait <code>Ord</code>, and <code>Role</code> doesn't derive it. So
+      <code>role &gt;= Role::Approver</code> doesn't compile; you must write
+      <code>role.includes(Role::Approver)</code>. What a type <em>can't</em> do is part of its design.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>A TS union of strings <em>is</em> its wire format, so <code>JSON.parse</code> gives you a "Category" for free
+      (unchecked). A Rust enum is a separate type: text becomes a <code>Category</code> only through code that can
+      reject bad input (<code>FromStr</code> or serde, lesson 68). TS's own <code>enum</code> keyword is closer in
+      syntax, but Rust enums can do far more, as the next lesson shows.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex22_enums.rs</code>: finish a <code>Status</code> enum with <code>ALL</code>,
+      <code>as_str</code> and a <code>parse</code> function in Ledgerly's style. Run <code>cargo test ex22</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">How do you refer to the "meals" category in code outside <code>impl Category</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>"MEALS"</code></li>
+      <li><code>Meals</code></li>
+      <li data-correct><code>Category::Meals</code></li>
+      <li><code>Category.MEALS</code></li>
+    </ul>
+    <div class="explain">Variants live in the enum's namespace, written with <code>::</code>. Only with
+      <code>use Category::*;</code> (rare) could you write <code>Meals</code> alone.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why doesn't <code>role &gt;= Role::Approver</code> compile?</p>
+    <ul class="options">
+      <li>Enums can never be compared with any operator</li>
+      <li data-correct>Role doesn't implement Ord, which ordering needs</li>
+      <li>The variants have no numbers assigned to them</li>
+      <li>Only integers support comparison operators in Rust</li>
+    </ul>
+    <div class="explain">Operators come from traits: <code>==</code> from <code>PartialEq</code>, <code>&lt;</code>
+      from <code>PartialOrd</code>. Ledgerly leaves ordering out deliberately.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You add <code>Training</code> to <code>Category</code>. What happens to <code>as_str</code>?</p>
+    <ul class="options">
+      <li>It returns an empty string for the new variant</li>
+      <li>It panics at runtime when called with Training</li>
+      <li data-correct>It stops compiling until Training gets an arm</li>
+      <li>It returns "TRAINING", derived from the variant name</li>
+    </ul>
+    <div class="explain"><code>match</code> must cover every variant. The compiler lists the missing one
+      (E0004).</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html">6.1 "Defining an Enum"</a>
+      (the first half, up to "The Option Enum").</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

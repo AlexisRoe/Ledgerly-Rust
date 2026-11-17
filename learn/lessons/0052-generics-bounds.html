@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Generics with trait bounds</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits and generics</p>
+  <h1>Generics with trait bounds</h1>
+  <p class="lede"><code>&lt;T extends Something&gt;</code> becomes <code>&lt;T: Something&gt;</code>. Bounds are
+    traits, and they say exactly which operations the generic code may use on <code>T</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>fn f&lt;T: Trait&gt;</code>, <code>impl Trait</code> parameters and <code>where</code>
+      clauses, including the four-line signature of Ledgerly's <code>Routes::route</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Implementing <code>From&lt;A&gt; for B</code> gives you which second conversion for free?</summary>
+      <div><code>Into&lt;B&gt; for A</code>, so <code>a.into()</code> works. (51)</div></details>
+    <details><summary>What's <code>type Err</code> inside <code>impl FromStr</code>?</summary>
+      <div>An associated type: the error this implementation returns. (51)</div></details>
+  </div>
+
+  <h2>Same idea, different keyword</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      function largest<T extends Comparable>(items: T[]): T { … }
+
+      function describe<T extends { toString(): string }>(x: T): string {
+        return `value: ${x}`;
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      fn largest<T: Ord + Copy>(items: &[T]) -> T { … }
+
+      fn describe<T: Display>(x: T) -> String {
+          format!("value: {x}")
+      }
+      fn describe(x: impl Display) -> String { … }   // same thing, shorter
+    </script>
+  </div>
+  <ul>
+    <li><code>T: Ord + Copy</code>: T must implement both traits; <code>+</code> combines bounds.</li>
+    <li>Without a bound you can do almost nothing with a <code>T</code>: no <code>==</code>, no printing, no copying.
+      The compiler only allows what the bounds promise
+      (<a href="https://doc.rust-lang.org/book/ch10-02-traits.html#trait-bound-syntax">Book 10.2, "Trait Bound
+      Syntax"</a>).</li>
+    <li><code>x: impl Display</code> in a parameter is shorthand for a generic with that bound (lesson 44's
+      <code>impl Into&lt;String&gt;</code>). In a <em>return</em> position, <code>-&gt; impl Fn(&amp;str) -&gt;
+      String</code> means "some concrete type that implements this, which I won't name".</li>
+  </ul>
+
+  <h2><code>where</code> clauses for long bounds</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/web/routing.rs" data-line="80">
+    pub fn route<H, T, S>(mut self, method: Method, template: &'static str, body: Body, handler: H, state: S) -> Self
+    where
+        H: Handler<T, S>,
+        T: 'static,
+        S: Clone + Send + Sync + 'static,
+    {
+  </script>
+  <p>How Ledgerly registers an endpoint. Read the <code>where</code> clause as requirements:</p>
+  <ul>
+    <li><code>H: Handler&lt;T, S&gt;</code>: the handler can be any function that axum knows how to call as a
+      request handler (axum implements <code>Handler</code> for async functions with suitable arguments).</li>
+    <li><code>S: Clone + Send + Sync + 'static</code>: the state (e.g. <code>ExpensesApi</code>) must be cloneable
+      per request, safe to share across threads, and contain no short-lived borrows (<code>'static</code> as a
+      bound means "owns everything it holds").</li>
+  </ul>
+  <p>You don't need to understand axum's <code>Handler</code> to read this: the bounds say what the function needs,
+    and that's the point.</p>
+
+  <h2>Generic types and generic impls</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/app/src/config.rs" data-line="61">
+    impl<S: std::hash::BuildHasher> Environment for HashMap<&str, &str, S> {
+  </script>
+  <p>"For every hasher type <code>S</code>, a <code>HashMap&lt;&amp;str, &amp;str, S&gt;</code> is an
+    <code>Environment</code>." The <code>impl&lt;…&gt;</code> introduces the type parameter, and the bound restricts
+    it.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS generics are erased and checked structurally. Rust generics are <strong>monomorphized</strong>: the
+      compiler generates a separate copy of <code>largest</code> for each <code>T</code> it's used with (lesson 27).
+      That makes them as fast as hand-written code, at the cost of compile time and binary size. When you need one
+      piece of code to handle many types at runtime, for example "whatever clock was configured", you use a trait
+      object instead. That's the next lesson.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex52_generics.rs</code>: add the missing bounds so three generic functions compile.
+      The compiler error tells you which trait each one needs. Run <code>cargo test ex52</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What's the Rust for <code>&lt;T extends A &amp; B&gt;</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>&lt;T: A, B&gt;</code></li>
+      <li><code>&lt;T: A &amp; B&gt;</code></li>
+      <li data-correct><code>&lt;T: A + B&gt;</code></li>
+      <li><code>&lt;T extends A + B&gt;</code></li>
+    </ul>
+    <div class="explain">Bounds are combined with <code>+</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A generic function compares two <code>T</code>s with <code>==</code> but has no bound. What happens?</p>
+    <ul class="options">
+      <li>It works; every type supports equality checks</li>
+      <li data-correct>Compile error: T needs a PartialEq bound first</li>
+      <li>It compares the memory addresses of the values</li>
+      <li>It panics at runtime for types without equality</li>
+    </ul>
+    <div class="explain">Generic code may only use what the bounds promise. The error suggests
+      <code>T: PartialEq</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In <code>S: Clone + Send + Sync + 'static</code>, what does <code>'static</code> require?</p>
+    <ul class="options">
+      <li>S must be a global static variable</li>
+      <li data-correct>S holds no borrowed references that expire</li>
+      <li>S must be created at compile time</li>
+      <li>S lives on the stack, never the heap</li>
+    </ul>
+    <div class="explain">As a bound, <code>'static</code> means "contains no non-static references", so the router
+      can keep it for as long as the server runs.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch10-02-traits.html">10.2</a>, from "Traits as Parameters"
+      through "Clearer Trait Bounds with where Clauses" and "Returning Types That Implement Traits".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>if is an expression</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Control flow</p>
+  <h1><code>if</code> is an expression</h1>
+  <p class="lede">Rust has no ternary operator because it doesn't need one: <code>if … else …</code> itself produces
+    a value.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can write and read <code>let x = if … { a } else { b };</code>, know why both branches must have the same
+      type, and recognise the guard-clause style Ledgerly uses for validation.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's the value of a block <code>{ let a = 2; a * 3 }</code>?</summary>
+      <div>6, the last expression without a semicolon. (9)</div></details>
+    <details><summary>Does <code>if items.len() { … }</code> compile?</summary>
+      <div>No. Conditions must be <code>bool</code>, and there's no truthiness. (17)</div></details>
+    <details><summary>What does <code>Option::filter</code> do?</summary>
+      <div>Keeps <code>Some(x)</code> if the predicate holds, otherwise gives <code>None</code>. (24)</div></details>
+  </div>
+
+  <h2>Ternary → <code>if</code> expression</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const body = action === "REJECT" ? Body.Json : Body.Ignored;
+
+      const label = count === 0 ? "none"
+                  : count === 1 ? "one"
+                  : "many";
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/mod.rs" data-line="101">
+      let body = if action == Action::Reject {
+          Body::Json
+      } else {
+          Body::Ignored
+      };
+      // let label = if count == 0 { "none" } else if count == 1 { "one" } else { "many" };
+    </script>
+  </div>
+  <p>Each branch is a block, and its last expression (no semicolon) is the branch's value
+    (<a href="https://doc.rust-lang.org/book/ch03-05-control-flow.html">Book 3.5</a>). The <code>reject</code>
+    endpoint is the only transition with a JSON body (the reason), so this decides how the router reads the
+    request.</p>
+  <p>Rules that follow from "<code>if</code> is an expression":</p>
+  <ul>
+    <li><strong>Both branches must have the same type.</strong> <code>if ok { 1 } else { "no" }</code> is error E0308.
+      TS would infer <code>number | string</code>.</li>
+    <li><strong>An <code>if</code> used as a value needs an <code>else</code></strong>, because otherwise there's
+      nothing to produce when the condition is false. (An <code>if</code> without <code>else</code> has type
+      <code>()</code>, fine as a statement.)</li>
+    <li>No parentheses around the condition. rustfmt removes them and the compiler warns. Braces are always
+      required, even for one line.</li>
+  </ul>
+
+  <h2>Guard clauses: <code>if</code> + early <code>return</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/text.rs" data-line="49">
+    pub fn new(text: &str) -> Result<Self, InvalidInput> {
+        if text::is_blank(text) {
+            return Err(InvalidInput::new("merchant", "Merchant is required"));
+        }
+        let stripped = text::strip(text);
+        if text::utf16_len(stripped) > Self::MAX_LEN {
+            return Err(InvalidInput::new(
+                "merchant",
+                format!("Merchant is longer than {}", Self::MAX_LEN),
+            ));
+        }
+        Ok(Self(stripped.to_owned()))
+    }
+  </script>
+  <p>The same guard style you'd use in TS: check, bail out, continue. Here, though, the bail-out is a
+    <code>return Err(…)</code> rather than a <code>throw</code>. The order of checks is deliberate: it decides
+    which error a client sees first.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>No truthiness, no <code>&amp;&amp;</code>/<code>||</code> returning operands, no ternary. That sounds like
+      less, but one construct does the job of three. Also, <code>if let</code> (lesson 33) and <code>match</code>
+      (lesson 31) are expressions too, so you'll often see <code>let x = match … { … };</code> where TS needs a
+      <code>let</code> plus a <code>switch</code> that assigns in every case.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Does this compile? <code>let size = if large { 100 } else { "small" };</code></p>
+    <ul class="options">
+      <li>Yes, size becomes a union of both types</li>
+      <li>Yes, the number is converted to text automatically</li>
+      <li data-correct>No, both branches must produce the same type</li>
+      <li>No, if can never be used as a value</li>
+    </ul>
+    <div class="explain">The branches are an integer and a <code>&amp;str</code>, which gives E0308 (mismatched
+      types). Rust has no ad-hoc unions; you'd need an enum.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's wrong with <code>let fee = if premium { 0 };</code>?</p>
+    <ul class="options">
+      <li>The condition needs parentheses around it</li>
+      <li data-correct>Without else there's no value for false</li>
+      <li>Integer literals can't appear inside an if</li>
+      <li>Nothing; fee is zero or uninitialised then</li>
+    </ul>
+    <div class="explain">An <code>if</code> without <code>else</code> has type <code>()</code>, so the
+      <code>then</code> branch's <code>0</code> doesn't match. Add <code>else { 5 }</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In <code>Merchant::new</code>, why does the blank check come before the length check?</p>
+    <ul class="options">
+      <li>Rust evaluates if statements in reverse order</li>
+      <li data-correct>The order decides which message a client sees</li>
+      <li>Length checks need the text trimmed in place</li>
+      <li>It doesn't matter; the compiler reorders them</li>
+    </ul>
+    <div class="explain">Guards run top to bottom and the first failure returns. Ledgerly keeps Java's order so the
+      same input gets the same error.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch03-05-control-flow.html">3.5 "Control Flow"</a>, the
+      "if Expressions" half, including "Using if in a let Statement".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: libraries</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>The libraries Ledgerly is built on</h1>
+  <p class="lede">Section 12 on one page, plus the other crates you'll see in <code>Cargo.toml</code>.</p>
+
+  <h2>Crate map</h2>
+  <table>
+    <thead><tr><th>Crate</th><th>Node counterpart</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td><code>tokio</code></td><td>Node's event loop</td><td>async runtime, timers, signals, sync primitives</td></tr>
+      <tr><td><code>axum</code> + <code>tower</code> / <code>tower-http</code></td><td>Express / Fastify + middleware</td><td>HTTP server, extractors, layers</td></tr>
+      <tr><td><code>serde</code> + <code>serde_json</code></td><td>zod + <code>JSON</code></td><td>(de)serialisation by derive</td></tr>
+      <tr><td><code>sqlx</code></td><td>pg + pgtyped</td><td>Postgres with compile-time checked SQL</td></tr>
+      <tr><td><code>thiserror</code></td><td>custom <code>Error</code> classes</td><td>error enums</td></tr>
+      <tr><td><code>tracing</code> + <code>tracing-subscriber</code></td><td>pino</td><td>structured logs, spans</td></tr>
+      <tr><td><code>metrics</code> + exporter</td><td>prom-client</td><td>Prometheus counters/histograms</td></tr>
+      <tr><td><code>opentelemetry*</code></td><td>@opentelemetry/*</td><td>trace export (OTLP)</td></tr>
+      <tr><td><code>secrecy</code></td><td>pino redact</td><td><code>SecretString</code></td></tr>
+      <tr><td><code>chrono</code></td><td>date-fns / Temporal</td><td>dates and instants</td></tr>
+      <tr><td><code>uuid</code></td><td>uuid</td><td>v4/v7 ids</td></tr>
+      <tr><td><code>rust_decimal</code></td><td>decimal.js</td><td>money amounts</td></tr>
+      <tr><td><code>argon2</code>, <code>sha2</code>, <code>p256</code>, <code>ring</code></td><td>argon2, crypto, jose</td><td>password hashing, tokens, JWT signatures</td></tr>
+      <tr><td><code>aws-sdk-s3</code></td><td>@aws-sdk/client-s3</td><td>receipt storage</td></tr>
+      <tr><td><code>reqwest</code> / <code>hyper</code></td><td>fetch / undici</td><td>HTTP clients (tests, Keycloak)</td></tr>
+      <tr><td><code>proptest</code></td><td>fast-check</td><td>property tests</td></tr>
+    </tbody>
+  </table>
+
+  <h2>serde</h2>
+  <script type="text/x-code" data-lang="rust">
+    #[derive(Debug, Deserialize)]
+    #[serde(deny_unknown_fields, rename_all = "camelCase")]   // strict, incurred_on ↔ incurredOn
+    struct CreateExpenseRequest { incurred_on: Option<DateBody>, … }  // Option: may be missing/null
+    #[derive(Serialize)] #[serde(transparent)] struct TeamId(Uuid);   // JSON = inner value
+    serde_json::from_str::<T>(text)?;   serde_json::to_string(&value)?;   axum::Json(value)
+  </script>
+
+  <h2>sqlx</h2>
+  <script type="text/x-code" data-lang="rust">
+    sqlx::query!("update … where team_id = $1 and id = $2 and version = $3", …).execute(&mut *conn).await?;
+    sqlx::query_as!(Row, "select … from expenses where team_id = $1 and id = $2", t, i).fetch_optional(conn).await?;
+    sqlx::query_scalar!(r#"select count(*) as "count!" from …"#, id).fetch_one(conn).await?;
+    let mut tx = pool.begin().await?;  …  tx.commit().await?;   // dropped without commit → rollback
+  </script>
+  <p><code>fetch_one</code> / <code>fetch_optional</code> / <code>fetch_all</code> / <code>execute</code>. Offline:
+    <code>.sqlx/</code>, regenerate with <code>just sqlx-prepare</code> (needs <code>just deps</code>).</p>
+
+  <h2>axum</h2>
+  <script type="text/x-code" data-lang="rust">
+    async fn handler(State(api): State<Api>, user: CurrentUser, params: PathParameters, request: Request)
+        -> Result<Response, Problem> { … }          // extractors in, IntoResponse out
+    Routes::new().route(Method::POST, "/api/v1/…", Body::Json, handler, api.clone())   // Ledgerly's table
+    router.layer(A).layer(B)                         // B is outermost: sees the request first
+  </script>
+
+  <h2>tracing / metrics / secrecy</h2>
+  <script type="text/x-code" data-lang="rust">
+    tracing::info!(apiPort = port, "Started Ledgerly");   // field = value; %x Display, ?x Debug
+    metrics::counter!("ledgerly.expenses.transitions", "action" => tag).increment(1);
+    let password: SecretString = …;   // Debug → [REDACTED], no Display
+    password.expose_secret()          // explicit, greppable access
+  </script>
+
+  <p>Lessons: <a data-lesson="68"></a> · <a data-lesson="69"></a> · <a data-lesson="70"></a> · <a data-lesson="71"></a></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Folder structure of a crate and of this repo</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Basic syntax and code organisation</p>
+  <h1>Folder structure of a crate and of this repo</h1>
+  <p class="lede">Cargo gives special meaning to a few folder names. Ledgerly adds a second convention on top: the
+    same layers in every module crate.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>Looking at a path such as <code>crates/teams/src/web/dto.rs</code> or <code>crates/shared/tests/outbox.rs</code>,
+      you can say what kind of code is in it and how it gets compiled.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's the difference between <code>pub</code> and <code>pub(crate)</code>?</summary>
+      <div><code>pub(crate)</code> is visible anywhere in the same crate, never in other crates. <code>pub</code>
+        is visible to anyone who can reach the module.</div></details>
+    <details><summary>What does <code>pub use domain::Category;</code> in <code>lib.rs</code> do?</summary>
+      <div>It re-exports <code>Category</code> at <code>ledgerly_expenses::Category</code>, even though
+        <code>domain</code> is private.</div></details>
+  </div>
+
+  <h2>What Cargo knows about folders</h2>
+  <p>Cargo finds targets by convention (<a href="https://doc.rust-lang.org/cargo/guide/project-layout.html">Cargo book:
+    package layout</a>), so the folder name decides how a file is compiled:</p>
+  <script type="text/x-code" data-lang="text" data-label="Package layout">
+    my-package/
+    ├── Cargo.toml
+    ├── build.rs            ← build script: runs BEFORE compiling the crate
+    ├── src/
+    │   ├── lib.rs          ← library crate root
+    │   ├── main.rs         ← binary crate root (name = package name)
+    │   ├── bin/
+    │   │   └── tool.rs     ← extra binary: cargo run --bin tool
+    │   └── …               ← modules, only if declared with `mod`
+    ├── tests/
+    │   └── api.rs          ← integration test: its OWN crate, sees only the public API
+    ├── examples/           ← cargo run --example name
+    └── benches/            ← cargo bench
+  </script>
+  <table>
+    <thead><tr><th>Folder / file</th><th>Node analogue</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/lib.rs</code></td><td><code>"main"</code> / <code>"exports"</code> entry</td><td>What other crates import</td></tr>
+      <tr><td><code>src/main.rs</code>, <code>src/bin/*.rs</code></td><td><code>"bin"</code> in package.json</td><td>Each file is a separate binary crate that can use the library</td></tr>
+      <tr><td><code>tests/*.rs</code></td><td><code>__tests__/</code> or <code>*.e2e.ts</code></td><td>Each file is compiled as a separate crate, like an outside user</td></tr>
+      <tr><td><code>build.rs</code></td><td>a <code>"prebuild"</code> script</td><td>Real Rust code that runs at build time</td></tr>
+    </tbody>
+  </table>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: the targets that exist</span>
+    <ul>
+      <li><code>crates/app/src/main.rs</code> → the <code>ledgerly</code> binary (renamed in <code>[[bin]]</code>);
+        <code>crates/app/src/lib.rs</code> → the library it calls.</li>
+      <li><code>crates/app/tests/startup.rs</code>, <code>architecture.rs</code>, … → integration tests. They start
+        the real binary or inspect the workspace.</li>
+      <li><code>crates/shared/tests/outbox.rs</code> etc. → integration tests against a real Postgres.</li>
+      <li><code>crates/shared/build.rs</code> → reads the vendored SQL migrations and embeds them into the crate, so
+        the binary can check the database schema at startup.</li>
+      <li><code>crates/parity-tests/src/bin/parity.rs</code> → the runner behind <code>just parity</code>, which prints passed / ignored / failed per milestone.</li>
+    </ul>
+  </div>
+
+  <h2>Ledgerly's own convention: one crate per module, same layers inside</h2>
+  <script type="text/x-code" data-lang="text" data-label="crates/">
+    crates/
+    ├── app/          wires everything together; main.rs, config, logging, servers
+    ├── shared/       ids, money, clock, roles, database, web helpers: used by all
+    ├── identity/     users, login, tokens
+    ├── teams/        teams and memberships
+    ├── expenses/     the Expense aggregate and its workflow
+    ├── receipts/     receipt upload, virus scan, storage
+    ├── imports/      CSV import of expenses
+    ├── audit/        audit trail built from events
+    └── parity-tests/ black-box tests that compare with Ledgerly-Java
+  </script>
+  <p>Inside a module crate like <code>expenses</code> the layers are always the same, like a hexagonal/clean
+    architecture in a NestJS project:</p>
+  <table>
+    <thead><tr><th>Module</th><th>Contains</th><th>Depends on</th></tr></thead>
+    <tbody>
+      <tr><td><code>domain/</code></td><td>Pure business rules (<code>Expense</code>, <code>Action</code>, errors). No I/O, no async</td><td>nothing</td></tr>
+      <tr><td><code>application/</code></td><td>Use cases: open a transaction, ask the domain, persist, publish</td><td>domain, persistence</td></tr>
+      <tr><td><code>persistence/</code></td><td>SQL in and out of Postgres</td><td>domain</td></tr>
+      <tr><td><code>web/</code></td><td>HTTP: routes, request/response DTOs, error → problem JSON</td><td>application</td></tr>
+      <tr><td><code>facade.rs</code>, <code>events.rs</code></td><td>The only things other crates may use</td><td></td></tr>
+    </tbody>
+  </table>
+  <p>A small module uses files instead of folders (<code>teams/src/domain.rs</code>,
+    <code>teams/src/persistence.rs</code>), but the names are the same. Unit tests live next to the code they test:
+    <code>web/tests.rs</code>, <code>application/tests.rs</code>, or a <code>mod tests</code> at the bottom of a
+    file.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In a TS project, any file can import any other, and the layering is just good manners (or an ESLint rule).
+      In Ledgerly, crossing a <em>crate</em> boundary the wrong way is a compile error, and the layering
+      <em>inside</em> a crate is guarded by privacy (<code>pub(crate)</code>) plus a test that reads
+      <code>cargo metadata</code> (<code>crates/app/tests/architecture.rs</code>).</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it</span>
+    <p>For each path, say (1) library module, binary, integration test or build script, and (2) which layer:</p>
+    <ol>
+      <li><code>crates/teams/src/web/dto.rs</code></li>
+      <li><code>crates/receipts/src/scanner.rs</code></li>
+      <li><code>crates/app/tests/probes.rs</code></li>
+      <li><code>crates/expenses/src/application/transition_expense.rs</code></li>
+    </ol>
+    <details class="reveal"><summary>Answers</summary>
+      <div>1: library module, web layer (request/response shapes). 2: library module of <code>receipts</code>,
+        the virus-scanner adapter (infrastructure, like persistence). 3: integration test of <code>app</code>
+        (health probes). 4: library module, application layer (the submit/approve/… use case).</div></details>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A file in <code>crates/shared/tests/</code> wants to call a <code>pub(crate)</code> function of
+      <code>ledgerly_shared</code>. Can it?</p>
+    <ul class="options">
+      <li>Yes, because it's inside the same package folder</li>
+      <li data-correct>No, each integration test is a separate crate</li>
+      <li>Yes, but only through a use super glob</li>
+      <li>Only when the testing feature is turned on</li>
+    </ul>
+    <div class="explain">Each file in <code>tests/</code> is compiled as its own crate and sees only
+      <code>pub</code> items, exactly like an outside user. Unit tests (<code>mod tests</code> inside
+      <code>src/</code>) see private items.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Where do the SQL migrations get embedded into <code>ledgerly_shared</code>?</p>
+    <ul class="options" data-fixed>
+      <li>src/main.rs at startup</li>
+      <li data-correct>build.rs at compile time</li>
+      <li>tests/schema_check.rs</li>
+      <li>the Dockerfile only</li>
+    </ul>
+    <div class="explain"><code>crates/shared/build.rs</code> runs before the crate compiles, reads the vendored
+      migration folder and generates code that embeds them.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In which module of <code>expenses</code> would you expect <em>no</em> <code>async</code> and no
+      database code?</p>
+    <ul class="options" data-fixed>
+      <li>application</li>
+      <li data-correct>domain</li>
+      <li>persistence</li>
+      <li>web</li>
+    </ul>
+    <div class="explain"><code>domain/mod.rs</code> says so in its first line: "no I/O, no async, time only through
+      <code>Clock</code>". Pure code is easy to test.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Cargo book, <a href="https://doc.rust-lang.org/cargo/guide/project-layout.html">"Package Layout"</a> (one
+      page), then <a href="https://doc.rust-lang.org/book/ch11-03-test-organization.html">Book 11.3 "Test
+      Organization"</a> for unit vs integration tests.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

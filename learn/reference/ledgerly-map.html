@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: Ledgerly map</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Ledgerly map</h1>
+  <p class="lede">Where things are, and the path a request takes. Section 13 on one page.</p>
+
+  <h2>Crates and arrows</h2>
+  <script type="text/x-code" data-lang="text" data-label="Allowed dependencies">
+                shared  ◄──────────── everyone
+                   ▲
+    identity ◄── teams ◄── expenses ◄── receipts
+                               ▲
+                               └────── imports ──► teams
+    audit ──► events of identity, teams, expenses, receipts, imports
+    app ──► everything (wiring only)
+  </script>
+  <p>Checked by <code>crates/app/tests/architecture.rs</code>. Cross-module questions go through traits the asking crate
+    owns (<code>expenses::ReceiptChecks</code>, implemented by <code>receipts</code>) or through events.</p>
+
+  <h2>Inside a module crate</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Layer</th><th>Typical content</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/lib.rs</code></td><td>facade</td><td><code>mod</code> lines, <code>pub use</code>, <code>pub fn routes</code></td></tr>
+      <tr><td><code>src/domain/</code></td><td>domain</td><td>aggregate, enums, newtypes, <code>…Error</code>; pure, sync</td></tr>
+      <tr><td><code>src/application/</code></td><td>use cases</td><td>one struct per use case with <code>execute</code>; <code>UseCaseError</code>; <code>access.rs</code></td></tr>
+      <tr><td><code>src/persistence/</code></td><td>SQL</td><td><code>find</code>, <code>insert</code>, <code>update</code>, <code>…Row</code> + <code>TryFrom</code></td></tr>
+      <tr><td><code>src/web/</code></td><td>HTTP</td><td><code>routes()</code>, handlers, <code>dto.rs</code>, <code>problem.rs</code></td></tr>
+      <tr><td><code>src/events.rs</code>, <code>facade.rs</code></td><td>public face</td><td>events, the facade for other modules</td></tr>
+    </tbody>
+  </table>
+
+  <h2>A request, top to bottom</h2>
+  <table>
+    <thead><tr><th>Step</th><th>Where</th><th>Fails with</th></tr></thead>
+    <tbody>
+      <tr><td>middleware (trace, limits, CORS, auth, rate limit)</td><td><code>app/src/lib.rs</code> <code>layered</code>, <code>shared/src/web/</code></td><td>401, 403, 413, 429</td></tr>
+      <tr><td>route match</td><td><code>shared/src/web/routing.rs</code></td><td>404, 405, 415</td></tr>
+      <tr><td>handler: extract, parse, validate body</td><td><code>&lt;module&gt;/src/web/mod.rs</code>, <code>dto.rs</code></td><td>400</td></tr>
+      <tr><td>use case: transaction, actor, load</td><td><code>application/*.rs</code>, <code>access.rs</code></td><td>404, 412</td></tr>
+      <tr><td>domain decision</td><td><code>domain/*.rs</code></td><td>400, 403, 409, 422</td></tr>
+      <tr><td>persist + publish event + commit</td><td><code>persistence/</code>, <code>shared/src/events/</code></td><td>412, 500</td></tr>
+      <tr><td>error → problem</td><td><code>web/problem.rs</code>, <code>shared/src/web/problem.rs</code></td><td></td></tr>
+      <tr><td>response DTO + ETag</td><td><code>web/dto.rs</code> (<code>From</code>), serde</td><td></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Startup</h2>
+  <p><code>main</code>: config → logging → panic hook → telemetry → Tokio runtime → <code>block_on(run)</code>.
+    <code>run</code>: stop signal → <code>database::connect</code> → <code>database::verify</code> (schema) →
+    <code>seed::demo_data</code> → <code>App::bind</code> (modules, ports) → <code>serve</code> (until SIGTERM, drain
+    30 s) → <code>pool.close</code>. Errors: <code>ConfigError</code>/<code>StartupError</code> →
+    <code>failed_to_start</code> → exit code 1.</p>
+
+  <h2>Where to look for…</h2>
+  <table>
+    <thead><tr><th>…</th><th>Look in</th></tr></thead>
+    <tbody>
+      <tr><td>a business rule</td><td><code>crates/&lt;module&gt;/src/domain/</code></td></tr>
+      <tr><td>an HTTP status or error message</td><td><code>web/problem.rs</code>, the <code>#[error]</code> on the error enum, <code>shared/src/web/problem.rs</code> <code>ErrorCode</code></td></tr>
+      <tr><td>a JSON field name</td><td><code>web/dto.rs</code></td></tr>
+      <tr><td>a SQL query</td><td><code>persistence/</code></td></tr>
+      <tr><td>a config variable</td><td><code>crates/app/src/config.rs</code>, <code>shared/src/config/</code></td></tr>
+      <tr><td>the contract</td><td><code>api/openapi.yaml</code> (read-only, from Java)</td></tr>
+      <tr><td>the schema</td><td><code>vendor/ledgerly-java/src/main/resources/db/migration/</code> (read-only)</td></tr>
+      <tr><td>why something is the way it is</td><td><code>docs/adr/</code>, <code>docs/learning-log.md</code></td></tr>
+    </tbody>
+  </table>
+
+  <p>Lessons: <a data-lesson="72"></a> · <a data-lesson="73"></a> · <a data-lesson="74"></a></p>
+</main>
+</body>
+</html>

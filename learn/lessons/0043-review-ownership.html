@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: ownership</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and borrowing · Review</p>
+  <h1>Review: ownership</h1>
+  <p class="lede">This is the section most worth reviewing twice: once now, once in a week. Mixed practice on
+    lessons 36–42, plus earlier material.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>For each "does it compile" question, decide <em>and</em> name the error code before choosing. Then do the
+      annotation exercise on a real Ledgerly function.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>The three ownership rules and the borrow rule.</summary>
+      <div>One owner; one at a time; dropped at end of scope. Many <code>&amp;</code> or one <code>&amp;mut</code>, and
+        no reference outlives its value. (36, 39)</div></details>
+    <details><summary>When is a value copied instead of moved?</summary>
+      <div>When its type is <code>Copy</code>: numbers, <code>bool</code>, ids, <code>Actor</code>, <code>Money</code>,
+        plain enums, shared references. (38)</div></details>
+    <details><summary>What does dropping an uncommitted sqlx transaction do?</summary>
+      <div>Rolls it back. (36)</div></details>
+    <details><summary><code>Box</code>, <code>Rc</code>, <code>Arc</code>: one line each.</summary>
+      <div>Heap, one owner; many owners, one thread; many owners, any thread. (42)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">Does this compile?</p>
+    <script type="text/x-code" data-lang="rust">
+      let id = ExpenseId::new_v7();
+      let a = id;
+      let b = id;
+    </script>
+    <ul class="options">
+      <li>No, E0382: id was moved into a already</li>
+      <li data-correct>Yes, ExpenseId is Copy, so it's copied twice</li>
+      <li>No, E0499: two mutable borrows of the id</li>
+      <li>Yes, but a and b share one id</li>
+    </ul>
+    <div class="explain">Ids derive <code>Copy</code>. With a <code>String</code> instead, it would be E0382.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Does this compile?</p>
+    <script type="text/x-code" data-lang="rust">
+      let merchant = Merchant::new("Bahn")?;
+      let new = NewExpense { merchant: merchant.as_str().to_owned(), /* … */ };
+      println!("{}", merchant.as_str());
+    </script>
+    <ul class="options">
+      <li>No, E0382: merchant was moved into new</li>
+      <li data-correct>Yes, to_owned copies the text; merchant stays</li>
+      <li>No, E0502: merchant is still borrowed by new</li>
+      <li>Yes, because Merchant is a Copy type</li>
+    </ul>
+    <div class="explain"><code>as_str()</code> borrows briefly, <code>to_owned()</code> makes a new <code>String</code>
+      for the struct. <code>merchant</code> is untouched.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which signature would you give a function that validates an expense without changing it?</p>
+    <ul class="options" data-fixed>
+      <li><code>fn check(expense: Expense)</code></li>
+      <li data-correct><code>fn check(expense: &amp;Expense)</code></li>
+      <li><code>fn check(expense: &amp;mut Expense)</code></li>
+      <li><code>fn check(expense: Arc&lt;Expense&gt;)</code></li>
+    </ul>
+    <div class="explain">Read-only access is a shared borrow. Taking it by value would consume the caller's
+      expense.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Control flow) Inside a function returning <code>Result</code>, a <code>?</code> fails after a
+      transaction was opened. What is guaranteed?</p>
+    <ul class="options">
+      <li>The changes so far are committed automatically</li>
+      <li data-correct>The transaction is dropped and rolled back</li>
+      <li>The program panics because the transaction leaked</li>
+      <li>Nothing; you must call rollback inside a catch</li>
+    </ul>
+    <div class="explain">Early return drops the owner, and drop rolls back. (34, 36)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Data types) Why do Ledgerly's accessors return <code>&amp;Merchant</code> but <code>Money</code>
+      (no <code>&amp;</code>)?</p>
+    <ul class="options">
+      <li>Merchant is private, Money is a public type</li>
+      <li data-correct>Money is Copy and cheap; Merchant owns text</li>
+      <li>References can only point to tuple struct values</li>
+      <li>Money is always stored on the heap anyway</li>
+    </ul>
+    <div class="explain">Copy types are returned by value. Owning types are lent out to avoid a clone. (20, 38)</div>
+  </div>
+
+  <h2>Annotate a real function</h2>
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code (15 minutes)</span>
+    <p>Open <a class="src" data-src="crates/expenses/src/application/transition_expense.rs" data-line="51"></a>. For
+      every variable and argument in <code>execute</code>, write next to it (as a comment you won't commit) one of:
+      <em>owned</em>, <em>moved here</em>, <em>&amp; borrowed</em>, <em>&amp;mut borrowed</em>, <em>Copy</em>, or
+      <em>Arc clone</em>.</p>
+    <details class="reveal"><summary>Spot-check answers</summary>
+      <div>
+        <p><code>&amp;self</code>: shared borrow, so many requests run at once. <code>action</code>, <code>team</code>,
+          <code>id</code>, <code>caller</code>: Copy. <code>reason: Option&lt;&amp;str&gt;</code>: a borrowed
+          string inside an option.</p>
+        <p><code>transaction</code>: owned here, lent as <code>&amp;mut</code> four times, consumed by
+          <code>commit()</code> (which takes <code>self</code>). <code>found.value</code>: moved into
+          <code>expense</code>. <code>&amp;expense</code>: shared borrow for the update. <code>expense</code>: finally
+          moved into the returned <code>Versioned</code>.</p>
+        <p><code>self.memberships.as_ref()</code>: borrows the trait object inside the <code>Arc</code> as
+          <code>&amp;dyn MembershipLookup</code>.</p>
+      </div></details>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>If anything here felt shaky, re-read <a href="https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html">Book
+      chapter 4</a> in one sitting. It's 30 minutes and pays off for the rest of the course. Then the
+      <a href="../reference/ownership.html">ownership rules card</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

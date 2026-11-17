@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Macros you'll meet</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Macros and attributes</p>
+  <h1>Macros you'll meet</h1>
+  <p class="lede">A <code>name!(…)</code> call is code that writes code at compile time. You'll use a dozen macros
+    constantly and write almost none. This lesson is about reading them, including Ledgerly's one
+    <code>macro_rules!</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You know what each everyday macro does and why it's a macro rather than a function, and you can read
+      <code>typed_id!</code> well enough to add an eighth id type.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Which attribute kind is <code>#[derive(…)]</code>?</summary>
+      <div>Code generation, done by a (procedural) macro. (60)</div></details>
+    <details><summary>What's <code>matches!(x, A | B)</code>?</summary>
+      <div>A <code>bool</code>: does <code>x</code> match the pattern? (33)</div></details>
+  </div>
+
+  <h2>Why macros at all?</h2>
+  <p>A Rust function has a fixed number of typed arguments. Macros can take any number of arguments, take
+    <em>syntax</em> (a pattern, a format string, SQL) and check it at compile time. That's why <code>println!</code>
+    can reject <code>{nmae}</code> before the program runs
+    (<a href="https://doc.rust-lang.org/book/ch20-05-macros.html">Book 20.5</a>).</p>
+
+  <h2>The everyday set</h2>
+  <table>
+    <thead><tr><th>Macro</th><th>Does</th><th>TS feel</th></tr></thead>
+    <tbody>
+      <tr><td><code>println!</code>, <code>eprintln!</code></td><td>print to stdout / stderr</td><td><code>console.log</code> / <code>console.error</code></td></tr>
+      <tr><td><code>format!("{a} {b:?}")</code></td><td>build a <code>String</code></td><td>template literal</td></tr>
+      <tr><td><code>write!(f, …)</code></td><td>format into a writer, e.g. in <code>Display::fmt</code></td><td></td></tr>
+      <tr><td><code>vec![1, 2, 3]</code></td><td>a <code>Vec</code> literal</td><td><code>[1, 2, 3]</code></td></tr>
+      <tr><td><code>assert!</code>, <code>assert_eq!</code>, <code>assert_ne!</code></td><td>test assertions (print both values on failure)</td><td><code>expect(a).toBe(b)</code></td></tr>
+      <tr><td><code>matches!</code></td><td>pattern test as <code>bool</code></td><td></td></tr>
+      <tr><td><code>tracing::info!</code>, <code>warn!</code>, <code>error!</code></td><td>structured log events (lesson 71)</td><td><code>logger.info({…}, "msg")</code></td></tr>
+      <tr><td><code>sqlx::query_as!</code></td><td>SQL checked against the schema at compile time (lesson 69)</td><td>Prisma/Kysely types, but from real SQL</td></tr>
+      <tr><td><code>tokio::select!</code>, <code>tokio::join!</code></td><td>wait for the first / all futures (lesson 63)</td><td><code>Promise.race</code> / <code>Promise.all</code></td></tr>
+      <tr><td><code>todo!</code>, <code>unimplemented!</code>, <code>panic!</code></td><td>panic: banned in Ledgerly production code</td><td><code>throw</code></td></tr>
+    </tbody>
+  </table>
+  <p>Format strings: <code>{}</code> = <code>Display</code>, <code>{:?}</code> = <code>Debug</code>,
+    <code>{:#?}</code> = pretty <code>Debug</code>, <code>{x}</code> = the variable <code>x</code>,
+    <code>{:02}</code> = zero-padded, <code>{:.2}</code> = two decimals.</p>
+
+  <h2>Reading a <code>macro_rules!</code></h2>
+  <p>A declarative macro is pattern matching on code: each rule is <code>(pattern) =&gt; { expansion }</code>.</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/id.rs" data-line="60">
+    macro_rules! typed_id {
+        ($(#[$doc:meta])* $name:ident, v7) => {
+            typed_id!(@common $(#[$doc])* $name);
+
+            impl $name {
+                // … pub fn new_v7() -> Self { Self(Uuid::now_v7()) } …
+            }
+        };
+        // … a second rule for v4 …
+        (@common $(#[$doc:meta])* $name:ident) => {
+            $(#[$doc])*
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+            #[serde(transparent)]
+            pub struct $name(Uuid);
+            // … from_uuid, as_uuid, Display, FromStr, Deserialize …
+        };
+    }
+  </script>
+  <ul>
+    <li><code>$name:ident</code> captures an identifier (like <code>TeamId</code>) into <code>$name</code>.</li>
+    <li><code>$(#[$doc:meta])*</code> captures zero or more attributes (the <code>///</code> doc comment), and
+      <code>$(#[$doc])*</code> repeats them in the output.</li>
+    <li><code>v7</code> and <code>@common</code> are literal tokens that select a rule. <code>@common</code> is a
+      private helper rule called from the other two.</li>
+  </ul>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/id.rs" data-line="137">
+    typed_id!(
+        /// Identifies a team.
+        TeamId,
+        v7
+    );
+  </script>
+  <p>Each call expands into a complete newtype with all its impls. To add an id type, you'd add one more call.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS has no macros. The closest things are code generators (OpenAPI, Prisma) that write files you can open.
+      Macro output is invisible by default. To see it, hover the macro in VS Code and run rust-analyzer's "Expand
+      macro recursively" command, or install <code>cargo-expand</code>. There are also <strong>procedural
+      macros</strong> (<code>derive</code>, <code>#[tokio::test]</code>, <code>query_as!</code>), Rust programs that
+      transform code. Writing them is out of scope; reading their effect is enough.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why can <code>format!("{amount} EUR")</code> catch a misspelled <code>{amout}</code> at compile time?</p>
+    <ul class="options">
+      <li>The editor checks strings while you type them</li>
+      <li data-correct>The macro parses the string while compiling</li>
+      <li>Rust strings are checked by the type system</li>
+      <li>clippy scans every string literal for names</li>
+    </ul>
+    <div class="explain">A macro sees its input as syntax, so it can parse the format string and check each
+      placeholder.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In <code>typed_id!</code>, what does <code>$name:ident</code> capture?</p>
+    <ul class="options">
+      <li>Any expression, such as a call's result</li>
+      <li data-correct>An identifier, such as TeamId or ExpenseId</li>
+      <li>A string literal containing the type's name</li>
+      <li>A UUID value used for the first id</li>
+    </ul>
+    <div class="explain"><code>ident</code> is a fragment specifier for identifiers. Others include <code>expr</code>,
+      <code>ty</code>, <code>meta</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How do you see what <code>typed_id!(TeamId, v7)</code> expands to?</p>
+    <ul class="options">
+      <li>Read generated files in the target/ folder</li>
+      <li data-correct>Use the rust-analyzer command "Expand macro recursively"</li>
+      <li>Run the binary with a debug flag</li>
+      <li>It can't be seen; output stays invisible</li>
+    </ul>
+    <div class="explain">rust-analyzer (or <code>cargo expand</code>) shows the expansion. No files are written.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch20-05-macros.html">20.5 "Macros"</a>, the first section
+      on declarative macros. Rust by Example's <a href="https://doc.rust-lang.org/rust-by-example/macros.html">macro_rules!</a>
+      pages for the fragment specifiers.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

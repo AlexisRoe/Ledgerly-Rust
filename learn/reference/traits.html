@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: traits and generics</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Traits and generics</h1>
+  <p class="lede">Section 7 on one page.</p>
+
+  <h2>Defining and implementing</h2>
+  <script type="text/x-code" data-lang="rust">
+    pub trait Clock: fmt::Debug + Send + Sync {        // supertraits: implementors must also be these
+        fn now(&self) -> DateTime<Utc>;                // required
+        fn today(&self) -> NaiveDate { self.now().date_naive() }  // default
+    }
+    impl Clock for SystemClock { fn now(&self) -> DateTime<Utc> { Utc::now() } }
+    impl<S: BuildHasher> Environment for HashMap<&str, &str, S> { … }  // generic impl, foreign type
+  </script>
+  <p>Nominal: no <code>impl</code>, no trait. Orphan rule: trait or type must be local. Trait methods need the trait
+    in scope (<code>use std::fmt::Write as _;</code>).</p>
+
+  <h2>Standard traits</h2>
+  <table>
+    <thead><tr><th>Trait</th><th>Gives</th><th>Derive?</th></tr></thead>
+    <tbody>
+      <tr><td><code>Debug</code></td><td><code>{:?}</code></td><td>yes</td></tr>
+      <tr><td><code>Display</code></td><td><code>{}</code>, <code>.to_string()</code></td><td>no, by hand</td></tr>
+      <tr><td><code>Clone</code> / <code>Copy</code></td><td><code>.clone()</code> / implicit copy</td><td>yes</td></tr>
+      <tr><td><code>PartialEq</code> / <code>Eq</code></td><td><code>==</code> by value</td><td>yes</td></tr>
+      <tr><td><code>PartialOrd</code> / <code>Ord</code></td><td><code>&lt;</code>, <code>sort</code>, <code>max</code></td><td>yes</td></tr>
+      <tr><td><code>Hash</code></td><td><code>HashMap</code> key</td><td>yes</td></tr>
+      <tr><td><code>Default</code></td><td><code>T::default()</code></td><td>yes</td></tr>
+      <tr><td><code>From&lt;A&gt;</code> / <code>Into&lt;B&gt;</code></td><td>infallible conversion, <code>.into()</code>; <code>?</code> uses <code>From</code> on errors</td><td>no</td></tr>
+      <tr><td><code>TryFrom&lt;A&gt;</code></td><td>fallible conversion, <code>type Error</code></td><td>no</td></tr>
+      <tr><td><code>FromStr</code></td><td><code>"…".parse::&lt;T&gt;()</code>, <code>type Err</code></td><td>no</td></tr>
+      <tr><td><code>Send</code> / <code>Sync</code></td><td>move / share across threads</td><td>automatic</td></tr>
+    </tbody>
+  </table>
+  <p>A trait a type <em>doesn't</em> implement is a rule: <code>Role</code> and <code>Money</code> have no
+    <code>Ord</code>.</p>
+
+  <h2>Generics</h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td><code>&lt;T extends A&gt;</code></td><td><code>&lt;T: A&gt;</code></td></tr>
+      <tr><td><code>&lt;T extends A &amp; B&gt;</code></td><td><code>&lt;T: A + B&gt;</code></td></tr>
+      <tr><td>long constraints</td><td><code>where T: A + B, U: C</code></td></tr>
+      <tr><td><code>(x: A)</code> (interface param)</td><td><code>x: impl A</code> (static) or <code>x: &amp;dyn A</code> (dynamic)</td></tr>
+      <tr><td>return an interface</td><td><code>-&gt; impl A</code> (one hidden type) or <code>-&gt; Box&lt;dyn A&gt;</code></td></tr>
+      <tr><td>interface-typed field</td><td><code>Arc&lt;dyn A&gt;</code> / <code>Box&lt;dyn A&gt;</code></td></tr>
+    </tbody>
+  </table>
+  <p><code>'static</code> as a bound: owns everything, no short-lived borrows.</p>
+
+  <h2>Generics vs trait objects</h2>
+  <table>
+    <thead><tr><th></th><th>Generics / <code>impl Trait</code></th><th><code>dyn Trait</code></th></tr></thead>
+    <tbody>
+      <tr><td>Decided</td><td>compile time</td><td>runtime</td></tr>
+      <tr><td>Code</td><td>copy per type (fast, inlinable)</td><td>one copy, vtable call</td></tr>
+      <tr><td>Pointer</td><td>no</td><td>always</td></tr>
+      <tr><td>Ledgerly</td><td>iterators, serde, axum handlers</td><td>clock, publisher, membership lookup, receipt checks</td></tr>
+    </tbody>
+  </table>
+
+  <p>Lessons: <a data-lesson="49"></a> · <a data-lesson="50"></a> · <a data-lesson="51"></a> · <a data-lesson="52"></a> ·
+    <a data-lesson="53"></a></p>
+</main>
+</body>
+</html>

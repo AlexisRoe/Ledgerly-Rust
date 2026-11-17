@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exercise: change a domain rule and its test</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Making changes</p>
+  <h1>Exercise: change a domain rule and its test</h1>
+  <p class="lede">Your first real change to Ledgerly, test first: rejection reasons must be at least 10 characters,
+    so "no" is no longer a valid reason. Then find out what else your rule touches.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this exercise</span>
+    <p>You've written a failing test, made it pass in the domain, read four test failures you didn't expect, and
+      decided what each one means. That's the everyday loop of changing a Rust codebase.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Where are rejection reasons validated?</summary>
+      <div><code>RejectionReason::new</code> in <code>crates/expenses/src/domain/text.rs</code>: parse, don't validate
+        (26).</div></details>
+    <details><summary>What does a domain <code>InvalidInput</code> become over HTTP?</summary>
+      <div>A 400 with the field and message, via <code>problem::refusal</code>. (58)</div></details>
+  </div>
+
+  <div class="note">
+    <span class="box-label">Setup</span>
+    <p><code>git switch -c practice/rejection-reason</code>. This is practice only: in the real project a rule change
+      starts in Ledgerly-Java, and this one would make Rust disagree with Java (the parity suite would catch it).</p>
+  </div>
+
+  <h2>Step 1: the test first</h2>
+  <p>Open <a class="src" data-src="crates/expenses/src/domain/text.rs" data-line="263"></a> and add a test next to
+    <code>rejection_reason_is_capped_at_1000</code>, using the module's <code>invalid</code> helper:</p>
+  <script type="text/x-code" data-lang="rust">
+    #[test]
+    fn rejection_reason_needs_at_least_10_characters() {
+        assert_eq!(
+            RejectionReason::new("too short"),
+            Err(invalid("reason", "Rejection reason is shorter than 10"))
+        );
+        assert!(RejectionReason::new("exactly 10").is_ok());
+        assert!(RejectionReason::new("   too short   ").is_err()); // counted after stripping
+    }
+  </script>
+  <p>Run <code>cargo test -p ledgerly-expenses rejection_reason</code>. It should <strong>fail</strong>: read the
+    <code>assertion `left == right` failed</code> output, where <code>left</code> is <code>Ok(…)</code>.</p>
+
+  <h2>Step 2: the rule</h2>
+  <p>In <code>RejectionReason::new</code>, after <code>let stripped = text::strip(text);</code>, add a guard in the
+    same style as the maximum-length check. Use <code>text::utf16_len(stripped)</code> so the count matches Java's
+    (lesson 18). Bonus: make 10 a <code>pub const MIN_LEN: usize</code> next to <code>MAX_LEN</code> and use it in the
+    message with <code>format!</code>.</p>
+  <details class="reveal"><summary>Show a solution</summary>
+    <div>
+      <script type="text/x-code" data-lang="rust">
+        let stripped = text::strip(text);
+        if text::utf16_len(stripped) < Self::MIN_LEN {
+            return Err(InvalidInput::new(
+                "reason",
+                format!("Rejection reason is shorter than {}", Self::MIN_LEN),
+            ));
+        }
+      </script>
+    </div></details>
+  <p>Your new test passes. Now run the whole domain: <code>cargo test -p ledgerly-expenses domain</code>.</p>
+
+  <h2>Step 3: the surprise</h2>
+  <script type="text/x-code" data-lang="text" data-label="cargo test -p ledgerly-expenses domain (real output)">
+    test domain::expense::tests::transitions::owner_may_approve_and_reject ... FAILED
+    test domain::expense::tests::transitions::every_rejection_is_kept ... FAILED
+    test domain::expense::tests::transitions::legal_pairs_succeed_and_the_rest_are_invalid_transitions ... FAILED
+    test domain::text::tests::the_text_types_print_their_text ... FAILED
+    test result: FAILED. 69 passed; 4 failed; …
+  </script>
+  <p>Four tests you didn't touch. For each one, open the line from the <code>panicked at</code> message and decide:</p>
+  <ul>
+    <li>Is the test <strong>using</strong> a short reason incidentally (e.g. <code>e.reject(actor, "reason")</code>)?
+      Then the test data is out of date: give it a longer reason.</li>
+    <li>Or is the test <strong>about</strong> short reasons? Then the rule really changes behaviour, and the test's
+      expectation must change deliberately.</li>
+  </ul>
+  <details class="reveal"><summary>What you should find</summary>
+    <div>All four use short reasons incidentally: <code>"reason"</code> in the 30-pair workflow test,
+      <code>"no"</code>-style reasons in the others, and a short sample text in the printing test. Updating the test data
+      is right here. In the real project, Ledgerly's rule (from <code>CLAUDE.md</code>) still applies: <em>never
+      weaken a parity test to make it pass</em>. A parity test failing would mean Rust now disagrees with Java, and the
+      fix belongs in Java first.</div></details>
+
+  <h2>Step 4: finish the loop</h2>
+  <ol>
+    <li><code>cargo test -p ledgerly-expenses domain</code> is green.</li>
+    <li><code>cargo clippy -p ledgerly-expenses --all-targets -- -D warnings</code> and <code>cargo fmt</code>.</li>
+    <li>Look at <code>git diff</code>: one rule, one new test, four updated test inputs.</li>
+    <li>Throw it away: <code>git restore . &amp;&amp; git switch - &amp;&amp; git branch -D practice/rejection-reason</code>.</li>
+  </ol>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why write the test before the rule?</p>
+    <ul class="options">
+      <li>The compiler requires tests to exist before code</li>
+      <li data-correct>To watch it fail, proving it checks something</li>
+      <li>Tests run faster when they are written first</li>
+      <li>clippy rejects functions that have no test yet</li>
+    </ul>
+    <div class="explain">A test that never failed might not test anything. Red, then green.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why <code>text::utf16_len</code> and not <code>stripped.len()</code>?</p>
+    <ul class="options">
+      <li>len() is not available on a &amp;str slice</li>
+      <li data-correct>len() counts bytes; Java counts UTF-16 units</li>
+      <li>utf16_len is faster for short strings in Rust</li>
+      <li>len() includes the whitespace that was stripped</li>
+    </ul>
+    <div class="explain">Ten euro signs are 10 UTF-16 units for Java but 30 bytes. Ledgerly matches Java's counting (18).</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A parity test fails after your change. What does Ledgerly's process say?</p>
+    <ul class="options">
+      <li>Update the parity test to match the rule</li>
+      <li data-correct>Don't weaken it; behaviour changes start in Java</li>
+      <li>Mark it ignored and continue with the work</li>
+      <li>Delete it, since parity tests are optional checks</li>
+    </ul>
+    <div class="explain">Parity tests define "same as Java". A rule change goes to Ledgerly-Java first, then
+      re-vendored.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch11-01-writing-tests.html">11.1</a> on test-first, and this
+      repo's <code>CLAUDE.md</code> "Hard rules" for what a change to Ledgerly must respect.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

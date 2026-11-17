@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Integration, doc and property tests</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Testing</p>
+  <h1>Integration, doc and property tests</h1>
+  <p class="lede">Three more kinds of test, all run by <code>cargo test</code>: tests that use only the public API,
+    examples in docs that must compile, and tests that try hundreds of random inputs.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can tell the three kinds apart by where they live, read a <code>proptest!</code> block, and know which
+      Ledgerly tests need a database.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>.unwrap_err()</code> assert in a test?</summary>
+      <div>That the <code>Result</code> is an <code>Err</code>; it panics (fails) on <code>Ok</code>. (65)</div></details>
+    <details><summary>What's a <code>compile_fail</code> doc test?</summary>
+      <div>A doc example that passes only if it does <em>not</em> compile. (10)</div></details>
+  </div>
+
+  <h2>The three kinds</h2>
+  <table>
+    <thead><tr><th>Kind</th><th>Lives in</th><th>Sees</th><th>TS feel</th></tr></thead>
+    <tbody>
+      <tr><td>Unit</td><td><code>mod tests</code> in <code>src/</code></td><td>everything in its module</td><td><code>*.test.ts</code> next to the file</td></tr>
+      <tr><td>Integration</td><td><code>tests/*.rs</code></td><td>only the crate's <code>pub</code> API; each file is its own crate</td><td><code>test/e2e/*.ts</code></td></tr>
+      <tr><td>Doc</td><td><code>```</code> blocks in <code>///</code>/<code>//!</code></td><td>public API, like a user</td><td>(none: examples that run)</td></tr>
+      <tr><td>Property</td><td>any of the above, with <code>proptest!</code></td><td>whatever its location allows</td><td>fast-check</td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://doc.rust-lang.org/book/ch11-03-test-organization.html">Book 11.3</a>.)</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: an integration test against real Postgres</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/tests/outbox.rs" data-line="124">
+      #[tokio::test]
+      async fn an_event_is_delivered_after_its_transaction_commits() {
+          let database = TestDatabase::new().await.unwrap();
+          let pool = database.pool();
+          // …
+    </script>
+    <p><code>TestDatabase</code> (from <code>ledgerly_shared</code>'s <code>testing</code> feature) starts or reuses a
+      Postgres container with Ledgerly-Java's schema and gives each test its own database. That's why
+      <code>just test</code> needs Docker. These files start with
+      <code>#![allow(clippy::unwrap_used, …)]</code> because <code>clippy.toml</code>'s exemption covers only
+      <code>#[test]</code> functions, not the helpers around them.</p>
+  </div>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: properties of <code>Money</code></span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/money/mod.rs" data-line="489">
+      proptest! {
+          #[test]
+          fn any_accepted_money_round_trips_through_its_string_form_unchanged(original in any_money()) {
+              let amount = original.amount().to_string();
+              let parsed = Money::parse(&amount, original.currency().code()).unwrap();
+              prop_assert_eq!(parsed, original);
+              prop_assert_eq!(parsed.amount().to_string(), amount);
+              prop_assert_eq!(parsed.amount().scale(), u32::from(original.currency().minor_units()));
+          }
+    </script>
+    <p>Instead of three hand-picked amounts, <code>original in any_money()</code> generates hundreds of random valid
+      <code>Money</code> values (any currency, any allowed amount) and checks that a rule holds for <em>all</em> of
+      them: "print, then parse, gives back the same value". When one fails, proptest shrinks it to the smallest
+      failing input (<a href="https://proptest-rs.github.io/proptest/">proptest book</a>).</p>
+  </div>
+
+  <h2>Doc tests, once more</h2>
+  <p><code>cargo test --doc</code> compiles every <code>```</code> example in the docs as a little program that uses
+    the crate from outside. Ledgerly uses one to prove that swapping a <code>TeamId</code> and an <code>ExpenseId</code>
+    doesn't compile (lesson 10). Nextest doesn't run doc tests, which is why <code>just test</code> runs both.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TS the distinction between unit and integration tests is a folder convention. In Rust it's enforced: a file in
+      <code>tests/</code> is a separate crate and <em>can't</em> reach private items, so it really tests the public
+      API. Testcontainers-style databases exist in both worlds. Ledgerly's is a small helper in
+      <code>crates/shared/src/database/testing.rs</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A test in <code>crates/shared/tests/outbox.rs</code> wants to call a <code>pub(crate)</code> helper.
+      What happens?</p>
+    <ul class="options">
+      <li>It works; the file is in the same package</li>
+      <li data-correct>Compile error: integration tests see only pub items</li>
+      <li>It works only with the testing feature enabled</li>
+      <li>It works, but clippy warns about the visibility</li>
+    </ul>
+    <div class="explain">Each <code>tests/*.rs</code> file is its own crate, outside <code>ledgerly_shared</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>original in any_money()</code> mean inside <code>proptest!</code>?</p>
+    <ul class="options">
+      <li>Loop over a fixed list of money values</li>
+      <li data-correct>Run the test with many random generated values</li>
+      <li>Check whether original appears in the generated list</li>
+      <li>Use the single value that any_money returns</li>
+    </ul>
+    <div class="explain"><code>any_money()</code> is a strategy (a generator), and proptest draws many inputs from
+      it.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does <code>just test</code> run <code>cargo test --doc</code> after nextest?</p>
+    <ul class="options">
+      <li>Doc tests need a database that nextest doesn't start</li>
+      <li data-correct>nextest doesn't run doc tests, so they'd be skipped</li>
+      <li>Doc tests must run after all the other tests pass</li>
+      <li>cargo test is faster than nextest for doc examples</li>
+    </ul>
+    <div class="explain">The recipe's comment says so: "nextest does not run those".</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch11-03-test-organization.html">11.3 "Test
+      Organization"</a>. For property tests, the <a href="https://proptest-rs.github.io/proptest/">proptest book</a>'s
+      "Getting started".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

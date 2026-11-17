@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Capstone 5: background work and shutdown</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Capstone: a service from scratch</p>
+  <h1>Capstone 5: background work and shutdown</h1>
+  <p class="lede">Visits are counted by a background task that batches them, so redirects never touch the write lock.
+    And when the server stops, the last batch must still be written. Ownership solves that more neatly than any signal.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>Your <code>visits.rs</code> has a batching worker driven by <code>select!</code>, and your <code>main.rs</code> starts
+      everything, shuts down gracefully on Ctrl-C, and lets the worker finish.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>When does <code>mpsc::Receiver::recv()</code> return <code>None</code>?</summary>
+      <div>When every sender has been dropped. (100)</div></details>
+    <details><summary>Is <code>recv()</code> cancel-safe in a <code>select!</code> loop?</summary>
+      <div>Yes: if another branch wins, no message is lost. (103)</div></details>
+  </div>
+
+  <h2>The worker</h2>
+  <div class="ledgerly">
+    <span class="box-label">Reference solution</span>
+    <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/visits.rs" data-line="15">
+      pub async fn run(store: Arc<dyn LinkStore>, mut visits: mpsc::Receiver<Slug>, flush_every: Duration) {
+          let mut pending: HashMap<Slug, u64> = HashMap::new();
+          let mut tick = tokio::time::interval(flush_every);
+          loop {
+              tokio::select! {
+                  // `recv` is cancel-safe: if the tick wins, no visit is lost.
+                  received = visits.recv() => match received {
+                      Some(slug) => *pending.entry(slug).or_insert(0) += 1,
+                      None => break,
+                  },
+                  _ = tick.tick() => flush(store.as_ref(), &mut pending),
+              }
+          }
+          flush(store.as_ref(), &mut pending);
+      }
+    </script>
+    <p>The worker owns <code>pending</code>, so it needs no lock (the actor pattern, lesson 100). It takes the write lock
+      once per flush, not once per visit.</p>
+  </div>
+
+  <h2>Shutdown by ownership</h2>
+  <div class="ledgerly">
+    <span class="box-label">Reference solution: main</span>
+    <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/main.rs" data-line="28">
+      let store: Arc<dyn LinkStore> = Arc::new(MemoryStore::default());
+      let (sender, receiver) = mpsc::channel(1024);
+      let counter = tokio::spawn(visits::run(Arc::clone(&store), receiver, Duration::from_secs(1)));
+      let app = router(AppState::new(store, sender));
+
+      tracing::info!(port, "listening");
+      let served = axum::serve(listener, app)
+          .with_graceful_shutdown(async {
+              let _ = tokio::signal::ctrl_c().await;
+              tracing::info!("shutting down");
+          })
+          .await;
+      // `serve` has returned and dropped the router, and with it the last visit sender: the counter writes what's
+      // left and ends.
+      let _ = counter.await;
+    </script>
+    <p>Ctrl-C → axum stops accepting connections and lets running requests finish → <code>serve</code> returns, dropping the
+      router → the last <code>Sender</code> (inside the state) is dropped → the worker's <code>recv()</code> returns
+      <code>None</code> → it flushes and ends → <code>main</code> returns. No shutdown flag, no timeout. It only works because
+      <code>main</code> moved its <code>sender</code> into the state instead of keeping a copy; keep one by accident and
+      <code>counter.await</code> waits forever.</p>
+  </div>
+
+  <div class="steps">
+    <ol>
+      <li>Write <code>visits::run</code> and its two tests (one with a long interval that checks the final flush, one with a
+        short interval that checks a flush while running).</li>
+      <li>Write <code>main</code>: tracing, <code>PORT</code> from the environment with a default, bind (print the error and
+        return <code>ExitCode::FAILURE</code> on failure: no <code>unwrap</code>), spawn the worker, serve.</li>
+      <li>Try it: <code>PORT=3000 cargo run</code>, create a link with <code>curl</code>, follow it twice, wait a second, look
+        at its visits. Press Ctrl-C and watch the log.</li>
+    </ol>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>A Node service would listen for <code>SIGINT</code>, call <code>server.close()</code>, then flush the counter from a
+      callback, coordinating by hand. Here the order of shutdown follows from who owns what: when the last owner of the
+      sender is gone, the channel tells the worker. Ledgerly's own shutdown (lesson 74) uses a <code>watch</code> channel
+      instead, because several independent servers must stop together.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What makes the worker's loop end when the server stops?</p>
+    <ul class="options">
+      <li>A shutdown flag that main sets after serving</li>
+      <li data-correct>The router's drop closes the channel: recv returns None</li>
+      <li>The interval timer stops once Ctrl-C is pressed</li>
+      <li>Tokio aborts every spawned task when main ends</li>
+    </ul>
+    <div class="explain">Ownership is the signal.</div>
+  </div>
+  <div class="quiz">
+    <p class="q"><code>main</code> keeps a clone of the sender "just in case". What happens on Ctrl-C?</p>
+    <ul class="options">
+      <li>Nothing different; the worker still ends normally anyway</li>
+      <li data-correct>counter.await hangs, because the channel never closes now</li>
+      <li>The program panics because of the extra sender</li>
+      <li>The final batch gets written twice to storage</li>
+    </ul>
+    <div class="explain">A channel closes only when <em>all</em> senders are gone.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Tokio guide on <a href="https://tokio.rs/tokio/topics/shutdown">graceful shutdown</a>, which describes this
+      "wait for all senders to drop" technique, and <code>axum::serve</code>'s
+      <a href="https://docs.rs/axum/latest/axum/serve/struct.Serve.html#method.with_graceful_shutdown">with_graceful_shutdown</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

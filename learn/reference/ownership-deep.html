@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: ownership and lifetimes in depth</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Ownership and lifetimes in depth</h1>
+  <p class="lede">Section 15 on one page. The basics are on the <a href="ownership.html">ownership rules</a> card.</p>
+
+  <h2>Lifetime elision</h2>
+  <ol>
+    <li>Each input reference gets its own lifetime.</li>
+    <li>Exactly one input lifetime → all output references get it.</li>
+    <li><code>&amp;self</code> / <code>&amp;mut self</code> → all output references get self's.</li>
+  </ol>
+  <p>Otherwise: E0106. Give the output the lifetime of exactly the inputs it borrows from.</p>
+  <script type="text/x-code" data-lang="rust">
+    fn longer<'a>(a: &'a str, b: &'a str) -> &'a str               // either input
+    fn find<'a>(items: &'a [String], name: &str) -> Option<&'a String> // only items
+    fn parse(line: &str) -> Option<Header<'_>>                      // '_ = "the inferred one"
+    impl<'a> Words<'a> { fn next(&mut self) -> Option<&'a str> }    // from the text, not the cursor
+  </script>
+
+  <h2><code>'static</code></h2>
+  <table>
+    <tbody>
+      <tr><td><code>&amp;'static T</code></td><td>valid for the whole program: literals, <code>static</code>s</td></tr>
+      <tr><td><code>T: 'static</code></td><td>holds no short borrows: every owned type (<code>String</code>, <code>Arc&lt;_&gt;</code>, <code>u32</code>)</td></tr>
+      <tr><td><code>tokio::spawn</code>, <code>thread::spawn</code></td><td>need <code>'static</code>: clone (often an <code>Arc</code>), then <code>move</code></td></tr>
+      <tr><td><code>Box&lt;dyn Trait&gt;</code></td><td>= <code>Box&lt;dyn Trait + 'static&gt;</code>; write <code>+ 'a</code> to borrow</td></tr>
+      <tr><td><code>thread::scope</code></td><td>borrows locals, no <code>'static</code> needed</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Borrow patterns</h2>
+  <table>
+    <thead><tr><th>Problem</th><th>Pattern</th></tr></thead>
+    <tbody>
+      <tr><td>method on <code>self</code> while a field is borrowed</td><td>borrow the fields directly; free function; split the struct</td></tr>
+      <tr><td>get-or-insert in a map</td><td><code>m.entry(k).or_insert(v)</code> / <code>.or_default()</code> / <code>.or_insert_with(f)</code></td></tr>
+      <tr><td>two <code>&amp;mut</code> in one slice</td><td><code>get_disjoint_mut([i, j])</code>, <code>split_at_mut</code>, <code>swap</code></td></tr>
+      <tr><td>borrow lives too long</td><td>reorder (borrows end at last use); copy the small value out</td></tr>
+      <tr><td>struct pointing into itself</td><td>store an index or range instead</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Interior mutability</h2>
+  <table>
+    <thead><tr><th>Type</th><th>Threads</th><th>Check</th></tr></thead>
+    <tbody>
+      <tr><td><code>Cell&lt;T: Copy&gt;</code></td><td>one</td><td>none needed: <code>get</code>/<code>set</code> copy</td></tr>
+      <tr><td><code>RefCell&lt;T&gt;</code></td><td>one</td><td>run time; conflict = panic (<code>try_borrow_mut</code> for <code>Result</code>)</td></tr>
+      <tr><td><code>Mutex&lt;T&gt;</code></td><td>many</td><td><code>lock()</code> waits; poisoned after a panic</td></tr>
+      <tr><td><code>RwLock&lt;T&gt;</code></td><td>many</td><td>many readers or one writer</td></tr>
+      <tr><td><code>AtomicUsize</code> …</td><td>many</td><td>lock-free counters and flags</td></tr>
+      <tr><td><code>OnceLock</code> / <code>LazyLock</code></td><td>many</td><td>written once; <code>static X: LazyLock&lt;T&gt; = LazyLock::new(|| …)</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2><code>Cow</code></h2>
+  <script type="text/x-code" data-lang="rust">
+    fn f(s: &str) -> Cow<'_, str> { if needs_change { Cow::Owned(new) } else { Cow::Borrowed(s) } }
+    cow.len();          // Deref: use it like &str
+    cow.into_owned();   // String; clones only if borrowed
+  </script>
+
+  <h2>Drop and <code>mem</code></h2>
+  <ul>
+    <li>Locals drop in reverse declaration order; fields in declaration order. <code>drop(x)</code> ends early.</li>
+    <li><code>let _ = guard()</code> drops <strong>now</strong>; <code>let _guard = guard()</code> at scope end.</li>
+    <li><code>Drop</code> can't be async or fail: use <code>commit().await?</code>-style methods for that.</li>
+    <li><code>mem::take(&amp;mut x)</code> (leaves default) · <code>mem::replace(&amp;mut x, y)</code> · <code>opt.take()</code>.</li>
+  </ul>
+
+  <p>Lessons: <a data-lesson="80"></a> · <a data-lesson="81"></a> · <a data-lesson="82"></a> · <a data-lesson="83"></a> ·
+    <a data-lesson="84"></a> · <a data-lesson="85"></a> · <a data-lesson="86"></a></p>
+</main>
+</body>
+</html>

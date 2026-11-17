@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enums II: variants with data</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1>Enums II: variants with data</h1>
+  <p class="lede">You already know this one: it's TypeScript's <strong>discriminated union</strong>, built into the
+    language. Each variant can carry its own fields.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>ExpenseError</code> and <code>ExpenseEventKind</code>: the three variant shapes (none,
+      tuple-like, struct-like), and how a <code>match</code> gets the data back out.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What are the three standard pieces Ledgerly puts on every plain enum?</summary>
+      <div><code>ALL</code> (every variant), <code>as_str</code> (wire name via <code>match</code>), and
+        <code>Display</code>/<code>FromStr</code> for text in and out.</div></details>
+    <details><summary>Why does adding a variant break <code>as_str</code>?</summary>
+      <div><code>match</code> must cover every variant. The missing one is a compile error.</div></details>
+  </div>
+
+  <h2>The discriminated union you know</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      type ExpenseError =
+        | { kind: "InvalidTransition"; from: ExpenseStatus; action: Action }
+        | { kind: "SelfDealing"; action: Action }
+        | { kind: "Forbidden"; reason: Forbidden }
+        | { kind: "RuleViolated"; message: string }
+        | { kind: "NotDraft"; status: ExpenseStatus };
+
+      switch (err.kind) {
+        case "SelfDealing":
+          return `Claimants cannot ${err.action} their own expense`;
+        // …
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/error.rs" data-line="12">
+      #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+      pub enum ExpenseError {
+          #[error("Expense is {from} and cannot {action}")]
+          InvalidTransition { from: ExpenseStatus, action: Action },
+          #[error("Claimants cannot {action} their own expense")]
+          SelfDealing { action: Action },
+          #[error(transparent)]
+          Forbidden(#[from] Forbidden),
+          #[error("{0}")]
+          RuleViolated(&'static str),
+          #[error(transparent)]
+          InvalidInput(#[from] InvalidInput),
+          #[error("Only a draft allows this, but the expense is {status}")]
+          NotDraft { status: ExpenseStatus },
+      }
+    </script>
+  </div>
+  <p>(The <code>///</code> docs are left out here, and the <code>#[error(…)]</code> attributes are thiserror's
+    messages, covered in <a data-lesson="56"></a>.) The three shapes a variant can have:</p>
+  <table>
+    <thead><tr><th>Shape</th><th>Declared</th><th>Built</th></tr></thead>
+    <tbody>
+      <tr><td>unit</td><td><code>Deleted,</code></td><td><code>ExpenseEventKind::Deleted</code></td></tr>
+      <tr><td>tuple-like</td><td><code>RuleViolated(&amp;'static str),</code></td><td><code>ExpenseError::RuleViolated("Receipts are still being scanned")</code></td></tr>
+      <tr><td>struct-like</td><td><code>SelfDealing { action: Action },</code></td><td><code>ExpenseError::SelfDealing { action }</code></td></tr>
+    </tbody>
+  </table>
+  <p>The tag (<code>kind</code> in TS) is implicit: the variant <em>is</em> the tag. Unlike TS, the variants'
+    fields can't be read until you've checked which variant you have.</p>
+
+  <h2>Getting the data out: <code>match</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/problem.rs" data-line="15">
+    pub(crate) fn refusal(error: &ExpenseError) -> Problem {
+        match error {
+            ExpenseError::InvalidTransition { .. } => Problem::new(ErrorCode::ExpenseInvalidTransition, error.to_string()),
+            ExpenseError::SelfDealing { .. } => Problem::new(ErrorCode::ExpenseSelfDealing, error.to_string()),
+            ExpenseError::NotDraft { .. } => Problem::new(ErrorCode::ExpenseNotDraft, error.to_string()),
+            ExpenseError::Forbidden(forbidden) => Problem::forbidden(forbidden.to_string()),
+            ExpenseError::RuleViolated(rule) => Problem::new(ErrorCode::ExpenseRuleViolated, *rule),
+            ExpenseError::InvalidInput(invalid) => Problem::invalid_request(invalid.field, invalid.message.clone()),
+        }
+    }
+  </script>
+  <p>This is how every domain refusal becomes an HTTP response. Each arm is a <strong>pattern</strong>:</p>
+  <ul>
+    <li><code>ExpenseError::Forbidden(forbidden)</code> matches that variant <em>and binds</em> its inner value to the
+      name <code>forbidden</code>, like narrowing in a TS <code>case</code>, but the binding is created right in the
+      pattern.</li>
+    <li><code>{ .. }</code> means "this variant, I don't need its fields".</li>
+    <li>There's no <code>default</code>/<code>_</code> arm, on purpose. Add a variant to <code>ExpenseError</code> and
+      this function stops compiling until you decide its HTTP status. The file's doc comment says exactly that.</li>
+  </ul>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: mixed shapes in one enum</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/events.rs" data-line="29">
+      pub enum ExpenseEventKind {
+          /// A draft was created: through the API, a batch or an import. Java: `Created`.
+          Created,
+          /// A draft was edited. The names of the fields that changed, in Java's order (`money`, `category`,
+          /// `incurredOn`, `merchant`, `note`), never their values. Java: `Edited`.
+          Edited { changed_fields: Vec<String> },
+          /// A draft was deleted; receipts removes its files in response. Java: `Deleted`.
+          Deleted,
+          // …
+      }
+    </script>
+    <p>Only <code>Edited</code> needs extra data, so only it carries a field. There's no
+      <code>changedFields?: string[]</code> that is "sometimes undefined".</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TS the discriminated union is a pattern you assemble from object types plus a convention (the
+      <code>kind</code> field). Exhaustiveness needs the <code>never</code> trick. In Rust it's one language
+      feature: the compiler knows every variant, a <code>match</code> must handle all of them, and you can't access
+      a variant's fields without matching first. The next two lessons show that <code>Option</code> and
+      <code>Result</code> are just enums of this kind.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex23_enum_data.rs</code>: model expense events with three variant shapes and write
+      a <code>describe</code> function with a <code>match</code>. Run <code>cargo test ex23</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">How do you build the "self-dealing on approve" error?</p>
+    <ul class="options" data-fixed>
+      <li><code>ExpenseError::SelfDealing(Action::Approve)</code></li>
+      <li data-correct><code>ExpenseError::SelfDealing { action: Action::Approve }</code></li>
+      <li><code>ExpenseError { kind: SelfDealing, action: Approve }</code></li>
+      <li><code>new ExpenseError.SelfDealing(Action::Approve)</code></li>
+    </ul>
+    <div class="explain"><code>SelfDealing</code> is declared struct-like, <code>{ action: Action }</code>, so it's
+      built with named fields.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In <code>ExpenseError::RuleViolated(rule) =&gt; …</code>, what is <code>rule</code>?</p>
+    <ul class="options">
+      <li>A new variable holding the whole error value</li>
+      <li data-correct>A new variable bound to the variant's message</li>
+      <li>An existing variable that is compared against it</li>
+      <li>The variant's name written out as a string</li>
+    </ul>
+    <div class="explain">Names inside a pattern create bindings. <code>rule</code> is the <code>&amp;'static
+      str</code> inside the variant (here borrowed, so <code>*rule</code> reads it).</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does <code>refusal</code> have no catch-all <code>_ =&gt;</code> arm?</p>
+    <ul class="options">
+      <li>Rust doesn't allow catch-all arms on error enums</li>
+      <li data-correct>So new variants fail to compile until mapped</li>
+      <li>Catch-all arms would make the function run slower</li>
+      <li>thiserror generates the missing arms automatically at build</li>
+    </ul>
+    <div class="explain">With <code>_</code>, a new error kind would silently fall into a default HTTP status.
+      Without it, the compiler forces a decision.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html">6.1 "Defining an Enum"</a>
+      (the <code>Message</code> example) and the first half of
+      <a href="https://doc.rust-lang.org/book/ch06-02-match.html">6.2 "The match Control Flow Construct"</a>. To
+      compare, the TS handbook's <a href="https://www.typescriptlang.org/docs/handbook/2/narrowing.html">Narrowing</a>
+      page on discriminated unions.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

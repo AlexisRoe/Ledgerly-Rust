@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: traits in depth</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Traits in depth</h1>
+  <p class="lede">Section 16 on one page. Basics: <a href="traits.html">traits and generics</a>.</p>
+
+  <h2>Associated type vs parameter</h2>
+  <table>
+    <tbody>
+      <tr><td><code>trait Iterator { type Item; }</code></td><td>one answer per implementing type; use <code>I::Item</code>, bound with <code>Iterator&lt;Item = u32&gt;</code></td></tr>
+      <tr><td><code>trait From&lt;T&gt;</code></td><td>many impls per type, one per <code>T</code>; the caller chooses</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Iterators</h2>
+  <script type="text/x-code" data-lang="rust">
+    impl Iterator for Fib { type Item = u64; fn next(&mut self) -> Option<u64> { … } }   // + every adapter
+    impl<'a> IntoIterator for &'a Ledger { type Item = &'a Line; type IntoIter = slice::Iter<'a, Line>;
+        fn into_iter(self) -> Self::IntoIter { self.lines.iter() } }                      // for x in &ledger
+    std::iter::from_fn(move || { … Some(x) / None })                                      // no struct needed
+  </script>
+
+  <h2>Adding behaviour to many types</h2>
+  <table>
+    <tbody>
+      <tr><td>default method</td><td>body in the trait, built on required methods</td></tr>
+      <tr><td>blanket impl</td><td><code>impl&lt;T: Display + ?Sized&gt; Shout for T</code>; <code>?Sized</code> includes <code>str</code>, <code>dyn</code></td></tr>
+      <tr><td>extension trait</td><td><code>trait StrExt</code> + <code>impl StrExt for str</code>; needs <code>use</code> where called</td></tr>
+      <tr><td>decorator</td><td><code>impl&lt;R: Recorder&gt; Recorder for Wrapper&lt;R&gt;</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Orphan rule</h2>
+  <p>Trait or type must be local. Foreign trait + foreign type (<code>Display for Vec&lt;X&gt;</code>) → E0117 → wrap
+    in a newtype.</p>
+
+  <h2>dyn compatibility</h2>
+  <p>Not allowed on <code>dyn</code>: generic methods, <code>Self</code> by value or as return, <code>async fn</code>,
+    <code>-&gt; impl Trait</code>. Fix: <code>where Self: Sized</code> on that method (E0038 otherwise). Async + dyn:</p>
+  <script type="text/x-code" data-lang="rust">
+    type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+    fn role_of<'a>(&'a self, …) -> BoxFuture<'a, Result<…>> { Box::pin(async move { … }) }
+  </script>
+
+  <h2>Flexible parameters</h2>
+  <table>
+    <tbody>
+      <tr><td><code>&amp;str</code></td><td>read only (default)</td></tr>
+      <tr><td><code>impl AsRef&lt;str&gt;</code> / <code>impl AsRef&lt;Path&gt;</code></td><td>read, from many string-like types</td></tr>
+      <tr><td><code>impl Into&lt;String&gt;</code></td><td>store it; String moves in free</td></tr>
+      <tr><td><code>Borrow</code></td><td>map lookups by borrowed key: <code>HashMap&lt;String,_&gt;::get("k")</code></td></tr>
+      <tr><td><code>Deref</code></td><td>smart pointers only, never to "inherit" from a newtype</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Comparison and operators</h2>
+  <table>
+    <tbody>
+      <tr><td><code>PartialEq</code>/<code>Eq</code></td><td><code>==</code>; Eq = reflexive (not floats)</td></tr>
+      <tr><td><code>PartialOrd</code>/<code>Ord</code></td><td><code>&lt;</code>, <code>sort</code>; Ord = total. Derived: field/variant declaration order</td></tr>
+      <tr><td><code>Hash</code></td><td>must agree with <code>Eq</code></td></tr>
+      <tr><td><code>Add</code>, <code>Sum</code>, …</td><td><code>std::ops</code>; <code>type Output</code></td></tr>
+      <tr><td>leave out</td><td>when a total answer doesn't exist (<code>Money</code>): offer <code>checked_add</code>, <code>cmp → Result</code></td></tr>
+    </tbody>
+  </table>
+  <script type="text/x-code" data-lang="rust">
+    fn cmp(&self, o: &Self) -> Ordering { o.prio.cmp(&self.prio).then_with(|| self.title.cmp(&o.title)) }
+    fn partial_cmp(&self, o: &Self) -> Option<Ordering> { Some(self.cmp(o)) }
+  </script>
+
+  <h2>Typestate</h2>
+  <script type="text/x-code" data-lang="rust">
+    struct Claim<S> { amount: u64, state: PhantomData<S> }
+    impl Claim<Draft> { fn submit(self) -> Claim<Submitted> { … } }   // method exists only in that state
+  </script>
+  <p>Use when the state is known at compile time; use an enum when it comes from data (Ledgerly's expenses).</p>
+
+  <p>Lessons: <a data-lesson="88"></a> · <a data-lesson="89"></a> · <a data-lesson="90"></a> · <a data-lesson="91"></a> ·
+    <a data-lesson="92"></a> · <a data-lesson="93"></a> · <a data-lesson="94"></a> · <a data-lesson="95"></a></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Borrowing: &amp; and &amp;mut</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and borrowing</p>
+  <h1>Borrowing: <code>&amp;</code> and <code>&amp;mut</code></h1>
+  <p class="lede">Moving everything around would be exhausting. A <strong>reference</strong> lets a function use a
+    value without taking it. There's one rule to learn: many readers <em>or</em> one writer, never both.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read every <code>&amp;</code> and <code>&amp;mut</code> in a Ledgerly signature, say what the callee
+      may do with it, and predict when the borrow rule rejects code.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why is <code>pool.clone()</code> cheap?</summary>
+      <div><code>PgPool</code> is a reference-counted handle. Clones share the same pool. (38)</div></details>
+    <details><summary>Which types are <code>Copy</code>?</summary>
+      <div>Small values without heap ownership whose fields are all <code>Copy</code>: numbers, ids,
+        <code>Actor</code>, <code>Money</code>, plain enums, shared references. (38)</div></details>
+  </div>
+
+  <h2>Two kinds of reference</h2>
+  <table>
+    <thead><tr><th>Write</th><th>Name</th><th>Callee may</th><th>At the same time</th></tr></thead>
+    <tbody>
+      <tr><td><code>&amp;value</code></td><td>shared reference</td><td>read</td><td>any number of other <code>&amp;</code></td></tr>
+      <tr><td><code>&amp;mut value</code></td><td>mutable (exclusive) reference</td><td>read and change</td><td>nothing else, not even a reader</td></tr>
+    </tbody>
+  </table>
+  <p>Plus one more rule: <strong>a reference must never outlive the value it points to</strong>. Together these let
+    the compiler rule out dangling pointers and data races at compile time
+    (<a href="https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html">Book 4.2</a>). The
+    <code>&amp;</code> in a type (<code>&amp;str</code>, <code>&amp;[T]</code>, <code>&amp;Expense</code>) and the
+    <code>&amp;</code> in an expression (<code>&amp;expense</code>) are the same thing: "a borrow of".</p>
+
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      function total(items: readonly Item[]): number { … }  // promise not to modify
+      function addItem(items: Item[], item: Item) { … }      // may modify
+
+      total(items);
+      addItem(items, x);  // nothing stops a shared alias
+                          // from seeing half-done changes
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      fn total(items: &[Item]) -> u32 { … }               // borrow to read
+      fn add_item(items: &mut Vec<Item>, item: Item) { … } // borrow to change
+
+      total(&items);
+      add_item(&mut items, x);  // `items` must be `let mut`, and nobody
+                                // else may hold a borrow while this runs
+    </script>
+  </div>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: borrows in one use case</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/transition_expense.rs" data-line="59">
+      let mut transaction = self.pool.begin().await?;
+      let actor = access::actor(&mut transaction, self.memberships.as_ref(), team, caller).await?;
+      let found = access::load(&mut transaction, actor, team, id).await?;
+      let mut expense = found.value;
+      // …
+      let version = persistence::update(&mut transaction, &expense, found.version, self.clock.now()).await?;
+    </script>
+    <ul>
+      <li><code>&amp;mut transaction</code> is lent to <code>actor</code>, then to <code>load</code>, then to
+        <code>update</code>, one after another. Each borrow ends when the call returns, so the next one is
+        allowed. The function keeps ownership and commits at the end.</li>
+      <li><code>&amp;expense</code>: <code>update</code> only reads the expense to write it to the database. Two
+        borrows of <em>different</em> values at once (<code>&amp;mut transaction</code> and
+        <code>&amp;expense</code>) are fine.</li>
+      <li><code>&amp;self</code> in <code>execute(&amp;self, …)</code>: many requests can run the same use case at
+        once, because none of them changes it.</li>
+    </ul>
+  </div>
+
+  <h2>Small conveniences you'll see</h2>
+  <ul>
+    <li><strong>Auto-borrow on method calls</strong>: <code>expense.status()</code> works although
+      <code>status</code> takes <code>&amp;self</code>. Rust inserts the <code>&amp;</code>. With
+      <code>approve(&amp;mut self)</code> it inserts <code>&amp;mut</code>, which requires <code>let mut
+      expense</code>.</li>
+    <li><strong>Dereference with <code>*</code></strong>: from a <code>&amp;u32</code> you get the <code>u32</code>
+      with <code>*amount</code>, as in <code>ExpenseError::RuleViolated(rule) =&gt; …*rule</code>. Comparisons and
+      printing usually do it for you.</li>
+    <li><strong><code>&amp;String</code> works where <code>&amp;str</code> is expected</strong>, and <code>&amp;Vec&lt;T&gt;</code>
+      where <code>&amp;[T]</code> is expected ("deref coercion").</li>
+  </ul>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS's <code>readonly</code> is a promise about one alias. Another variable can still mutate the same object
+      while you read it. Rust's rule is about the <em>value</em>: while any <code>&amp;</code> exists, nobody can
+      mutate it, and while a <code>&amp;mut</code> exists, nobody else can even look. That one rule is what makes
+      Ledgerly's multi-threaded request handling safe without locks around every object.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex39_borrowing.rs</code>: choose <code>&amp;</code>, <code>&amp;mut</code> or by
+      value for four function signatures so the tests compile and pass. Run <code>cargo test ex39</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A function signature says <code>fn publish(&amp;self, tx: &amp;mut PgConnection, event: &amp;ExpenseEvent)</code>.
+      What may it do?</p>
+    <ul class="options">
+      <li>Change the event and keep it after returning</li>
+      <li data-correct>Use the connection to write; only read the event</li>
+      <li>Close the connection by taking ownership of it</li>
+      <li>Change itself and the event, but not the connection</li>
+    </ul>
+    <div class="explain"><code>&amp;mut</code> allows changes, <code>&amp;</code> only reading, and neither gives
+      ownership, so nothing can be kept or dropped by the callee.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Does this compile?</p>
+    <script type="text/x-code" data-lang="rust">
+      let mut rejections = vec![first];
+      let oldest = &rejections[0];
+      rejections.push(second);
+      println!("{}", oldest.reason);
+    </script>
+    <ul class="options">
+      <li>Yes, push only appends after the first element</li>
+      <li data-correct>No, push needs &amp;mut while oldest still borrows it</li>
+      <li>Yes, because rejections was declared with let mut</li>
+      <li>No, indexing a vector always moves the element out</li>
+    </ul>
+    <div class="explain">Error E0502. And it's a real bug, not pedantry: <code>push</code> may reallocate the
+      vector, leaving <code>oldest</code> pointing at freed memory.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why can <code>execute(&amp;self, …)</code> serve many requests at the same time?</p>
+    <ul class="options">
+      <li>Each request gets its own copy of the case</li>
+      <li data-correct>Shared references allow any number of readers at once</li>
+      <li>The method is async, so borrow rules don't apply</li>
+      <li>A Mutex inside serialises all of the incoming requests</li>
+    </ul>
+    <div class="explain">Many <code>&amp;self</code> borrows can coexist. If <code>execute</code> took
+      <code>&amp;mut self</code>, requests would have to take turns.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html">4.2 "References and
+      Borrowing"</a>, all of it, especially "Mutable References" and "The Rules of References".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

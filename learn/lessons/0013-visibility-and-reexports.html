@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visibility and re-exports</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Basic syntax and code organisation</p>
+  <h1>Visibility and re-exports</h1>
+  <p class="lede">Everything is private until you say <code>pub</code>. Ledgerly uses that, plus
+    <code>pub(crate)</code> and <code>pub use</code>, to make each crate expose only a small facade.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can tell, for any item in Ledgerly, who's allowed to use it: only its module, the whole crate, or other
+      crates. You can also read a crate's public API from its <code>lib.rs</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What do <code>crate::</code>, <code>super::</code> and <code>self::</code> mean at the start of
+      a path?</summary>
+      <div>This crate's root, the parent module, the current module.</div></details>
+    <details><summary>Does <code>use</code> add a file to the program?</summary>
+      <div>No. <code>mod</code> adds files. <code>use</code> only creates a shortcut to a name.</div></details>
+  </div>
+
+  <h2>The levels</h2>
+  <table>
+    <thead><tr><th>Rust</th><th>Visible to</th><th>TypeScript feel</th></tr></thead>
+    <tbody>
+      <tr><td>(nothing)</td><td>The current module and its children</td><td>not exported</td></tr>
+      <tr><td><code>pub(super)</code></td><td>The parent module too</td><td>(none)</td></tr>
+      <tr><td><code>pub(crate)</code></td><td>The whole crate, never other crates</td><td>exported, but with a lint banning deep imports from other packages</td></tr>
+      <tr><td><code>pub</code></td><td>Anyone who can reach the item's module</td><td><code>export</code></td></tr>
+    </tbody>
+  </table>
+  <p>The rule (<a href="https://doc.rust-lang.org/reference/visibility-and-privacy.html">Reference: visibility</a>):
+    an item is reachable only if <strong>every module on its path</strong> is visible to you. A <code>pub fn</code>
+    inside a private <code>mod</code> is still invisible from outside, unless something re-exports it.</p>
+
+  <h2>Re-exports: <code>pub use</code></h2>
+  <p><code>pub use</code> is <code>export { X } from "./x"</code>: it makes a name available at a new, shorter path.
+    Here <code>money</code> keeps its <code>currency</code> submodule private, but publishes two of its types:</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/money/mod.rs" data-line="8">
+    mod currencies;
+    mod currency;
+    pub(crate) mod decimal_text;
+    mod unicode_digits;
+
+    use std::cmp::Ordering;
+
+    use rust_decimal::Decimal;
+
+    pub use currency::{Currency, CurrencyError};
+  </script>
+  <p>Other crates write <code>ledgerly_shared::money::Currency</code>. The file layout behind it can change without
+    breaking them. <code>decimal_text</code> is <code>pub(crate)</code>: usable anywhere in
+    <code>ledgerly_shared</code>, invisible to <code>ledgerly_expenses</code>.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a crate's facade</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/lib.rs" data-line="8">
+      mod application;
+      mod domain;
+      mod events;
+      mod facade;
+      mod persistence;
+      mod receipt_checks;
+      mod web;
+      // …
+      pub use domain::{Category, InvalidInput, NewExpense};
+      pub use events::{EXPENSE_DELETED, ExpenseEvent, ExpenseEventKind};
+      pub use facade::{ExpenseRefusal, ExpensesFacade, ValidationProblem};
+      pub use receipt_checks::{ReceiptChecks, ReceiptSummary, SummaryFuture};
+    </script>
+    <p>Every module is private, and the crate's entire public API is these four <code>pub use</code> lines plus
+      <code>pub fn routes</code>. The <code>Expense</code> aggregate itself is <code>pub(crate)</code> (see
+      <code>domain/mod.rs</code>), so no other crate can touch it. That's
+      <a href="../../docs/adr/0010-one-crate-per-module.md">ADR 0010</a>: module boundaries that Java checked with
+      tests are compile errors here.</p>
+  </div>
+
+  <h2>Fields have visibility too</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/money/mod.rs" data-line="33">
+    pub struct Money {
+        amount: Decimal,
+        currency: Currency,
+    }
+  </script>
+  <p>The type is public, its fields are not. Outside the <code>money</code> module nobody can write
+    <code>Money { amount, currency }</code> or change <code>money.amount</code>. They have to go through
+    <code>Money</code>'s constructor, which validates. That's how Ledgerly guarantees that every <code>Money</code> in
+    the system is valid (<a data-lesson="26"></a>).</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS <code>private</code> is per class and only enforced by <code>tsc</code>. At runtime anyone can read the
+      field, and <code>as any</code> gets around it. Rust privacy is per <strong>module</strong>: all code in the
+      same module (and its child modules) can see private fields, which is why tests in <code>mod tests</code> can
+      inspect internals. There's no cast that gets around it.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q"><code>pub(crate) struct Expense</code> lives in <code>ledgerly_expenses</code>. Can
+      <code>ledgerly_app</code> use it?</p>
+    <ul class="options">
+      <li>Yes, because the struct itself is marked pub</li>
+      <li data-correct>No, pub(crate) ends at its own crate</li>
+      <li>Only if it imports it with use crate</li>
+      <li>Only in tests marked with cfg test</li>
+    </ul>
+    <div class="explain"><code>pub(crate)</code> means "public inside this crate". Other crates can't name it at
+      all.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A <code>pub fn</code> sits inside a private <code>mod helpers;</code> of <code>lib.rs</code>. Can
+      another crate call it?</p>
+    <ul class="options">
+      <li>Yes, a pub function is always visible everywhere</li>
+      <li data-correct>Only if lib.rs re-exports it with pub use</li>
+      <li>Only if the other crate declares mod helpers</li>
+      <li>No, and nothing can ever change that fact</li>
+    </ul>
+    <div class="explain">The path <code>crate::helpers::f</code> passes through a private module. A
+      <code>pub use helpers::f;</code> in <code>lib.rs</code> creates a public path to it.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why can a <code>mod tests</code> at the bottom of <code>money/mod.rs</code> read
+      <code>money.amount</code>?</p>
+    <ul class="options">
+      <li>Tests are always exempt from privacy rules</li>
+      <li data-correct>Child modules see their ancestors' private items</li>
+      <li>The field becomes public under cfg test</li>
+      <li>use super::* makes private items public</li>
+    </ul>
+    <div class="explain">Privacy is per module, and descendants see everything in their ancestors. Tests in a
+      child module can therefore check internals.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch07-03-paths-for-referring-to-an-item-in-the-module-tree.html">7.3</a>,
+      sections "Exposing Paths with the pub Keyword" and "Making Structs and Enums Public", and
+      <a href="https://doc.rust-lang.org/book/ch07-04-bringing-paths-into-scope-with-the-use-keyword.html">7.4</a>,
+      section "Re-exporting Names with pub use".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

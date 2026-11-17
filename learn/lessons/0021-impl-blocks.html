@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>impl blocks: methods and associated functions</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1><code>impl</code> blocks: methods and associated functions</h1>
+  <p class="lede">Rust has no <code>class</code>. Data lives in a <code>struct</code>, behaviour in a separate
+    <code>impl</code> block, and the first parameter says how a method may touch the data.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read any method signature in <code>Expense</code> and say whether it only reads
+      (<code>&amp;self</code>), modifies (<code>&amp;mut self</code>), or consumes (<code>self</code>) the value, and
+      tell a method from a static constructor.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>How do you access the field of a tuple struct <code>Merchant(String)</code>?</summary>
+      <div><code>.0</code>, as in <code>self.0</code>.</div></details>
+    <details><summary>Why can't <code>application</code> code write <code>expense.status = …</code>?</summary>
+      <div>The fields of <code>Expense</code> are private to its module.</div></details>
+  </div>
+
+  <h2>Class vs struct + impl</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      class Merchant {
+        static readonly MAX_LEN = 200;
+        private constructor(private readonly text: string) {}
+
+        static create(text: string): Merchant {
+          if (isBlank(text)) throw new InvalidInput("merchant", "Merchant is required");
+          return new Merchant(text.trim());
+        }
+
+        asStr(): string { return this.text; }
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/text.rs" data-line="34">
+      pub struct Merchant(String);
+
+      impl Merchant {
+          pub const MAX_LEN: usize = 200;
+
+          pub fn new(text: &str) -> Result<Self, InvalidInput> {
+              if text::is_blank(text) {
+                  return Err(InvalidInput::new("merchant", "Merchant is required"));
+              }
+              // …
+              Ok(Self(stripped.to_owned()))
+          }
+
+          #[must_use]
+          pub fn as_str(&self) -> &str {
+              &self.0
+          }
+      }
+    </script>
+  </div>
+  <ul>
+    <li><strong>Associated function</strong> (no <code>self</code> parameter) = <code>static</code> method. Call it on
+      the type: <code>Merchant::new("…")</code>.</li>
+    <li><strong>Method</strong> (first parameter is some form of <code>self</code>) = instance method. Call it on a
+      value: <code>merchant.as_str()</code>.</li>
+    <li><strong><code>Self</code></strong> (capital S) is the type being implemented. <strong><code>self</code></strong>
+      is the value, Rust's <code>this</code>, but written out as a parameter.</li>
+    <li><strong><code>new</code> is a convention, not a keyword.</strong> There are no constructors: a function that
+      returns <code>Self</code> (or <code>Result&lt;Self, _&gt;</code> when it validates) does the job. Ledgerly
+      also has <code>Expense::draft</code>, <code>Expense::restore</code> and <code>Money::parse</code>, each named
+      for what it does.</li>
+  </ul>
+
+  <h2>The three <code>self</code>s</h2>
+  <table>
+    <thead><tr><th>First parameter</th><th>Means</th><th>Ledgerly example</th></tr></thead>
+    <tbody>
+      <tr><td><code>&amp;self</code></td><td>borrow, read only</td><td><code>fn status(&amp;self) -&gt; ExpenseStatus</code></td></tr>
+      <tr><td><code>&amp;mut self</code></td><td>borrow, may modify</td><td><code>fn approve(&amp;mut self, actor: Actor) -&gt; Result&lt;(), ExpenseError&gt;</code></td></tr>
+      <tr><td><code>self</code></td><td>take ownership: the value is used up</td><td><code>fn routes(self) -&gt; Routes</code> on <code>ExpensesApi</code></td></tr>
+    </tbody>
+  </table>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a transition</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="224">
+      pub fn approve(&mut self, actor: Actor) -> Result<(), ExpenseError> {
+          self.status = self.allowed_target(actor, Action::Approve)?;
+          Ok(())
+      }
+    </script>
+    <p>The signature alone tells you that <code>approve</code> may change the expense (<code>&amp;mut self</code>) and
+      may fail (<code>Result</code>). The caller must hold a mutable binding: <code>let mut e = …;
+      e.approve(actor)?;</code>. Because <code>?</code> returns early, a refused approval never reaches the
+      assignment, so it changes nothing.</p>
+  </div>
+  <p>A type can have many <code>impl</code> blocks, also in different files of the same crate, and
+    <code>impl Trait for Type</code> blocks for interfaces (<a data-lesson="49"></a>). Methods on a field-less value
+    still take <code>self</code>: <code>Role::includes(self, other: Self)</code> takes <code>self</code> by value
+    because a <code>Role</code> is a tiny copyable value (<a data-lesson="38"></a>).</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>No inheritance, no <code>extends</code>, no <code>super()</code>. Shared behaviour comes from traits and
+      composition. And <code>&amp;self</code> vs <code>&amp;mut self</code> is enforced: inside an
+      <code>&amp;self</code> method, <code>self.status = …</code> doesn't compile. TS's <code>readonly</code> is only
+      per field, and a method can mutate anything it likes.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex21_impl.rs</code>: give a <code>Counter</code> a constructor, a reading method, a
+      mutating method and a consuming method. Run <code>cargo test ex21</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">How do you call <code>pub fn new(text: &amp;str) -&gt; Result&lt;Self, InvalidInput&gt;</code>
+      defined in <code>impl Merchant</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>new Merchant("Bahn")</code></li>
+      <li><code>merchant.new("Bahn")</code></li>
+      <li data-correct><code>Merchant::new("Bahn")</code></li>
+      <li><code>Merchant.new("Bahn")</code></li>
+    </ul>
+    <div class="explain">No <code>self</code> parameter means an associated function, called with
+      <code>Type::name</code>. It returns a <code>Result</code>, so the caller still has to handle the error.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which signature lets a method change the expense's status?</p>
+    <ul class="options" data-fixed>
+      <li><code>fn reopen(&amp;self, actor: Actor)</code></li>
+      <li data-correct><code>fn reopen(&amp;mut self, actor: Actor)</code></li>
+      <li><code>fn reopen(actor: Actor)</code></li>
+      <li><code>fn reopen(Self, actor: Actor)</code></li>
+    </ul>
+    <div class="explain">Writing to <code>self.status</code> needs mutable access, which is <code>&amp;mut self</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's the difference between <code>Self</code> and <code>self</code>?</p>
+    <ul class="options">
+      <li>None at all; Rust identifiers are case insensitive</li>
+      <li data-correct>Self is the type, self is the value</li>
+      <li>Self is static, self is the parent module</li>
+      <li>Self is for traits, self is for structs</li>
+    </ul>
+    <div class="explain">Inside <code>impl Merchant</code>, <code>Self</code> is <code>Merchant</code> and
+      <code>self</code> is the instance the method was called on.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch05-03-method-syntax.html">5.3 "Method Syntax"</a>,
+      including "Associated Functions" and "Multiple impl Blocks".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

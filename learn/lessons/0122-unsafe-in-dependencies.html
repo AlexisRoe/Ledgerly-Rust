@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reading unsafe in dependencies</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">unsafe, briefly</p>
+  <h1>Reading <code>unsafe</code> in dependencies</h1>
+  <p class="lede"><code>forbid(unsafe_code)</code> covers Ledgerly's own crates. Its dependencies (Tokio, hyper, sqlx,
+    rustls…) contain plenty of <code>unsafe</code>. You don't audit them line by line; you judge them, the way you'd judge
+    an npm package, with some Rust-specific signals.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read a <code>// SAFETY:</code> comment, know what Miri and cargo-deny contribute, and use a short checklist
+      before adding a crate.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>The five things <code>unsafe</code> allows?</summary>
+      <div>Dereference raw pointers, call unsafe functions (FFI), use mutable statics, implement unsafe traits, read union
+        fields. (121)</div></details>
+    <details><summary>What is a "safe abstraction"?</summary>
+      <div>A safe API whose authors proved that every use keeps the rules, around unsafe internals. (121)</div></details>
+  </div>
+
+  <h2>What good unsafe code looks like</h2>
+  <script type="text/x-code" data-lang="rust">
+    /// # Safety
+    ///
+    /// `index` must be less than `self.len()`.
+    pub unsafe fn get_unchecked(&self, index: usize) -> &T { … }
+
+    // SAFETY: `index < len` was checked on the line above.
+    let item = unsafe { slice.get_unchecked(index) };
+  </script>
+  <ul>
+    <li>Every <code>unsafe fn</code> has a <code># Safety</code> doc section: the caller's obligations.</li>
+    <li>Every <code>unsafe { }</code> block has a <code>// SAFETY:</code> comment: why the obligations hold here. Clippy's
+      <code>undocumented_unsafe_blocks</code> lint enforces it.</li>
+    <li>Blocks are small, and wrapped in a safe function as soon as possible.</li>
+  </ul>
+  <p>When you read a dependency, these comments are where to look: each one is a claim you can check.</p>
+
+  <h2>Tools</h2>
+  <table>
+    <tbody>
+      <tr><td><a href="https://github.com/rust-lang/miri">Miri</a></td><td>an interpreter that runs tests and detects undefined behaviour (use after free, invalid aliasing). <code>cargo +nightly miri test</code>.</td></tr>
+      <tr><td>cargo-deny</td><td>known vulnerabilities (RustSec advisory database), licences, banned crates, allowed sources. Ledgerly runs it in <code>just check</code>.</td></tr>
+      <tr><td>cargo-geiger</td><td>counts <code>unsafe</code> usage per dependency, to see where it concentrates.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: supply-chain rules</span>
+    <script type="text/x-code" data-lang="toml" data-src="deny.toml" data-line="64">
+      [sources]
+      # crates.io only: no other registry, no git dependency.
+      unknown-registry = "deny"
+      unknown-git = "deny"
+    </script>
+    <p><code>deny.toml</code> refuses yanked versions and known advisories (each exception has a written reason), allows
+      only permissive licences, bans a second HTTP client and OpenSSL, and accepts crates.io only. The hard rules in
+      <code>CLAUDE.md</code> add: new dependencies need a reason in the commit message.</p>
+  </div>
+
+  <h2>Before adding a crate</h2>
+  <ol>
+    <li>Does std or an existing dependency already do it?</li>
+    <li>Who maintains it, how many people use it (downloads, reverse dependencies), when was the last release?</li>
+    <li>How much <code>unsafe</code>, and is it documented with <code>SAFETY</code> comments? Is it tested under Miri?</li>
+    <li>Does <code>cargo deny check</code> pass with it?</li>
+    <li>What does it pull in? <code>cargo tree -p the-crate</code>.</li>
+  </ol>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>An npm package can't corrupt V8's memory, but it can run install scripts and do anything at run time. A crate can
+      run code at build time too (<code>build.rs</code>, proc macros), and with <code>unsafe</code> or FFI it can corrupt
+      memory. Rust's ecosystem compensates with culture and tooling: documented unsafe, Miri, RustSec. The supply-chain
+      questions are the same as for npm; the answers are checked differently.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What should a <code>// SAFETY:</code> comment explain?</p>
+    <ul class="options">
+      <li>That the block was reviewed by a second person</li>
+      <li data-correct>Why the unsafe operation's requirements hold right here</li>
+      <li>Which compiler version the block was tested with</li>
+      <li>How fast the block is compared to safe code</li>
+    </ul>
+    <div class="explain">It's the local proof, which a reviewer can check.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does Miri find that ordinary tests don't?</p>
+    <ul class="options">
+      <li>Slow functions that should be optimised later</li>
+      <li data-correct>Undefined behaviour that happens to work today</li>
+      <li>Crates with licences that aren't allowed</li>
+      <li>Public functions that are missing their docs</li>
+    </ul>
+    <div class="explain">UB can pass every test and still break with a new compiler or CPU.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Does <code>#![forbid(unsafe_code)]</code> in Ledgerly's crates stop unsafe code in Tokio?</p>
+    <ul class="options">
+      <li>Yes, the lint applies to the whole dependency tree</li>
+      <li data-correct>No; lints apply only to the crate declaring them</li>
+      <li>Yes, but only in release builds of the binary</li>
+      <li>No, because Tokio is linked as a C library</li>
+    </ul>
+    <div class="explain">Dependencies are judged and checked with other tools: review, Miri, cargo-deny.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="https://rustsec.org/">RustSec advisory database</a> (what cargo-deny checks against), and the
+      <a href="https://embarkstudios.github.io/cargo-deny/">cargo-deny book</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

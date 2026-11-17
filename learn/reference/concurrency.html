@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: concurrency and async internals</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Concurrency and async internals</h1>
+  <p class="lede">Section 17 on one page. Basics: <a href="async.html">async</a>.</p>
+
+  <h2>Threads</h2>
+  <script type="text/x-code" data-lang="rust">
+    let h = std::thread::spawn(move || work(data));      // eager; Send + 'static; h.join() → Result<T, panic>
+    std::thread::scope(|s| { s.spawn(|| read(&local)); }); // may borrow; waits for all before returning
+  </script>
+
+  <h2>Send and Sync</h2>
+  <table>
+    <tbody>
+      <tr><td><code>Send</code></td><td>may move to another thread</td></tr>
+      <tr><td><code>Sync</code></td><td><code>&amp;T</code> may be shared (⇔ <code>&amp;T: Send</code>)</td></tr>
+      <tr><td>not <code>Send</code></td><td><code>Rc</code>, <code>MutexGuard</code>; a future holding one across <code>.await</code></td></tr>
+      <tr><td>not <code>Sync</code></td><td><code>Cell</code>, <code>RefCell</code>, <code>Rc</code></td></tr>
+      <tr><td>on traits</td><td><code>trait Port: Send + Sync</code> so <code>Arc&lt;dyn Port&gt;</code> works in handlers</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Shared state</h2>
+  <table>
+    <tbody>
+      <tr><td><code>Arc&lt;Mutex&lt;T&gt;&gt;</code></td><td>guard unlocks on drop; keep it short; poisoned after a panic</td></tr>
+      <tr><td><code>Arc&lt;RwLock&lt;T&gt;&gt;</code></td><td>read-mostly</td></tr>
+      <tr><td><code>AtomicUsize</code> …</td><td>counters/flags; <code>Relaxed</code> for counters, <code>SeqCst</code> when unsure</td></tr>
+      <tr><td><code>std::sync::Mutex</code></td><td>default, also in async; never held across <code>.await</code></td></tr>
+      <tr><td><code>tokio::sync::Mutex</code></td><td>only when held across <code>.await</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Channels (<code>tokio::sync</code>)</h2>
+  <table>
+    <tbody>
+      <tr><td><code>mpsc</code></td><td>queue, many → one; <code>recv()</code> → <code>None</code> once all senders drop</td></tr>
+      <tr><td><code>oneshot</code></td><td>one reply; actor request/response</td></tr>
+      <tr><td><code>watch</code></td><td>latest value; shutdown flags, config</td></tr>
+      <tr><td><code>broadcast</code></td><td>every receiver gets every message</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Futures under the hood</h2>
+  <script type="text/x-code" data-lang="rust">
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<T>   // never block; before Pending, arrange cx.waker() to be woken
+    Box::pin(async { … })          // Pin<Box<dyn Future<Output = T> + Send + 'a>>: store/return varying futures
+    let mut f = std::pin::pin!(fut);  // poll repeatedly via &mut f (select! loops)
+  </script>
+  <p><code>async fn</code> = a state machine enum, one state per <code>.await</code>. Lazy until polled.</p>
+
+  <h2>Cancellation</h2>
+  <ul>
+    <li>Drop = cancel at the current <code>.await</code>: <code>select!</code> losers, <code>timeout</code>,
+      <code>abort()</code>, client disconnect, dropped <code>JoinSet</code>.</li>
+    <li>Cancel-safe in <code>select!</code> loops: <code>mpsc::recv</code>, <code>sleep</code>,
+      <code>watch::changed</code>. Not: <code>read_exact</code>, multi-step writes. Check Tokio's docs.</li>
+    <li>Durable state in the database (transactions, outbox) makes cancellation harmless.</li>
+    <li><code>JoinSet</code>: <code>spawn</code>, <code>join_next().await</code> in completion order; aborts the rest on drop.</li>
+  </ul>
+
+  <h2>Blocking</h2>
+  <p>&gt;10–100 µs without <code>.await</code> = blocking. CPU work, <code>std::fs</code>, sync clients →
+    <code>tokio::task::spawn_blocking(move || …).await</code> → <code>Result&lt;T, JoinError&gt;</code>.</p>
+
+  <p>Lessons: <a data-lesson="97"></a> · <a data-lesson="98"></a> · <a data-lesson="99"></a> · <a data-lesson="100"></a> ·
+    <a data-lesson="101"></a> · <a data-lesson="102"></a> · <a data-lesson="103"></a> · <a data-lesson="104"></a></p>
+</main>
+</body>
+</html>

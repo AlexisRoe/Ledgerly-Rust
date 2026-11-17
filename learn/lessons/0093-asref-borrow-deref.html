@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AsRef, Borrow, Deref and flexible parameters</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits in depth</p>
+  <h1><code>AsRef</code>, <code>Borrow</code>, <code>Deref</code> and flexible parameters</h1>
+  <p class="lede">Three traits that all say "this can be seen as a reference to that", for different purposes. Used
+    in parameters, they let one function accept <code>&amp;str</code>, <code>String</code> and more, without making
+    callers convert.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can choose between <code>&amp;str</code>, <code>impl AsRef&lt;str&gt;</code> and
+      <code>impl Into&lt;String&gt;</code> for a parameter, and say why <code>Deref</code> is for smart pointers only.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Which impls does the orphan rule forbid?</summary>
+      <div>A foreign trait for a foreign type. (91)</div></details>
+    <details><summary>What do <code>From</code> and <code>Into</code> have to do with each other?</summary>
+      <div>Implement <code>From&lt;A&gt; for B</code> and a blanket impl gives you <code>Into&lt;B&gt; for A</code>. (51, 90)</div></details>
+  </div>
+
+  <h2>Choosing a string parameter</h2>
+  <table>
+    <thead><tr><th>Parameter</th><th>Accepts</th><th>Use when</th></tr></thead>
+    <tbody>
+      <tr><td><code>&amp;str</code></td><td><code>"lit"</code>, <code>&amp;string</code> (auto-deref)</td><td>you only read it: the default</td></tr>
+      <tr><td><code>impl AsRef&lt;str&gt;</code></td><td>also <code>String</code> by value, <code>Box&lt;str&gt;</code>…</td><td>generic helpers, mostly for paths: <code>impl AsRef&lt;Path&gt;</code></td></tr>
+      <tr><td><code>impl Into&lt;String&gt;</code></td><td><code>"lit"</code>, <code>String</code></td><td>you <strong>store</strong> it: a <code>String</code> is moved in, a literal converted once</td></tr>
+      <tr><td><code>String</code></td><td><code>String</code> only</td><td>you store it and want callers to see the cost</td></tr>
+    </tbody>
+  </table>
+  <p>TS doesn't need any of this: a <code>string</code> parameter takes any string. In Rust the choice says whether
+    the function reads or keeps the text, and who pays for the allocation.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: Into for stored text</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/mod.rs" data-line="73">
+      pub(crate) fn invalid(field: &'static str, message: impl Into<String>) -> Self {
+          Self::Invalid {
+              field,
+              message: message.into(),
+          }
+      }
+    </script>
+    <p>Callers write <code>UseCaseError::invalid("amount", "must be positive")</code> or pass a
+      <code>format!(…)</code> result. The literal is converted once; the formatted <code>String</code> is moved in
+      without a copy.</p>
+  </div>
+
+  <h2>The three traits</h2>
+  <table>
+    <tbody>
+      <tr><td><code>AsRef&lt;T&gt;</code></td><td>"cheaply viewable as <code>&amp;T</code>". A type may implement it for many targets: <code>String</code> is <code>AsRef&lt;str&gt;</code>, <code>AsRef&lt;[u8]&gt;</code>, <code>AsRef&lt;Path&gt;</code>…</td></tr>
+      <tr><td><code>Borrow&lt;T&gt;</code></td><td>like <code>AsRef</code>, plus a promise: <code>Eq</code>, <code>Ord</code> and <code>Hash</code> give the same answers on the borrowed form. That's why a <code>HashMap&lt;String, V&gt;</code> can be queried with a <code>&amp;str</code>: <code>map.get("taxi")</code>.</td></tr>
+      <tr><td><code>Deref</code></td><td>what <code>*x</code> and auto-deref use: <code>Box&lt;T&gt;</code>, <code>Arc&lt;T&gt;</code>, <code>String</code> → <code>str</code>, <code>Vec&lt;T&gt;</code> → <code>[T]</code>, <code>MutexGuard</code>. One target per type. It's why <code>arc.method()</code> calls the inner value's method.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>It's tempting to implement <code>Deref</code> on a newtype so it "inherits" the inner type's methods, like
+      <code>class Merchant extends String</code>. Don't: every method of the inner type leaks through, including
+      ones that break your invariants, and method resolution gets confusing. The API guidelines say
+      <code>Deref</code> is <a href="https://rust-lang.github.io/api-guidelines/predictability.html#c-deref">only
+      for smart pointers</a>. Ledgerly's <code>Merchant</code> has an explicit <code>as_str()</code> instead.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex93_flexible_parameters.rs</code>: a greeting taking
+      <code>impl AsRef&lt;str&gt;</code>, a <code>Problem</code> with <code>impl Into&lt;String&gt;</code> constructors,
+      and a function generic over any list of string-like items. Run <code>cargo test ex93</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A constructor stores a name in a <code>String</code> field. Best parameter type for callers?</p>
+    <ul class="options" data-fixed>
+      <li><code>name: &amp;str</code></li>
+      <li data-correct><code>name: impl Into&lt;String&gt;</code></li>
+      <li><code>name: impl AsRef&lt;str&gt;</code></li>
+      <li><code>name: &amp;String</code></li>
+    </ul>
+    <div class="explain">It keeps the text: an owned <code>String</code> moves in for free, a literal is converted once.
+      With <code>&amp;str</code>, a caller holding a <code>String</code> pays for a copy.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why can <code>HashMap&lt;String, u32&gt;::get</code> take a <code>&amp;str</code>?</p>
+    <ul class="options">
+      <li>The map converts every key into a &amp;str</li>
+      <li data-correct>String: Borrow&lt;str&gt; promises equal hashing and equality</li>
+      <li>&amp;str and String are one type at runtime</li>
+      <li>get clones the &amp;str into a String first</li>
+    </ul>
+    <div class="explain"><code>get&lt;Q&gt;(&amp;self, k: &amp;Q) where K: Borrow&lt;Q&gt;</code>: no allocation per lookup.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Should <code>Merchant(String)</code> implement <code>Deref&lt;Target = String&gt;</code>?</p>
+    <ul class="options">
+      <li>Yes, it is the idiomatic way to forward methods</li>
+      <li data-correct>No, Deref is meant for smart pointers only</li>
+      <li>Yes, otherwise it cannot be printed with braces</li>
+      <li>No, Deref cannot target a String in Rust</li>
+    </ul>
+    <div class="explain">Expose what you mean (<code>as_str()</code>), not everything <code>String</code> can do.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The std docs for <a href="https://doc.rust-lang.org/std/convert/trait.AsRef.html">AsRef</a> and
+      <a href="https://doc.rust-lang.org/std/borrow/trait.Borrow.html">Borrow</a>; both open with a comparison of the two.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unit tests next to the code</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Testing</p>
+  <h1>Unit tests next to the code</h1>
+  <p class="lede">No Jest, no config file, no <code>describe</code>: a test is a function marked
+    <code>#[test]</code>, usually in a <code>mod tests</code> at the bottom of the file it tests, and
+    <code>cargo test</code> finds it.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read and write a unit test in Ledgerly's style, run one test by name, and know why tests may call
+      private functions and <code>unwrap()</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>#[cfg(test)]</code> do?</summary>
+      <div>Compiles the item only when building tests. (11, 60)</div></details>
+    <details><summary>Why may tests use <code>unwrap()</code> in Ledgerly?</summary>
+      <div><code>clippy.toml</code> allows it in tests; a panic there is just a failing test. (5, 57)</div></details>
+  </div>
+
+  <h2>Jest → Rust</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      // expense.test.ts
+      import { draft, money } from "./fixtures";
+
+      describe("Expense", () => {
+        it("a refused edit changes nothing", () => {
+          const e = draft();
+          expect(() => e.edit(claimant, future)).toThrow();
+          expect(e.money).toEqual(money("12.50"));
+        });
+      });
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="1019">
+      #[test]
+      fn a_refused_edit_changes_nothing() {
+          let tomorrow = today().checked_add_days(Days::new(1)).unwrap();
+          let mut e = draft();
+          e.edit(
+              *CLAIMANT,
+              &fields("20", Category::Travel, tomorrow, "Bahn", None),
+              &clock(),
+          )
+          .unwrap_err();
+          assert_eq!(e.money(), money("12.50"));
+          assert_eq!(e.category(), Category::Meals);
+          assert_eq!(e.merchant().as_str(), "Cafe Central");
+          assert_eq!(e.note().map(Note::as_str), Some("Lunch"));
+      }
+    </script>
+  </div>
+  <ul>
+    <li><strong>The test name is the description</strong>, written as a sentence in <code>snake_case</code>.
+      Grouping comes from nested <code>mod</code>s, like <code>describe</code> blocks.</li>
+    <li><strong>Assertions are macros</strong>: <code>assert!(cond)</code>, <code>assert_eq!(left, right)</code>,
+      <code>assert_ne!</code>. On failure they print both values with <code>Debug</code>, plus an optional message:
+      <code>assert_eq!(a, b, "{from} + {action}")</code>.</li>
+    <li><strong><code>.unwrap_err()</code></strong> asserts "this must be an error" (it panics on <code>Ok</code>).
+      <code>.unwrap()</code> asserts success. For a specific error: <code>assert_eq!(result, Err(…))</code>, or
+      <code>assert!(matches!(result, Err(ExpenseError::NotDraft { .. })))</code>.</li>
+    <li>Helpers (<code>draft()</code>, <code>money()</code>, <code>clock()</code>) are plain functions in the same test
+      module, Ledgerly's version of fixtures.</li>
+  </ul>
+
+  <h2>Where the module lives, and why it sees private things</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="444">
+    #[cfg(test)]
+    mod tests {
+        use std::sync::LazyLock;
+
+        use chrono::Days;
+        use ledgerly_shared::clock::FixedClock;
+        use ledgerly_shared::id::TeamId;
+        use ledgerly_shared::role::Role;
+
+        use super::*;
+  </script>
+  <p><code>mod tests</code> is a child of the module under test, so it can call private functions and read private
+    fields (lesson 13). <code>use super::*</code> brings everything in. Larger test suites move into their own file,
+    like <code>web/tests.rs</code>, declared with <code>#[cfg(test)] mod tests;</code>
+    (<a href="https://doc.rust-lang.org/book/ch11-01-writing-tests.html">Book 11.1</a>).</p>
+
+  <h2>Running them</h2>
+  <script type="text/x-code" data-lang="bash">
+    $ cargo test -p ledgerly-expenses                          # one crate
+    $ cargo test -p ledgerly-expenses refused_edit             # names containing "refused_edit"
+    $ cargo test -p ledgerly-expenses domain::expense::tests   # one module
+    $ cargo test -- --nocapture                                # show println! output
+    $ cargo nextest run -p ledgerly-expenses                   # what `just test` uses
+  </script>
+  <p>Async tests use <code>#[tokio::test] async fn …</code> instead of <code>#[test]</code>. Domain tests don't need
+    it, because the domain has no async.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>No mocking framework, no <code>jest.mock()</code> of modules. You can't replace a function at runtime. Instead
+      Ledgerly passes dependencies in as traits (<code>&amp;dyn Clock</code>, <code>Arc&lt;dyn MembershipLookup&gt;</code>)
+      and tests hand in test doubles (<code>FixedClock</code>, <code>application/doubles.rs</code>). Tests in one
+      binary run in parallel threads by default, so tests must not depend on each other's state.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it</span>
+    <ol>
+      <li>Run <code>cargo test -p ledgerly-expenses refused_edit</code> and find the test in the output.</li>
+      <li>Change <code>"12.50"</code> in its first <code>assert_eq!</code> to <code>"12.51"</code>, run it again,
+        and read the failure: left vs right, and the file and line. Then revert with
+        <code>git checkout -- crates/expenses</code>.</li>
+    </ol>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What's the Rust for <code>expect(a).toEqual(b)</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>expect!(a, b)</code></li>
+      <li data-correct><code>assert_eq!(a, b)</code></li>
+      <li><code>a.should_equal(b)</code></li>
+      <li><code>test::equal(a, b)</code></li>
+    </ul>
+    <div class="explain"><code>assert_eq!</code> needs <code>PartialEq</code> (for <code>==</code>) and
+      <code>Debug</code> (for the failure message).</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why can a test in <code>mod tests</code> call a private helper of the file?</p>
+    <ul class="options">
+      <li>Tests are compiled with privacy checks turned off</li>
+      <li data-correct>It's a child module; children see private items</li>
+      <li>use super::* makes private items public in tests</li>
+      <li>cfg(test) promotes every item to pub(crate) visibility automatically</li>
+    </ul>
+    <div class="explain">Privacy is per module, and descendants see their ancestors' items.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How do you run only the tests whose names contain <code>self_dealing</code> in the expenses crate?</p>
+    <ul class="options" data-fixed>
+      <li><code>cargo test --grep self_dealing</code></li>
+      <li data-correct><code>cargo test -p ledgerly-expenses self_dealing</code></li>
+      <li><code>cargo test self_dealing.rs</code></li>
+      <li><code>just test self_dealing</code></li>
+    </ul>
+    <div class="explain">A positional argument filters by test path substring.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch11-01-writing-tests.html">11.1 "How to Write Tests"</a> and
+      <a href="https://doc.rust-lang.org/book/ch11-02-running-tests.html">11.2 "Controlling How Tests Are Run"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

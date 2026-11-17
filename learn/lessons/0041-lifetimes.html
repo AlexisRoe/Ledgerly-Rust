@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lifetimes, enough to read them</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and borrowing</p>
+  <h1>Lifetimes, enough to read them</h1>
+  <p class="lede">A lifetime like <code>'a</code> is a name for "how long a borrow is valid". The compiler infers
+    nearly all of them. You only need to <em>read</em> the few that are written out.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>&amp;'static str</code>, <code>Formatter&lt;'_&gt;</code> and
+      <code>fn summary_for&lt;'a&gt;(&amp;'a self, connection: &amp;'a mut PgConnection, …) -&gt; SummaryFuture&lt;'a&gt;</code>,
+      and say in plain words what each promises.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why can't a function return a <code>&amp;str</code> into a <code>String</code> it created
+      locally?</summary>
+      <div>The <code>String</code> is dropped at the end of the function, so the reference would dangle (E0106/E0515).
+        Return the <code>String</code>. (40)</div></details>
+    <details><summary>When does a borrow end?</summary>
+      <div>At the reference's last use. (40)</div></details>
+  </div>
+
+  <h2>The question lifetimes answer</h2>
+  <p>Look at <code>strip</code> from lesson 18:</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/text.rs" data-line="33">
+    pub fn strip(text: &str) -> &str {
+  </script>
+  <p>The result is a borrow, but a borrow of <em>what</em>? Here it can only be <code>text</code>, so the compiler
+    knows: "the result is valid as long as <code>text</code> is". It fills in the lifetime itself. This is
+    <strong>elision</strong>, and it's why most signatures have no <code>'a</code> at all. Written out in full, it
+    would be:</p>
+  <script type="text/x-code" data-lang="rust">
+    pub fn strip<'a>(text: &'a str) -> &'a str {
+    // "for some lifetime 'a: given text borrowed for 'a, I return something borrowed for that same 'a"
+  </script>
+  <p>Elision rules in short: one reference in → the output borrows from it. A method with <code>&amp;self</code> →
+    the output borrows from <code>self</code>. Otherwise you must write it out
+    (<a href="https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html#lifetime-elision">Book 10.3, "Lifetime
+    Elision"</a>).</p>
+
+  <h2>The three forms in Ledgerly</h2>
+  <table>
+    <thead><tr><th>You see</th><th>Read it as</th><th>Example</th></tr></thead>
+    <tbody>
+      <tr><td><code>&amp;'static str</code></td><td>borrowed text valid for the whole program: a literal baked into the binary</td><td><code>Action::as_str() -&gt; &amp;'static str</code>, <code>RuleViolated(&amp;'static str)</code>, <code>InvalidInput { field: &amp;'static str }</code></td></tr>
+      <tr><td><code>'_</code></td><td>"some lifetime, I don't need to name it"</td><td><code>fn fmt(&amp;self, f: &amp;mut fmt::Formatter&lt;'_&gt;)</code></td></tr>
+      <tr><td><code>&lt;'a&gt;</code> on a fn or type</td><td>several borrows tied together under one name</td><td><code>summary_for&lt;'a&gt;</code> below</td></tr>
+    </tbody>
+  </table>
+  <p>Why <code>&amp;'static str</code> in errors? <code>ExpenseError::RuleViolated("Receipts are still being scanned")</code>
+    stores a pointer to a literal, which costs no allocation and can never dangle. Messages built at runtime need
+    <code>String</code> instead, as in <code>InvalidInput { message: String }</code>.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: an async method that borrows</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/receipt_checks.rs" data-line="52">
+      fn summary_for<'a>(
+          &'a self,
+          connection: &'a mut PgConnection,
+          team_id: TeamId,
+          expense_id: ExpenseId,
+      ) -> SummaryFuture<'a>;
+    </script>
+    <p>Read it as: "the future I return borrows both me and the connection, so neither may go away (or be used by
+      anyone else) until that future has finished." Without <code>'a</code> the compiler couldn't know that the
+      returned future still holds the connection. This shape (a trait method returning a boxed future) is the one
+      place where Ledgerly writes lifetimes regularly. Section 10 explains why.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>There is nothing like this in TypeScript, because the GC keeps anything alive that's still referenced. A
+      lifetime doesn't change how long a value lives; it's a constraint the compiler checks. If you find yourself
+      fighting lifetimes in a change to Ledgerly, the usual answer is to own the data (<code>String</code>,
+      <code>Vec</code>, a clone of an <code>Arc</code>) instead of borrowing it.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What does <code>&amp;'static str</code> as a return type promise?</p>
+    <ul class="options">
+      <li>The text is stored in a static global variable</li>
+      <li data-correct>The text stays valid for the whole program run</li>
+      <li>The text can never be printed or compared</li>
+      <li>The function itself must be declared as const</li>
+    </ul>
+    <div class="explain"><code>'static</code> means "lives as long as the program". String literals do, because
+      they're part of the binary.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why doesn't <code>fn strip(text: &amp;str) -&gt; &amp;str</code> need a written lifetime?</p>
+    <ul class="options">
+      <li>Lifetimes are optional and only serve as documentation</li>
+      <li data-correct>Elision ties the output to the single input</li>
+      <li>&amp;str values always have the 'static lifetime anyway</li>
+      <li>The function is public, so lifetimes are inferred</li>
+    </ul>
+    <div class="explain">The elision rules fill in <code>&lt;'a&gt;(text: &amp;'a str) -&gt; &amp;'a str</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why is <code>InvalidInput::message</code> a <code>String</code> while <code>field</code> is a
+      <code>&amp;'static str</code>?</p>
+    <ul class="options">
+      <li>Struct fields can't hold two borrowed strings together</li>
+      <li data-correct>Field names are literals; messages come from format!</li>
+      <li>Messages are longer than 'static strings may be</li>
+      <li>It's arbitrary; the two types are fully interchangeable</li>
+    </ul>
+    <div class="explain"><code>"merchant"</code> is fixed text. <code>format!("Merchant is longer than {}", …)</code>
+      creates a new <code>String</code> at runtime, which must be owned.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html">10.3 "Validating References with
+      Lifetimes"</a>: read up to and including "Lifetime Elision" and "The Static Lifetime". Skip the parts about
+      writing lifetimes in structs for now.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

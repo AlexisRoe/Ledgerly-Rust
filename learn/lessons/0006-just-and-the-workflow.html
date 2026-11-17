@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>just and the repo's workflow</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Setting up and the toolbox</p>
+  <h1>just and the repo's workflow</h1>
+  <p class="lede">The <code>justfile</code> is Ledgerly's <code>"scripts"</code> section: every task a developer or CI
+    runs, with a comment saying why.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can list Ledgerly's tasks, say what <code>just check</code> runs and in which order, and know which tasks
+      need Docker.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Which tool is Ledgerly's Prettier, and where's its config?</summary>
+      <div>rustfmt, configured in <code>rustfmt.toml</code> (<code>max_width = 120</code>).</div></details>
+    <details><summary>Name the four things cargo-deny checks.</summary>
+      <div>Advisories, licences, bans and sources.</div></details>
+    <details><summary>What does <code>-p ledgerly-expenses</code> do?</summary>
+      <div>Limits a cargo command to one workspace member, like <code>pnpm --filter</code>.</div></details>
+  </div>
+
+  <h2>Recipes are npm scripts</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="json">
+      {
+        "scripts": {
+          "check": "npm run vendor-check && npm run fmt-check && npm run lint && …",
+          "fmt-check": "prettier --check .",
+          "lint": "eslint . --max-warnings 0",
+          "test": "vitest run"
+        }
+      }
+    </script>
+    <script type="text/x-code" data-lang="bash" data-label="justfile" data-src="justfile" data-line="8">
+      # Everything CI checks, in order (docs/local-setup.md §4). The last step, the parity suite, needs Docker.
+      verify: check parity
+
+      # Everything except the parity suite: what the CI `verify` job runs. CI runs the parity suite as its own job.
+      check: vendor-check fmt-check clippy deny test config-check openapi-lint
+
+      # Fail if a file vendored from Ledgerly-Java was changed, removed or added (ADR 0007). Works offline.
+      vendor-check:
+          scripts/vendor-check.sh
+
+      # Fail if any file is not formatted.
+      fmt-check:
+          cargo fmt --all --check
+    </script>
+  </div>
+  <p>A recipe is <code>name: dependencies</code> followed by indented commands. <code>check</code> has no commands
+    of its own: it just runs seven other recipes in order and stops at the first failure. The comment line above a
+    recipe becomes its description in <code>just --list</code>
+    (<a href="https://just.systems/man/en/">just manual</a>).</p>
+
+  <h2>The tasks you'll actually use</h2>
+  <table>
+    <thead><tr><th>Command</th><th>What it does</th><th>Docker?</th></tr></thead>
+    <tbody>
+      <tr><td><code>just</code></td><td>Lists every recipe with its comment</td><td>no</td></tr>
+      <tr><td><code>just fmt</code></td><td><code>cargo fmt --all</code>: format everything</td><td>no</td></tr>
+      <tr><td><code>just clippy</code></td><td>Lint all targets; <code>-D warnings</code> makes every warning an error</td><td>no</td></tr>
+      <tr><td><code>just test</code></td><td>nextest for unit and integration tests, then doc tests</td><td>yes (a test Postgres)</td></tr>
+      <tr><td><code>just check</code></td><td>Everything CI checks except the parity suite</td><td>yes</td></tr>
+      <tr><td><code>just verify</code></td><td><code>check</code> + the parity suite against the real image</td><td>yes</td></tr>
+      <tr><td><code>just deps</code> / <code>just run</code></td><td>Start Postgres etc., then run the app locally</td><td>yes</td></tr>
+    </tbody>
+  </table>
+  <p>While you're editing, the fast loop is just <code>cargo check</code> (seconds), then
+    <code>cargo test -p &lt;crate&gt;</code> for the crate you touched. Run <code>just check</code> before you
+    commit. <a data-lesson="75"></a> goes deeper.</p>
+
+  <h2>Two more pieces around it</h2>
+  <ul>
+    <li><strong><code>.pre-commit-config.yaml</code></strong> is husky + lint-staged: on <code>git commit</code> it
+      runs <code>cargo fmt</code>, Prettier on YAML/JSON, and gitleaks (a secret scanner). It only works after you
+      run <code>pre-commit install</code> once.</li>
+    <li><strong><code>.cargo/config.toml</code></strong> sets environment variables for every cargo command in the
+      repo. Ledgerly sets <code>SQLX_OFFLINE = "true"</code> so that SQL checking at compile time reads the committed
+      <code>.sqlx/</code> folder instead of needing a live database (<a data-lesson="69"></a>).</li>
+  </ul>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>npm scripts are plain strings run by <code>sh</code>. Recipes can also take arguments
+      (<code>parity url="":</code>) and use a different shell per recipe. Ledgerly sets bash with
+      <code>-euo pipefail</code> on line 1, so a failing command in a pipe fails the recipe. <code>just</code> isn't a
+      Rust tool: it's a general command runner that happens to be written in Rust. Cargo has no task runner of its
+      own.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it</span>
+    <ol>
+      <li>Run <code>just</code> in the repo root and read the list.</li>
+      <li>Open <code>justfile</code> and find the <code>test</code> recipe. Why does it run two commands? (Answer
+        is in its comment.)</li>
+      <li>Run <code>just fmt-check</code> and <code>just clippy</code>. Both work without Docker.</li>
+    </ol>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What does the recipe line <code>check: vendor-check fmt-check clippy …</code> mean?</p>
+    <ul class="options">
+      <li>Run those seven tasks at the same time</li>
+      <li data-correct>Run those tasks in order, stopping at a failure</li>
+      <li>Define seven aliases that all point to check</li>
+      <li>Skip those tasks when check is called by CI</li>
+    </ul>
+    <div class="explain">Names after the colon are dependencies, run in order before the recipe's own (here empty)
+      body.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You changed one function in <code>expenses</code>. What's the fastest useful first check?</p>
+    <ul class="options" data-fixed>
+      <li>just verify</li>
+      <li>just check</li>
+      <li data-correct>cargo check</li>
+      <li>just up</li>
+    </ul>
+    <div class="explain"><code>cargo check</code> takes seconds and catches type and borrow errors. Save
+      <code>just check</code> for before a commit, and <code>just verify</code> (the full parity suite) for
+      milestones.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does <code>.cargo/config.toml</code> set <code>SQLX_OFFLINE = "true"</code>?</p>
+    <ul class="options">
+      <li>So the app never connects to a database</li>
+      <li>So tests use an in-memory SQLite instead</li>
+      <li data-correct>So builds check SQL without a live database</li>
+      <li>So migrations run offline before every build</li>
+    </ul>
+    <div class="explain">sqlx checks queries at compile time. Offline mode reads the saved query metadata in
+      <code>.sqlx/</code>, so CI and the image build need no Postgres.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://just.systems/man/en/">The just manual</a>, chapters "Quick Start" and "Dependencies". For
+      the repo-specific why, read <code>docs/local-setup.md</code> §4.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

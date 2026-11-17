@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Move semantics</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and borrowing</p>
+  <h1>Move semantics</h1>
+  <p class="lede">In JavaScript, <code>b = a</code> copies a reference and both names see the same object. In Rust,
+    <code>let b = a;</code> <em>moves</em> the value: <code>b</code> owns it now, and <code>a</code> is no longer
+    usable.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can predict "use of moved value" errors: after an assignment, after passing to a function, after a
+      <code>for</code> loop, and after a method that takes <code>self</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>The three ownership rules?</summary>
+      <div>One owner per value; one owner at a time; dropped when the owner leaves scope. (36)</div></details>
+    <details><summary>Why does a transaction roll back when <code>?</code> returns early?</summary>
+      <div>It's dropped with its owner, and its drop code rolls back. (36)</div></details>
+  </div>
+
+  <h2>Four ways to move a value</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const a = ["x"];
+      const b = a;          // both point to one array
+      a.push("y");          // b sees it too
+      save(a);              // save gets a reference
+      console.log(a);       // still fine
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      let a = vec!["x"];
+      let b = a;            // 1. assignment: moved into b
+      // a.push("y");       // error[E0382]: borrow of moved value: `a`
+      save(b);              // 2. passing by value: moved into save
+      // println!("{b:?}"); // error[E0382]: b was moved
+      for item in list {}   // 3. `for` over a collection consumes it
+      api.routes();         // 4. a method taking `self` consumes it
+    </script>
+  </div>
+  <p>A move doesn't copy the heap data. It copies the small handle (pointer, length, capacity) and marks the old name
+    as dead, so the data still has exactly one owner and is freed exactly once
+    (<a href="https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html#variables-and-data-interacting-with-move">Book 4.1,
+    "Move"</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: moves you can now see</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/transition_expense.rs" data-line="61">
+      let found = access::load(&mut transaction, actor, team, id).await?;
+      let mut expense = found.value;
+      // … transition `expense`, persist it …
+      Ok(Versioned {
+          value: expense,
+          version,
+      })
+    </script>
+    <ul>
+      <li><code>let mut expense = found.value;</code> moves the <code>Expense</code> <em>out of</em> the
+        <code>found</code> struct. After this, <code>found.value</code> is unusable, but
+        <code>found.version</code> (a separate field) is still fine. That's a <em>partial move</em>.</li>
+      <li><code>value: expense</code> moves it into the returned <code>Versioned</code>. The caller becomes the new
+        owner. No copy of the expense ever happened.</li>
+    </ul>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/lib.rs" data-line="46">
+      let memberships: Arc<dyn MembershipLookup> = Arc::new(TeamsMembershipLookup(teams));
+      web::ExpensesApi::new(pool, clock, &memberships, receipts, events, limits).routes()
+    </script>
+    <p><code>teams</code> is moved into the wrapper, and <code>routes()</code> takes <code>self</code>, so the
+      <code>ExpensesApi</code> is consumed and turned into a route table. Nothing can use the API object
+      afterwards, and nothing needs to.</p>
+  </div>
+
+  <h2>Reading the error</h2>
+  <script type="text/x-code" data-lang="text" data-label="cargo check">
+    error[E0382]: borrow of moved value: `a`
+     --> src/main.rs:4:5
+      |
+    2 |     let a = vec!["x"];
+      |         - move occurs because `a` has type `Vec<&str>`, which does not implement the `Copy` trait
+    3 |     let b = a;
+      |             - value moved here
+    4 |     a.push("y");
+      |     ^ value borrowed here after move
+  </script>
+  <p>Three labels tell the whole story: where the value was created, where it moved, and where you used it
+    afterwards. The fix is one of: use <code>b</code> instead, <strong>borrow</strong> instead of moving
+    (<code>&amp;a</code>, lesson 39), or <strong>clone</strong> if you truly need two copies (next lesson).</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>JS never invalidates a variable. Here, the same-looking line <code>let b = a;</code> makes <code>a</code>
+      unusable for a <code>Vec</code> but not for a <code>u32</code>. The difference is the <code>Copy</code> trait,
+      which the error message mentions and which comes in the next lesson.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex37_moves.rs</code>: three snippets with a commented-out line that causes
+      E0382. Uncomment each, read the error, then fix it without cloning. Run <code>cargo test ex37</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Does this compile?</p>
+    <script type="text/x-code" data-lang="rust">
+      let reason = String::from("No receipt");
+      let rejection = Rejection { reason, by: user };
+      println!("{reason}");
+    </script>
+    <ul class="options">
+      <li>Yes, the struct holds a copy of it</li>
+      <li data-correct>No, reason was moved into the struct already</li>
+      <li>Yes, println only needs to read the string</li>
+      <li>No, struct literals can't contain any String values</li>
+    </ul>
+    <div class="explain">Field init shorthand <code>reason</code> moves the <code>String</code> into the struct.
+      Print <code>rejection.reason</code> instead.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">After <code>for item in items { … }</code> with <code>items: Vec&lt;Item&gt;</code>, can you use
+      <code>items</code>?</p>
+    <ul class="options">
+      <li>Yes, a for loop never changes the collection</li>
+      <li data-correct>No, it was consumed; loop over &amp;items instead</li>
+      <li>Yes, but only while the vector is non-empty</li>
+      <li>No, but calling items.reset() will restore the vector</li>
+    </ul>
+    <div class="explain"><code>for x in v</code> takes ownership. <code>for x in &amp;v</code> borrows.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does a move of a <code>Vec</code> with a million elements cost?</p>
+    <ul class="options">
+      <li>Copying all one million elements to a new place</li>
+      <li data-correct>Copying a small handle; the elements stay put</li>
+      <li>Nothing at all, not even copying the handle</li>
+      <li>A heap allocation plus a later garbage collection</li>
+    </ul>
+    <div class="explain">A <code>Vec</code> is a pointer, a length and a capacity. A move copies those three words
+      and invalidates the source.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html">4.1</a>, from "Variables
+      and Data Interacting with Move" to "Ownership and Functions". Error details:
+      <a href="https://doc.rust-lang.org/error_codes/E0382.html">E0382</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

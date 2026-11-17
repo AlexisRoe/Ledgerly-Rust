@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tuples, arrays, slices and Vec</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1>Tuples, arrays, slices and <code>Vec</code></h1>
+  <p class="lede">TypeScript's <code>T[]</code> splits into three Rust types: a fixed-size array, a growable
+    <code>Vec</code>, and a borrowed view called a slice.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>[Self; 6]</code>, <code>Vec&lt;Rejection&gt;</code>, <code>&amp;[Rejection]</code> and
+      <code>(Merchant, Option&lt;Note&gt;)</code> in Ledgerly, and pick the right one in your own code.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's the difference between <code>String</code> and <code>&amp;str</code>?</summary>
+      <div><code>String</code> owns its text, while <code>&amp;str</code> is a borrowed view into text someone else owns.</div></details>
+    <details><summary>Why does <code>text.len()</code> differ from JS's <code>text.length</code>?</summary>
+      <div>Rust counts UTF-8 bytes, JS counts UTF-16 units.</div></details>
+  </div>
+
+  <h2>The family</h2>
+  <table>
+    <thead><tr><th>Rust</th><th>TypeScript</th><th>Size</th><th>Owns data?</th></tr></thead>
+    <tbody>
+      <tr><td><code>(A, B)</code> tuple</td><td><code>[A, B]</code> tuple type</td><td>fixed, mixed types</td><td>yes</td></tr>
+      <tr><td><code>[T; N]</code> array</td><td><code>readonly [T, T, T]</code></td><td>fixed <code>N</code>, known at compile time</td><td>yes</td></tr>
+      <tr><td><code>Vec&lt;T&gt;</code></td><td><code>T[]</code></td><td>grows and shrinks</td><td>yes, on the heap</td></tr>
+      <tr><td><code>&amp;[T]</code> slice</td><td><code>readonly T[]</code> (a view)</td><td>known at runtime</td><td>no, it borrows</td></tr>
+    </tbody>
+  </table>
+  <p>The relationship mirrors <code>String</code>/<code>&amp;str</code> exactly: <code>Vec&lt;T&gt;</code> owns,
+    <code>&amp;[T]</code> borrows a view into a <code>Vec</code> or an array
+    (<a href="https://doc.rust-lang.org/book/ch08-01-vectors.html">Book 8.1</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: all four</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/role.rs" data-line="30">
+      /// Every role, lowest rank first.
+      pub const ALL: [Self; 3] = [Self::Member, Self::Approver, Self::Owner];
+    </script>
+    <p>An array: exactly three, fixed at compile time. Change the 3 and it won't compile.</p>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="128">
+      rejections: Vec<Rejection>,
+      // … in Expense::draft:  rejections: Vec::new(),
+      // … in Expense::reject: self.rejections.push(Rejection { rejected_by: actor.id(), reason });
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="374">
+      pub fn rejections(&self) -> &[Rejection] {
+          &self.rejections
+      }
+    </script>
+    <p>The <code>Expense</code> owns a <code>Vec</code> it can push to. Callers get a <code>&amp;[Rejection]</code>:
+      they can read and iterate, but a slice has no <code>push</code>. Java needed
+      <code>Collections.unmodifiableList</code> and a test for that, and here the type says it.</p>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="45">
+      fn checked(&self, clock: &dyn Clock) -> Result<(Merchant, Option<Note>), InvalidInput> {
+    </script>
+    <p>A tuple as a return type: two values without defining a struct. The caller destructures it:
+      <code>let (merchant, note) = new.checked(clock)?;</code></p>
+  </div>
+
+  <h2>Everyday operations</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const ids: string[] = [];
+      ids.push(id);
+      ids.length;
+      ids[0];               // undefined if empty
+      ids.slice(1, 3);
+      for (const id of ids) {}
+      const pair: [string, number] = ["a", 1];
+      pair[1];
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      let mut ids: Vec<ExpenseId> = Vec::new();   // or vec![a, b, c]
+      ids.push(id);
+      ids.len();
+      ids.get(0);           // Option<&ExpenseId>: None if empty
+      ids[0];               // panics if empty!
+      &ids[1..3];           // a slice (panics if out of range)
+      for id in &ids {}
+      let pair = ("a", 1);
+      pair.1;               // tuple fields by position
+    </script>
+  </div>
+  <p>Note the two kinds of indexing: <code>v[i]</code> panics when out of bounds, and <code>v.get(i)</code> returns an
+    <code>Option</code>. Ledgerly's domain modules deny <code>clippy::indexing_slicing</code>, so only the
+    <code>get</code> style is allowed there.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <ul>
+      <li>JS arrays can hold anything and have holes. A <code>Vec&lt;T&gt;</code> holds only <code>T</code>s,
+        contiguous in memory.</li>
+      <li><code>ids[99]</code> in JS is <code>undefined</code>. In Rust it's a panic, which crashes the request
+        (or the program). Prefer <code>.get()</code>, <code>.first()</code> and iterators.</li>
+      <li>A function taking <code>&amp;[T]</code> accepts a <code>&amp;Vec&lt;T&gt;</code>, an array or part of
+        either, so take slices as parameters, as you take <code>&amp;str</code>.</li>
+    </ul>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex19_collections.rs</code>: a fixed array of categories, a function over a slice,
+      a <code>Vec</code> you build up, a tuple return. Run <code>cargo test ex19</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why does <code>Expense::rejections()</code> return <code>&amp;[Rejection]</code> instead of
+      <code>&amp;Vec&lt;Rejection&gt;</code> or <code>Vec&lt;Rejection&gt;</code>?</p>
+    <ul class="options">
+      <li>Slices are faster to iterate than vectors</li>
+      <li data-correct>Callers can read without copying or pushing</li>
+      <li>A Vec can't be returned from a method</li>
+      <li>Slices are sorted, vectors are not sorted</li>
+    </ul>
+    <div class="explain">A slice borrows (no copy) and offers no mutating methods. Returning
+      <code>Vec&lt;Rejection&gt;</code> would mean cloning every rejection.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What happens on <code>let v: Vec&lt;u32&gt; = Vec::new(); v[0]</code>?</p>
+    <ul class="options">
+      <li>Returns undefined, just like JavaScript arrays do</li>
+      <li>Returns zero, the default for u32 values</li>
+      <li data-correct>Panics: index out of bounds at runtime</li>
+      <li>Fails to compile: index is never valid</li>
+    </ul>
+    <div class="explain">Indexing checks bounds at runtime and panics. <code>v.get(0)</code> would return
+      <code>None</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which type is <code>Role::ALL</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>Vec&lt;Role&gt;</code></li>
+      <li><code>&amp;[Role]</code></li>
+      <li data-correct><code>[Role; 3]</code></li>
+      <li><code>(Role, Role, Role)</code></li>
+    </ul>
+    <div class="explain">An array: fixed length 3, every element a <code>Role</code>, usable in a
+      <code>const</code>. (Inside <code>impl Role</code>, <code>Self</code> means <code>Role</code>.)</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch08-01-vectors.html">8.1 "Storing Lists of Values with
+      Vectors"</a>, plus the "Compound Types" half of
+      <a href="https://doc.rust-lang.org/book/ch03-02-data-types.html">3.2</a> for tuples and arrays.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

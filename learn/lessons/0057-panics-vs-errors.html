@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panics vs errors, and why unwrap is banned</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Error handling the Ledgerly way</p>
+  <h1>Panics vs errors, and why <code>unwrap</code> is banned</h1>
+  <p class="lede">A panic is Rust's "this is a bug, stop here". It unwinds the stack like an uncaught exception, but
+    it's not meant to be caught. Ledgerly forbids the easy ways to cause one in production code.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can tell an expected failure (return a <code>Result</code>) from a bug (a panic), know what Ledgerly does if a
+      request handler panics anyway, and replace any <code>unwrap()</code> you're tempted to write.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>#[from]</code> generate?</summary>
+      <div>A <code>From</code> impl that wraps the inner error, so <code>?</code> converts it. (56)</div></details>
+    <details><summary>Which clippy lints does Ledgerly deny in <code>[workspace.lints]</code>?</summary>
+      <div><code>unwrap_used</code>, <code>expect_used</code>, <code>panic</code>, <code>todo</code>,
+        <code>unimplemented</code>. (4)</div></details>
+  </div>
+
+  <h2>Two kinds of failure</h2>
+  <table>
+    <thead><tr><th></th><th>Recoverable error</th><th>Panic</th></tr></thead>
+    <tbody>
+      <tr><td>Means</td><td>something expected went wrong: bad input, missing row, network down</td><td>a bug: an invariant the code relied on doesn't hold</td></tr>
+      <tr><td>Rust</td><td><code>Result&lt;T, E&gt;</code>, <code>?</code></td><td><code>panic!</code>, <code>unwrap()</code> on <code>None</code>/<code>Err</code>, <code>v[99]</code> out of bounds, integer overflow (debug)</td></tr>
+      <tr><td>Caller</td><td>must handle it</td><td>can't reasonably handle it</td></tr>
+      <tr><td>TS feel</td><td>a typed return value</td><td>an uncaught <code>throw</code> / assertion failure</td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://doc.rust-lang.org/book/ch09-03-to-panic-or-not-to-panic.html">Book 9.3 "To panic! or Not to
+    panic!"</a>.) <code>unwrap()</code> says "I'm sure this is <code>Some</code>/<code>Ok</code>". When you're
+    wrong, the whole request (or, outside a request, the program) dies. In a server that runs for months, "I'm sure"
+    is the most common source of crashes.</p>
+
+  <h2>Ledgerly's rules</h2>
+  <ul>
+    <li><strong>Production code:</strong> <code>unwrap</code>, <code>expect</code>, <code>panic!</code>,
+      <code>todo!</code>, <code>unimplemented!</code> are clippy errors (root <code>Cargo.toml</code>). Indexing and
+      unchecked arithmetic are errors in the domain modules too.</li>
+    <li><strong>Tests:</strong> all allowed (<code>clippy.toml</code>), because a panic there is just a failing test.</li>
+    <li><strong>Exceptions</strong> are written as <code>#[expect(lint, reason = "…")]</code>: like an
+      <code>eslint-disable</code> comment that must explain itself, and that fails the build if it ever becomes
+      unnecessary.</li>
+  </ul>
+  <h3>What to write instead of <code>unwrap()</code></h3>
+  <table>
+    <thead><tr><th>Situation</th><th>Write</th></tr></thead>
+    <tbody>
+      <tr><td>the caller should know</td><td><code>?</code>, or <code>.ok_or(MyError)?</code> for an <code>Option</code></td></tr>
+      <tr><td>there's a sensible default</td><td><code>.unwrap_or(x)</code>, <code>.unwrap_or_default()</code>, <code>.unwrap_or_else(|| …)</code></td></tr>
+      <tr><td>an index might be out of range</td><td><code>.get(i)</code>, <code>.first()</code></td></tr>
+      <tr><td>a number might overflow</td><td><code>checked_*</code> / <code>saturating_*</code></td></tr>
+      <tr><td>a lock might be poisoned</td><td><code>.unwrap_or_else(PoisonError::into_inner)</code> (as <code>FixedClock</code> does)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: the safety net anyway</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/lib.rs" data-line="305">
+      fn unhandled_panic(_panic: Box<dyn Any + Send + 'static>) -> axum::response::Response {
+          tracing::error!("Unhandled exception");
+          Problem::internal_error().into_response()
+      }
+    </script>
+    <p>A dependency could still panic. The <code>CatchPanicLayer</code> middleware catches the unwinding panic of one
+      request and answers 500, so the server keeps serving everyone else. That's why the release profile keeps
+      <code>panic = "unwind"</code> (lesson 4): with <code>abort</code>, one panic would end the process. Note what's
+      <em>not</em> logged: the panic message, because it might contain user data.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TS, <code>throw</code> is used for both expected failures and bugs, and <code>try/catch</code> handles both.
+      Rust splits them: expected failures are values (<code>Result</code>), bugs are panics. You shouldn't use
+      <code>catch_unwind</code> as a <code>try/catch</code>. Ledgerly's catch layer is a last-resort net, not a
+      control-flow tool.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A user sends a merchant name that's too long. Panic or error?</p>
+    <ul class="options">
+      <li>Panic, because the request is plainly invalid input</li>
+      <li data-correct>Error: bad input is expected; return a Result</li>
+      <li>Panic, because CatchPanicLayer turns it into a 400</li>
+      <li>Neither; silently truncate the name and then continue</li>
+    </ul>
+    <div class="explain">Bad input is the most expected failure there is. <code>Merchant::new</code> returns
+      <code>Err(InvalidInput)</code>, which becomes a 400. A panic would become a 500.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You need the first rejection reason and want "-" if there is none. What do you write?</p>
+    <ul class="options" data-fixed>
+      <li><code>e.rejections()[0].reason().as_str()</code></li>
+      <li><code>e.rejections().first().unwrap().reason().as_str()</code></li>
+      <li data-correct><code>e.rejections().first().map_or("-", |r| r.reason().as_str())</code></li>
+      <li><code>e.rejections().first().expect("-").reason().as_str()</code></li>
+    </ul>
+    <div class="explain">Indexing and <code>unwrap</code>/<code>expect</code> panic on an empty list (and are linted
+      away). <code>map_or</code> handles both cases.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What happens when a request handler panics in Ledgerly?</p>
+    <ul class="options">
+      <li>The whole server process exits and restarts later</li>
+      <li data-correct>That request gets a 500; the server keeps running</li>
+      <li>The panic message is returned to the client verbatim</li>
+      <li>The request is retried automatically one more time</li>
+    </ul>
+    <div class="explain"><code>CatchPanicLayer</code> catches the unwind for that request and answers with the
+      generic internal-error problem.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch09-01-unrecoverable-errors-with-panic.html">9.1
+      "Unrecoverable Errors with panic!"</a> and
+      <a href="https://doc.rust-lang.org/book/ch09-03-to-panic-or-not-to-panic.html">9.3 "To panic! or Not to
+      panic!"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

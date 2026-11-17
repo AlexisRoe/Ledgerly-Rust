@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: designing Rust code</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Designing Rust code · Review</p>
+  <h1>Review: designing Rust code</h1>
+  <p class="lede">Mixed practice on lessons 111–116, then a design exercise: sketch the types for a feature before
+    writing any logic. It's the warm-up for the capstone.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>Recall, quizzes, then the design sketch on paper or in a scratch file. The <a href="../reference/design.html">cheat
+      sheet</a> afterwards.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>thiserror or anyhow: the deciding question?</summary>
+      <div>Will callers match on it (thiserror enum) or only report it (anyhow)? (111)</div></details>
+    <details><summary>The four parts of "parse, don't validate"?</summary>
+      <div>Private field, one fallible constructor, read-only access, every entry point (serde, DB, tests) goes through it. (112)</div></details>
+    <details><summary><code>as_</code>, <code>to_</code>, <code>into_</code>?</summary>
+      <div>Free borrow; costly borrowed → owned; consuming owned → owned. (114)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">A <code>TeamName</code> must be 1–100 characters. A handler deserialises it from JSON. Where is the check?</p>
+    <ul class="options">
+      <li>In the handler, right after deserialising the body</li>
+      <li data-correct>In TeamName's constructor, which serde's try_from calls</li>
+      <li>In the database, through a CHECK constraint only</li>
+      <li>In every function that receives a team name</li>
+    </ul>
+    <div class="explain">One door; serde uses it too. (112)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Traits) A public library type should implement <code>Debug</code> even if you don't need it. Why?</p>
+    <ul class="options">
+      <li>Because the compiler requires Debug on public types</li>
+      <li data-correct>Users can't add it later: the orphan rule</li>
+      <li>Because Debug makes the type faster to clone</li>
+      <li>Because Display is generated from Debug for free</li>
+    </ul>
+    <div class="explain">Foreign trait, foreign type: only you can write the impl. (91, 114)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Async) A builder's <code>build()</code> opens a database connection. What signature?</p>
+    <ul class="options" data-fixed>
+      <li><code>fn build(self) -&gt; Pool</code></li>
+      <li data-correct><code>async fn build(self) -&gt; Result&lt;Pool, BuildError&gt;</code></li>
+      <li><code>fn build(&amp;self) -&gt; Option&lt;Pool&gt;</code></li>
+      <li><code>fn build(self) -&gt; impl Future&lt;Output = Pool&gt;</code></li>
+    </ul>
+    <div class="explain">It does I/O (async) and can fail (Result, with a reason). (25, 62, 113)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You want test-only helpers that other crates' tests can use. What does Ledgerly do?</p>
+    <ul class="options">
+      <li>Copies the helpers into each crate's own tests</li>
+      <li data-correct>A testing feature, enabled only in dev-dependencies</li>
+      <li>Marks the helpers pub and lets them ship</li>
+      <li>Puts the helpers in a separate git repository</li>
+    </ul>
+    <div class="explain"><code>#[cfg(any(test, feature = "testing"))]</code>, never in the binary. (115)</div>
+  </div>
+
+  <h2>Design sketch: expense tags</h2>
+  <div class="exercise">
+    <span class="box-label">Types first, no logic</span>
+    <p>Imagine expenses can carry up to 5 tags, each 1–30 characters, lowercase, unique per expense. Sketch only
+      signatures:</p>
+    <ol>
+      <li>A <code>Tag</code> type: field, constructor, accessor, derives.</li>
+      <li>A <code>Tags</code> collection type that enforces "at most 5, unique". What does it offer instead of
+        <code>Vec</code>'s methods?</li>
+      <li>The error type(s): who will match on them, and what does the web layer need from them?</li>
+      <li>Where does serde parse them, and how?</li>
+    </ol>
+    <details><summary>One possible answer</summary>
+      <div><code>#[derive(Debug, Clone, PartialEq, Eq, Hash)] pub struct Tag(String);</code> with
+        <code>Tag::new(&amp;str) -&gt; Result&lt;Tag, InvalidInput&gt;</code> (trims, lowercases, checks length) and
+        <code>as_str()</code>. <code>pub struct Tags(Vec&lt;Tag&gt;);</code> with <code>Tags::new(Vec&lt;Tag&gt;) -&gt;
+        Result&lt;Tags, InvalidInput&gt;</code>, <code>iter()</code>, <code>len()</code>, <code>contains(&amp;Tag)</code>;
+        no <code>push</code>, or a <code>try_add</code> returning <code>Result</code>. Errors reuse Ledgerly's
+        <code>InvalidInput { field: "tags", message }</code>, because the web layer turns it into a 400 with a field
+        name. JSON: <code>#[serde(try_from = "Vec&lt;String&gt;")]</code> on <code>Tags</code>.</div></details>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="../reference/design.html">design cheat sheet</a>. Deeper:
+      <a href="https://www.lurklurk.org/effective-rust/">Effective Rust</a>, chapters 1 ("Types") and 4 ("Dependencies").</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

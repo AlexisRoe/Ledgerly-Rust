@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: the change loop</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>The change loop</h1>
+  <p class="lede">Section 14 on one page. Pin it next to your editor.</p>
+
+  <h2>Loop</h2>
+  <div class="steps">
+    <ol>
+      <li><code>git switch -c practice/name</code> (or a real branch for real work)</li>
+      <li>Write or adjust the <strong>test first</strong>; see it fail (often a compile error first)</li>
+      <li>Edit; save; read rust-analyzer's squiggles or <code>cargo check -p &lt;crate&gt;</code></li>
+      <li>Fix the <strong>first</strong> error, re-check. Repeat</li>
+      <li><code>cargo test -p &lt;crate&gt; &lt;filter&gt;</code> → then the whole crate → <code>just test</code> (Docker)</li>
+      <li><code>cargo clippy -p &lt;crate&gt; --all-targets -- -D warnings</code> · <code>cargo fmt</code></li>
+      <li>Query changed? <code>just deps</code> + <code>just sqlx-prepare</code>, commit <code>.sqlx/</code></li>
+      <li>Before committing: <code>just check</code>. Before a milestone: <code>just verify</code></li>
+      <li>Practice only: <code>git restore . &amp;&amp; git switch - &amp;&amp; git branch -D practice/name</code></li>
+    </ol>
+  </div>
+
+  <h2>Reading an error</h2>
+  <p><code>error[E0004]: headline</code> → <code>--&gt; file:line:col</code> → <code>^^^</code> the problem,
+    <code>---</code> related spots → <code>note:</code> context → <code>help:</code> suggested fix (check it: not
+    <code>todo!()</code>, not <code>_</code> on enums) → <code>rustc --explain E0004</code>.</p>
+
+  <h2>Usual fixes by error</h2>
+  <table>
+    <thead><tr><th>Error</th><th>Usually</th></tr></thead>
+    <tbody>
+      <tr><td>E0004 non-exhaustive</td><td>add a real arm; it's a business decision</td></tr>
+      <tr><td>E0308 mismatched types</td><td>a stray <code>;</code>, a missing <code>Ok(…)</code>, <code>&amp;str</code> vs <code>String</code>, integer widths</td></tr>
+      <tr><td>E0277 trait not implemented</td><td>missing derive, missing <code>From</code> for <code>?</code>, missing bound</td></tr>
+      <tr><td>E0382 moved value</td><td>borrow with <code>&amp;</code>; reorder; clone if truly needed</td></tr>
+      <tr><td>E0502 / E0499 borrows</td><td>end the first borrow earlier; copy the value out</td></tr>
+      <tr><td>E0596 / E0384</td><td><code>let mut</code></td></tr>
+      <tr><td>E0425 / E0433 not found</td><td>missing <code>use</code>, or <code>mod</code> not declared</td></tr>
+      <tr><td>E0599 no method</td><td>trait not in scope (<code>use</code> it), or wrong type (<code>Option</code> vs value)</td></tr>
+      <tr><td>E0603 private</td><td>it's <code>pub(crate)</code> or in a private module: use the facade</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Ledgerly's rules for real changes</h2>
+  <ul>
+    <li>Never modify <code>vendor/</code>, <code>api/openapi.yaml</code>, <code>redocly.yaml</code>, <code>bruno/</code>:
+      contract and schema changes happen in Ledgerly-Java first.</li>
+    <li>Never weaken a parity test. Behaviour must match Java.</li>
+    <li>No <code>unsafe</code>; no <code>unwrap</code>/<code>expect</code>/<code>panic!</code>/<code>todo!</code> outside
+      tests.</li>
+    <li>Secrets are <code>SecretString</code> from the moment they're read, never logged.</li>
+    <li>Every query that reads team data takes the team id.</li>
+    <li>One plan step, one Conventional Commit.</li>
+  </ul>
+
+  <p>Lessons: <a data-lesson="75"></a> · <a data-lesson="76"></a> · <a data-lesson="77"></a> · <a data-lesson="78"></a></p>
+</main>
+</body>
+</html>

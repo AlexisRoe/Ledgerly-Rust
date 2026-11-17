@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Following one request: submit an expense</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Reading Ledgerly end to end</p>
+  <h1>Following one request: submit an expense</h1>
+  <p class="lede"><code>POST /api/v1/teams/{teamId}/expenses/{expenseId}:submit</code>, from the socket to the
+    database and back. Every step uses something you've learned; the lesson numbers are in brackets.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can follow any Ledgerly endpoint through its layers yourself, using VS Code's Go to Definition, and say
+      at each step what can make the request fail and with which status.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Name the four layers inside a module crate.</summary>
+      <div><code>web</code> → <code>application</code> → <code>domain</code>, plus <code>persistence</code> (14).</div></details>
+    <details><summary>In <code>.layer(A).layer(B)</code>, who sees the request first?</summary>
+      <div>B, the outermost layer. (70)</div></details>
+  </div>
+
+  <h2>The route</h2>
+  <ol class="steps">
+    <li><strong>Middleware</strong> (<a class="src" data-src="crates/app/src/lib.rs" data-line="228"></a>): a tracing
+      span with a trace id [71]; the JSON body limit; security headers; CORS; the per-address rate limit;
+      <strong>authentication</strong> turns the bearer token into a <code>CurrentUser</code> or answers 401; the
+      per-user rate limit (429); the panic catcher [57].</li>
+    <li><strong>Routing</strong> (<code>shared/src/web/routing.rs</code>): the path matches the template registered in
+      <code>ExpensesApi::routes</code> for <code>Action::Submit</code>. Its handler is a <code>move</code> closure
+      that remembers the action [45, 70].</li>
+    <li><strong>Handler</strong> <code>transition</code>
+      (<a class="src" data-src="crates/expenses/src/web/mod.rs" data-line="456"></a>): extractors deliver the state,
+      user and path parameters. <code>team(&amp;parameters)?</code> parses the UUIDs (400 if malformed). Submit has
+      no body [29]. It calls the use case and maps any error with <code>problem::failure</code> [58].</li>
+    <li><strong>Use case</strong> <code>TransitionExpense::execute</code>
+      (<a class="src" data-src="crates/expenses/src/application/transition_expense.rs" data-line="51"></a>):
+      <ol>
+        <li><code>self.pool.begin().await?</code>: a transaction, rolled back on any early return [36].</li>
+        <li><code>access::actor(…)</code>: the caller's role in this team via the <code>MembershipLookup</code>
+          trait object, i.e. the teams module [53]. Not a member → <code>NotFound</code> → 404 [24].</li>
+        <li><code>access::load(…)</code>: the expense, scoped to the team, visible to this actor, or 404 [25].</li>
+        <li><code>self.receipts.summary_for(…)</code>: asks the receipts module, through the <code>ReceiptChecks</code>
+          trait, how many receipts are accepted or still scanning [72].</li>
+        <li><code>expense.submit(actor, receipts)?</code>: the domain decides (next step).</li>
+        <li><code>persistence::update(…)</code>: versioned <code>UPDATE</code>; 0 rows → conflict → 412 [69].</li>
+        <li><code>self.events.publish(…)</code>: an <code>ExpenseEvent::Submitted</code> row in the outbox, same
+          transaction.</li>
+        <li><code>transaction.commit().await?</code>, then <code>metrics::counter!(…)</code> [71].</li>
+      </ol></li>
+    <li><strong>Domain</strong> <code>Expense::submit</code>
+      (<a class="src" data-src="crates/expenses/src/domain/expense.rs" data-line="195"></a>):
+      <code>allowed_target</code> checks who may submit (only the claimant, else 403) and the workflow table
+      <code>Action::target_from</code> (only from <code>Draft</code>, else 409) [31]. Then the receipt rules: at least
+      one accepted, none pending (else 422). Only then <code>self.status = target</code> [21].</li>
+    <li><strong>Response</strong>: <code>ok(&amp;changed)</code> builds <code>ExpenseResponse::from</code> [51],
+      serialises it with serde [68], and sets the <code>ETag</code> header to the new version. 200.</li>
+    <li><strong>After the commit</strong>: the outbox dispatcher (a spawned task [63]) delivers the event to its
+      listeners, such as the audit trail.</li>
+  </ol>
+
+  <h2>Every way it can fail</h2>
+  <table>
+    <thead><tr><th>Where</th><th>Why</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>authentication layer</td><td>no or bad token</td><td>401</td></tr>
+      <tr><td>rate limiter</td><td>too many requests</td><td>429</td></tr>
+      <tr><td>handler</td><td>malformed UUID in the path</td><td>400</td></tr>
+      <tr><td><code>access::actor</code> / <code>load</code></td><td>not a member; no such expense; a colleague's expense (for a member)</td><td>404</td></tr>
+      <tr><td>domain</td><td>not the claimant</td><td>403</td></tr>
+      <tr><td>domain</td><td>not a draft</td><td>409</td></tr>
+      <tr><td>domain</td><td>no accepted receipt / scan pending</td><td>422</td></tr>
+      <tr><td>persistence</td><td>changed concurrently</td><td>412</td></tr>
+      <tr><td>anywhere</td><td>database down, panic</td><td>500</td></tr>
+    </tbody>
+  </table>
+
+  <div class="breaks">
+    <span class="box-label">Compared with a typical Express app</span>
+    <p>The flow is familiar: middleware, router, controller, service, repository. What's different is that every
+      failure on this list is visible in a type or a <code>?</code>, and every status is chosen in one exhaustive
+      <code>match</code>. In a TS codebase, finding "all the ways this endpoint can fail" means reading every function
+      it calls, including the ones that throw.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code (20 minutes)</span>
+    <p>Follow the same path for <strong>reject</strong> (<code>…:reject</code> with a JSON body). Starting from
+      <code>transition</code>, use <kbd>F12</kbd> to jump into each call. Note where the reason is read and validated,
+      and which extra error the reject path can produce. Then follow <code>GET …/expenses/{id}</code> (handler
+      <code>get</code>) and compare: which steps disappear for a read?</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A member submits a colleague's draft. What do they get, and why?</p>
+    <ul class="options">
+      <li>403, because only the claimant may submit it</li>
+      <li data-correct>404, because members can't see a colleague's expense</li>
+      <li>409, because the draft belongs to another person</li>
+      <li>422, because the receipts belong to the colleague</li>
+    </ul>
+    <div class="explain"><code>access::load</code> filters with <code>is_visible_to</code> before the domain runs. For
+      a member, a colleague's expense "doesn't exist". (An approver would get 403 from the domain instead.)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">The commit fails after <code>expense.submit</code> succeeded. What happens to the event?</p>
+    <ul class="options">
+      <li>It was already delivered to audit before commit</li>
+      <li data-correct>Same transaction, so it's rolled back as well</li>
+      <li>It stays in the outbox and gets delivered</li>
+      <li>It's logged as an error, then retried later</li>
+    </ul>
+    <div class="explain">The outbox row is written in the same transaction, so change and event happen together or not at
+      all (CONCEPT §3, rule 3).</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which component decides that submit needs at least one accepted receipt?</p>
+    <ul class="options">
+      <li>The receipts crate, inside its summary_for method</li>
+      <li data-correct>The domain layer, inside the Expense::submit method</li>
+      <li>The handler, before the use case starts running</li>
+      <li>A database constraint on the expenses table itself</li>
+    </ul>
+    <div class="explain">Receipts only reports counts. The business rule lives in the expense aggregate.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The code itself, via the links above. For the "why" of each layer, the M3, M6 and M7 entries of
+      <code>docs/learning-log.md</code>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

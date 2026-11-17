@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>'static and T: 'static</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and lifetimes in depth</p>
+  <h1><code>'static</code> and <code>T: 'static</code></h1>
+  <p class="lede">The same word means two different things. <code>&amp;'static str</code> is a reference valid for
+    the whole program. <code>T: 'static</code> is a bound that most owned values meet, including every
+    <code>String</code>. Confusing them is the most common lifetime misunderstanding.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can tell the two meanings apart, and fix "borrowed value does not live long enough" when spawning a task.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why does a borrowing struct carry a lifetime parameter?</summary>
+      <div>So it can't outlive what it borrows from. (81)</div></details>
+    <details><summary>Why must a future passed to <code>tokio::spawn</code> be <code>Send</code>?</summary>
+      <div>The task may run on any worker thread. (63)</div></details>
+  </div>
+
+  <h2>Meaning 1: a reference that's always valid</h2>
+  <p><code>&amp;'static T</code> points to something that is never freed: string literals (baked into the binary),
+    <code>static</code> items, or memory deliberately leaked. Ledgerly uses it everywhere for fixed text, such as
+    error codes and event types.</p>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/receipts/src/events.rs" data-line="80">
+      fn event_type(&self) -> &'static str {
+    </script>
+    <p>The event type is a literal, so the caller can keep it as long as it likes. It's the TS equivalent of
+      returning a <code>const</code> string.</p>
+  </div>
+
+  <h2>Meaning 2: a type that holds no short borrows</h2>
+  <p><code>T: 'static</code> says: a value of type <code>T</code> <em>could</em> be kept forever, because it holds no
+    reference that might expire. <code>String</code>, <code>Vec&lt;u8&gt;</code>, <code>Arc&lt;Pool&gt;</code> and
+    <code>u32</code> are all <code>'static</code>; they own everything. <code>&amp;'a str</code> and
+    <code>Header&lt;'a&gt;</code> aren't, unless <code>'a</code> is <code>'static</code>. It's about what the type
+    <em>contains</em>, not how long a value actually lives: a <code>String</code> is <code>'static</code> and is
+    still dropped at the end of its scope.</p>
+
+  <h2>Why <code>tokio::spawn</code> asks for it</h2>
+  <p>A spawned task may outlive the function that spawned it, so it may not borrow that function's locals. Its
+    future must be <code>Send + 'static</code>. The fix is always the same: give the task its own copy (often a
+    cheap <code>Arc</code> clone) and <code>move</code> it in.</p>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: clone, then move</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/lib.rs" data-line="158">
+      fn ensure_bucket(&self) {
+          let storage = self.storage.clone();
+          tokio::spawn(async move {
+              let mut warned = false;
+              while let Err(error) = storage.ensure_bucket().await {
+    </script>
+    <p>Using <code>self.storage</code> inside the task would borrow <code>self</code>, which isn't
+      <code>'static</code> (error E0521, "borrowed data escapes"). The clone is owned, so the task owns it.</p>
+  </div>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a future that borrows, on purpose</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/receipts/src/scanner.rs" data-line="63">
+      pub(crate) type ScanFuture<'a> = Pin<Box<dyn Future<Output = Result<Verdict, ScanError>> + Send + 'a>>;
+    </script>
+    <p>Here <code>+ 'a</code> instead of <code>+ 'static</code>: the scan borrows the scanner and the file reader.
+      That's fine because the caller <em>awaits</em> it right there; it's never spawned. Trait objects default to
+      <code>'static</code> in many positions (<code>Box&lt;dyn Error&gt;</code> means
+      <code>Box&lt;dyn Error + 'static&gt;</code>), so a borrowing one must say so.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In Node, a callback passed to <code>setTimeout</code> can close over anything; the GC keeps it alive. In
+      Rust, "keep it alive for a task that might run later" must be expressed through ownership:
+      <code>move</code> + owned data or <code>Arc</code>. If the work doesn't need to outlive the caller,
+      <code>std::thread::scope</code> (lesson 97) lifts the <code>'static</code> requirement entirely.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Is <code>String</code> a <code>'static</code> type?</p>
+    <ul class="options">
+      <li>No, only string literals and statics are 'static</li>
+      <li data-correct>Yes, it owns its text and borrows nothing</li>
+      <li>Only if it's stored in a static item</li>
+      <li>Only after calling .leak() on the String first</li>
+    </ul>
+    <div class="explain"><code>T: 'static</code> is about borrows inside the type, not about how long the value lives.</div>
+  </div>
+  <div class="quiz">
+    <p class="q"><code>tokio::spawn(async { repo.save(&amp;expense).await })</code> fails with "borrowed data
+      escapes". The usual fix?</p>
+    <ul class="options">
+      <li>Annotate the async block with a 'static lifetime</li>
+      <li data-correct>Clone what the task needs and use async move</li>
+      <li>Replace tokio::spawn with a plain .await call instead</li>
+      <li>Wrap the whole async block in a Box</li>
+    </ul>
+    <div class="explain">Owned (often <code>Arc</code>) values moved in make the future <code>'static</code>. Awaiting
+      in place also works, if you didn't need a separate task.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>Box&lt;dyn Error&gt;</code> mean, written out in full?</p>
+    <ul class="options" data-fixed>
+      <li><code>Box&lt;dyn Error + Send&gt;</code></li>
+      <li data-correct><code>Box&lt;dyn Error + 'static&gt;</code></li>
+      <li><code>Box&lt;dyn Error + Sync + Send&gt;</code></li>
+      <li><code>Box&lt;dyn Error + '_&gt;</code></li>
+    </ul>
+    <div class="explain">A boxed trait object without a lifetime defaults to <code>'static</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://github.com/pretzelhammer/rust-blog/blob/master/posts/common-rust-lifetime-misconceptions.md">Common
+      Rust Lifetime Misconceptions</a>, misconceptions 2 and 3. Widely recommended, and the clearest text on
+      this exact confusion.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

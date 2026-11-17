@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: async</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Async Rust</h1>
+  <p class="lede">Section 10 on one page.</p>
+
+  <h2>Futures vs Promises</h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td><code>async function f(): Promise&lt;T&gt;</code></td><td><code>async fn f() -&gt; T</code> (returns <code>impl Future&lt;Output = T&gt;</code>)</td></tr>
+      <tr><td><code>await p</code></td><td><code>p.await</code> (postfix); <code>p.await?</code></td></tr>
+      <tr><td>eager: runs when created</td><td><strong>lazy</strong>: runs only when awaited / polled</td></tr>
+      <tr><td>event loop built in</td><td>runtime is a library (Tokio): <code>block_on</code>, <code>#[tokio::main]</code></td></tr>
+      <tr><td>one JS thread</td><td>multi-threaded worker pool → <code>Send</code>/<code>Sync</code> required</td></tr>
+      <tr><td><code>Promise&lt;T&gt;</code> behind an interface</td><td><code>Pin&lt;Box&lt;dyn Future&lt;Output = T&gt; + Send + 'a&gt;&gt;</code>, built with <code>Box::pin(async move { … })</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Tokio toolbox</h2>
+  <table>
+    <thead><tr><th>Node</th><th>Tokio</th></tr></thead>
+    <tbody>
+      <tr><td><code>Promise.all([a, b])</code></td><td><code>tokio::join!(a, b)</code> → tuple</td></tr>
+      <tr><td><code>Promise.race([a, b])</code></td><td><code>tokio::select! { x = a =&gt; …, y = b =&gt; … }</code> (losers dropped)</td></tr>
+      <tr><td>fire and forget</td><td><code>tokio::spawn(async move { … })</code> → <code>JoinHandle</code> (<code>.await</code>, <code>.abort()</code>)</td></tr>
+      <tr><td><code>setTimeout</code> / delay</td><td><code>tokio::time::sleep(Duration::from_secs(n)).await</code></td></tr>
+      <tr><td>timeout</td><td><code>tokio::time::timeout(d, fut).await</code> → <code>Result</code></td></tr>
+      <tr><td>CPU-heavy work</td><td><code>tokio::task::spawn_blocking(|| …)</code></td></tr>
+      <tr><td>vitest async test</td><td><code>#[tokio::test] async fn …</code></td></tr>
+      <tr><td><code>process.on("SIGTERM")</code></td><td><code>tokio::signal::unix::signal(SignalKind::terminate())</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Sharing state</h2>
+  <table>
+    <thead><tr><th>Need</th><th>Use</th></tr></thead>
+    <tbody>
+      <tr><td>shared read-only service</td><td><code>Arc&lt;T&gt;</code>, <code>Arc&lt;dyn Trait&gt;</code></td></tr>
+      <tr><td>shared mutable data</td><td><code>Arc&lt;Mutex&lt;T&gt;&gt;</code> / <code>RwLock</code>; lock briefly, never across <code>.await</code> (else <code>tokio::sync::Mutex</code>)</td></tr>
+      <tr><td>per-request state</td><td><code>#[derive(Clone)]</code> struct of <code>Arc</code>s, axum <code>State&lt;T&gt;</code></td></tr>
+      <tr><td>broadcast a value</td><td><code>tokio::sync::watch</code></td></tr>
+      <tr><td>queue between tasks</td><td><code>tokio::sync::mpsc</code></td></tr>
+      <tr><td>one reply</td><td><code>tokio::sync::oneshot</code></td></tr>
+    </tbody>
+  </table>
+  <p>Lock guard released on drop. Poisoned lock: <code>.lock().unwrap_or_else(PoisonError::into_inner)</code>.</p>
+
+  <p>Lessons: <a data-lesson="62"></a> · <a data-lesson="63"></a> · <a data-lesson="64"></a></p>
+</main>
+</body>
+</html>

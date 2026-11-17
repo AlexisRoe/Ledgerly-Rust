@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threads and scoped threads</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Concurrency and async internals</p>
+  <h1>Threads and scoped threads</h1>
+  <p class="lede">Node gives you one thread for your code and worker threads that share nothing. Rust gives you real OS
+    threads that can share memory, and a compiler that checks the sharing. Before async, this is the foundation.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can spawn and join threads, move data into them, and use <code>thread::scope</code> to let threads borrow
+      from the stack.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why does <code>tokio::spawn</code> require a <code>'static</code> future?</summary>
+      <div>The task may outlive the function that spawned it, so it can't borrow its locals. (82)</div></details>
+    <details><summary>What does <code>move</code> before a closure do?</summary>
+      <div>The closure takes ownership of what it captures, instead of borrowing. (45)</div></details>
+  </div>
+
+  <h2>Node vs Rust</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      // worker_threads: separate JS heaps, data is copied
+      // (structured clone) or transferred, never shared
+      const w = new Worker("./sum.js", { workerData: values });
+      w.on("message", (total) => console.log(total));
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      // one heap; the closure's captures MOVE into the thread
+      let handle = std::thread::spawn(move || {
+          values.iter().sum::<u64>()
+      });
+      let total = handle.join();   // Result<u64, panic payload>
+    </script>
+  </div>
+  <p><code>spawn</code> starts an OS thread immediately (unlike a future, it doesn't wait to be awaited) and returns a
+    <code>JoinHandle</code>. <code>join()</code> blocks until it finishes and returns its result, or <code>Err</code> if
+    the thread panicked: a panic ends only that thread. Like <code>tokio::spawn</code>, the closure must be
+    <code>Send + 'static</code>: the thread may outlive the caller.</p>
+
+  <h2>Scoped threads: borrowing allowed</h2>
+  <script type="text/x-code" data-lang="rust">
+    let values: Vec<u64> = load();
+    let total: u64 = std::thread::scope(|scope| {
+        let handles: Vec<_> = values.chunks(1000)
+            .map(|chunk| scope.spawn(move || chunk.iter().sum::<u64>()))  // borrows `values`
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap_or(0)).sum()
+    });                       // every scoped thread has finished here
+    println!("{} values, total {total}", values.len());   // still ours
+  </script>
+  <p><code>scope</code> doesn't return until every thread spawned in it has finished, so those threads can borrow
+    local data, no <code>Arc</code> and no <code>'static</code> needed
+    (<a href="https://doc.rust-lang.org/std/thread/fn.scope.html">std: thread::scope</a>). It's the tool for
+    "split this work across cores and wait".</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: proving a trait object can cross threads</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/clock.rs" data-line="128">
+      fn clocks_are_usable_as_shared_trait_objects() {
+          let clock: std::sync::Arc<dyn Clock> = std::sync::Arc::new(FixedClock::at(instant("2026-11-05T10:00:00Z")));
+          let handle = std::thread::spawn({
+              let clock = std::sync::Arc::clone(&clock);
+              move || clock.today()
+          });
+          assert_eq!(handle.join().unwrap(), clock.today());
+      }
+    </script>
+    <p>Ledgerly itself never spawns OS threads; Tokio does (lesson 104). This test exists to prove that an
+      <code>Arc&lt;dyn Clock&gt;</code> may be sent to another thread: if <code>Clock</code> weren't
+      <code>Send + Sync</code>, it wouldn't compile. Note the idiom: a block that clones the <code>Arc</code>, then
+      returns the <code>move</code> closure, so the original stays usable.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In JS, shared mutable memory between threads exists only through <code>SharedArrayBuffer</code> and
+      <code>Atomics</code>, which few people touch. In Rust it's normal, and the type system decides what may be
+      shared: try moving an <code>Rc</code> into a thread and it doesn't compile. Data races are compile errors; logic
+      races (two threads updating in the wrong order) are still yours to avoid.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex97_threads.rs</code>: spawn and join, a parallel sum with scoped threads, and an
+      <code>Rc</code> that refuses to cross a thread boundary. Run <code>cargo test ex97</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A spawned thread panics. What happens to the rest of the program?</p>
+    <ul class="options">
+      <li>The whole process aborts at that moment</li>
+      <li data-correct>That thread ends; join returns an Err</li>
+      <li>The panic is silently ignored and lost</li>
+      <li>The main thread panics at the same time</li>
+    </ul>
+    <div class="explain">Panics unwind one thread. The joiner decides what to do with the <code>Err</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why can scoped threads borrow <code>values</code> while <code>thread::spawn</code> can't?</p>
+    <ul class="options">
+      <li>Scoped threads copy the data before they start</li>
+      <li data-correct>The scope waits for them before it returns</li>
+      <li>Scoped threads all run on the main thread</li>
+      <li>Scoped threads use Arc for every borrowed value</li>
+    </ul>
+    <div class="explain">Borrows can't outlive the scope, because the threads can't either.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">When does a <code>std::thread::spawn</code>ed closure start running?</p>
+    <ul class="options">
+      <li>When join is called on its handle</li>
+      <li data-correct>Immediately, on its own OS thread</li>
+      <li>When the current function has returned</li>
+      <li>When the Tokio runtime polls it first</li>
+    </ul>
+    <div class="explain">Threads are eager. Futures are lazy. Don't mix up the two.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch16-01-threads.html">16.1 "Using Threads to Run Code
+      Simultaneously"</a>, then chapter 1 of Mara Bos' free book
+      <a href="https://marabos.nl/atomics/basics.html">Rust Atomics and Locks</a> (it covers scoped threads).</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

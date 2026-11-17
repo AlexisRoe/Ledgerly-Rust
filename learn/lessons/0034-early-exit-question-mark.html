@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Early exit: return and ?</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Control flow</p>
+  <h1>Early exit: <code>return</code> and <code>?</code></h1>
+  <p class="lede">The <code>?</code> operator is the most common control flow in Ledgerly. It replaces
+    <code>try</code>/<code>catch</code>-and-rethrow with one character, and it's visible on every line that can
+    fail.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read a chain like <code>.await?.ok_or(UseCaseError::NotFound)?</code>, say exactly which line a function
+      can leave from, and know where <code>?</code> is allowed.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>let Some(x) = opt else { return … };</code> do?</summary>
+      <div>Binds <code>x</code> for the rest of the scope, or runs the <code>else</code>, which must leave. (33)</div></details>
+    <details><summary>What does <code>.ok_or(E)</code> produce from an <code>Option</code>?</summary>
+      <div>A <code>Result</code>: <code>Ok(v)</code> or <code>Err(E)</code>. (24)</div></details>
+  </div>
+
+  <h2>What <code>?</code> does, exactly</h2>
+  <p><code>expr?</code> is shorthand for this <code>match</code>
+    (<a href="https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html#a-shortcut-for-propagating-errors-the--operator">Book
+    9.2, "the ? Operator"</a>):</p>
+  <script type="text/x-code" data-lang="rust">
+    // let actor = load_actor(…)?;   means:
+    let actor = match load_actor(…) {
+        Ok(value) => value,
+        Err(error) => return Err(From::from(error)),   // convert, then leave the function
+    };
+  </script>
+  <ul>
+    <li>On <code>Ok</code>: unwrap the value and continue.</li>
+    <li>On <code>Err</code>: <strong>return from the enclosing function</strong>, converting the error into the
+      function's error type through <code>From</code> (section 8 shows how Ledgerly sets those conversions up).</li>
+    <li>On an <code>Option</code> it works the same way: <code>None</code> returns <code>None</code>. It's only
+      allowed in a function that itself returns <code>Option</code>.</li>
+    <li><code>?</code> works only in functions returning <code>Result</code>/<code>Option</code>. That's one reason
+      <code>main</code> in Ledgerly matches by hand: it returns an <code>ExitCode</code>.</li>
+  </ul>
+
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      async function actor(conn, memberships, team, user): Promise<Actor> {
+        // may throw a DB error — invisible here
+        const role = await memberships.roleOf(conn, team, user);
+        if (role === undefined) throw new NotFound();
+        return new Actor(user, role);
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/access.rs" data-line="15">
+      pub(crate) async fn actor(
+          connection: &mut PgConnection,
+          memberships: &dyn MembershipLookup,
+          team: TeamId,
+          user: UserId,
+      ) -> Result<Actor, UseCaseError> {
+          let role = memberships
+              .role_of(connection, team, user)
+              .await?
+              .ok_or(UseCaseError::NotFound)?;
+          Ok(Actor::new(user, role))
+      }
+    </script>
+  </div>
+  <p>Read the chain top to bottom. <code>.role_of(…)</code> starts a database lookup. <code>.await</code> waits for
+    it (lesson 62). <code>?</code> leaves if the database failed. Now we have an <code>Option&lt;Role&gt;</code>:
+    <code>.ok_or(…)</code> turns "not a member" into an error, and the second <code>?</code> leaves with it. Each
+    <code>?</code> is a visible exit; in TS the first exit is an invisible <code>throw</code> somewhere inside
+    <code>roleOf</code>.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: three exits, one function</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="50">
+      fn checked_fields(
+          incurred_on: NaiveDate,
+          merchant: &str,
+          note: Option<&str>,
+          clock: &dyn Clock,
+      ) -> Result<(Merchant, Option<Note>), InvalidInput> {
+          let merchant = Merchant::new(merchant)?;
+          let note = note.map(Note::new).transpose()?;
+          if incurred_on > clock.today() {
+              return Err(InvalidInput::new("incurredOn", "incurredOn must not be in the future"));
+          }
+          Ok((merchant, note))
+      }
+    </script>
+    <p>The merchant is checked first, then the note, then the date. The first failure returns, which is why the API
+      reports "the first broken field in the order merchant, note, date". (<code>transpose</code> swaps
+      <code>Option&lt;Result&gt;</code> into <code>Result&lt;Option&gt;</code> so <code>?</code> can apply; lesson 47.)</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>A TS <code>throw</code> can come from any call, and nothing at the call site shows it. In Rust you can scan a
+      function for <code>?</code> and <code>return</code> and know every exit. (Panics are the exception, and Ledgerly
+      bans the usual sources.) The cost is a <code>?</code> on many lines; the gain is that error paths are part of
+      reading the code.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex34_question_mark.rs</code>: rewrite a nested <code>match</code> pyramid with
+      <code>?</code>, and use <code>?</code> on an <code>Option</code>. Run <code>cargo test ex34</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">In <code>access::actor</code>, a database error occurs in <code>role_of</code>. Which line ends the
+      function?</p>
+    <ul class="options">
+      <li>The ok_or call, which handles every kind of error</li>
+      <li data-correct>The ? right after .await, returning the error</li>
+      <li>The final Ok(…), which wraps the error value</li>
+      <li>None of them; the error is silently ignored</li>
+    </ul>
+    <div class="explain">The first <code>?</code> sees <code>Err</code> and returns it, converted into a
+      <code>UseCaseError</code>. <code>ok_or</code> only runs on success.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Can you use <code>?</code> inside a function that returns <code>u32</code>?</p>
+    <ul class="options">
+      <li>Yes, it panics on errors in such functions</li>
+      <li>Yes, it returns zero when an error happens</li>
+      <li data-correct>No, the function must return a Result or Option</li>
+      <li>No, ? only works in async functions anyway</li>
+    </ul>
+    <div class="explain"><code>?</code> needs somewhere to return the error to. The compiler error (E0277) says the
+      function must return <code>Result</code> or <code>Option</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>?</code> do to the error before returning it?</p>
+    <ul class="options">
+      <li>Logs it at error level with its full message</li>
+      <li>Wraps it in a generic boxed error by default</li>
+      <li data-correct>Converts it to the function's error type via From</li>
+      <li>Nothing at all; the error types must match exactly</li>
+    </ul>
+    <div class="explain">That's how a <code>CurrencyError</code> becomes a <code>MoneyError</code> inside
+      <code>Money::parse</code>: there's a <code>From</code> conversion between them (lesson 55).</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html">9.2</a>,
+      sections "Propagating Errors", "A Shortcut for Propagating Errors: the ? Operator" and "Where the ? Operator Can
+      Be Used".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Futures vs Promises</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Async Rust</p>
+  <h1>Futures vs Promises</h1>
+  <p class="lede"><code>async</code>/<code>await</code> reads almost exactly like TypeScript. The one big difference:
+    a Rust future does <em>nothing</em> until it's awaited (or handed to a runtime). A Promise starts running the
+    moment you create it.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>async fn</code>, <code>.await</code> and <code>.await?</code> in Ledgerly, explain why
+      <code>main</code> isn't <code>async</code>, and recognise the <code>Pin&lt;Box&lt;dyn Future&lt;…&gt;&gt;&gt;</code>
+      shape as "a Promise behind a trait".</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does Ledgerly's <code>main</code> do with Tokio?</summary>
+      <div>Builds a runtime and runs <code>run(…)</code> on it with <code>block_on</code>. (1)</div></details>
+    <details><summary>What's <code>SummaryFuture&lt;'a&gt;</code>, roughly?</summary>
+      <div>A type alias for a boxed future yielding a <code>ReceiptSummary</code> (or error). (27)</div></details>
+  </div>
+
+  <h2>Same syntax</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      async function actor(conn, team, user): Promise<Actor> {
+        const role = await memberships.roleOf(conn, team, user);
+        if (!role) throw new NotFound();
+        return new Actor(user, role);
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      async fn actor(conn: &mut PgConnection, team: TeamId, user: UserId)
+          -> Result<Actor, UseCaseError> {
+          let role = memberships.role_of(conn, team, user).await?.ok_or(UseCaseError::NotFound)?;
+          Ok(Actor::new(user, role))
+      }
+    </script>
+  </div>
+  <ul>
+    <li><code>async fn f() -&gt; T</code> really returns <code>impl Future&lt;Output = T&gt;</code>, like
+      <code>Promise&lt;T&gt;</code>.</li>
+    <li><code>.await</code> is <em>postfix</em> (after the expression), so it chains: <code>.await?</code> means
+      "wait, then propagate an error".</li>
+    <li><code>.await</code> is only allowed inside <code>async</code> functions or <code>async { }</code> blocks.</li>
+  </ul>
+
+  <h2>Lazy, not eager</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const p = sendEmail(user);  // the email is being sent NOW
+      // … even if nobody ever awaits p
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      let f = send_email(&user);  // nothing has happened yet
+      f.await;                    // now it runs
+      // a future dropped without .await never runs at all
+      // (the compiler warns: "futures do nothing unless you .await or poll them")
+    </script>
+  </div>
+  <p>A future is a state machine the compiler builds from your <code>async fn</code>. Something has to
+    <em>poll</em> it to make progress. In Node, the event loop and V8 do that for every Promise. In Rust, that
+    "something" is a <strong>runtime</strong> library, and Ledgerly uses Tokio
+    (<a href="https://doc.rust-lang.org/book/ch17-01-futures-and-syntax.html">Book 17.1</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: where sync ends and async begins</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/main.rs" data-line="32">
+      let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+          Ok(runtime) => runtime,
+          Err(error) => return failed_to_start(&error),
+      };
+      let result = runtime.block_on(run(config, telemetry.clone()));
+    </script>
+    <p><code>main</code> is ordinary synchronous code. It builds the runtime by hand (most projects write
+      <code>#[tokio::main] async fn main()</code>, which generates the same thing) because some setup must happen
+      before the runtime exists. <code>run(…)</code> creates a future, and <code>block_on</code> drives it to
+      completion: the whole server lives inside that one call.</p>
+  </div>
+
+  <h2>Futures behind traits</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/events/mod.rs" data-line="47">
+    pub trait Publisher: fmt::Debug + Send + Sync {
+        /// Hands `event` over for delivery after the transaction commits.
+        fn publish<'a>(
+            &'a self,
+            connection: &'a mut PgConnection,
+            event: &'a dyn Event,
+        ) -> Pin<Box<dyn Future<Output = sqlx::Result<()>> + Send + 'a>>;
+    }
+  </script>
+  <p>Each <code>async fn</code> produces its own unnamed future type, which doesn't work with <code>dyn Trait</code>
+    (lesson 53). So trait methods used as <code>Arc&lt;dyn Publisher&gt;</code> return a <em>boxed</em> future instead.
+    Read the return type as <code>Promise&lt;sqlx::Result&lt;()&gt;&gt;</code>:</p>
+  <ul>
+    <li><code>dyn Future&lt;Output = …&gt;</code>: some future producing that value.</li>
+    <li><code>Box</code>: on the heap, because its size isn't known. <code>Pin</code>: it won't move in memory once
+      polled (needed for futures that borrow from themselves; you never handle it directly).</li>
+    <li><code>+ Send</code>: may move between threads. <code>+ 'a</code>: borrows <code>self</code>, the connection
+      and the event while it runs.</li>
+  </ul>
+  <p>Implementations write <code>Box::pin(async move { … })</code>.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Lazy futures mean "fire and forget" doesn't happen by accident. To run something in the background you must
+      <code>tokio::spawn</code> it (next lesson). And there's no unhandled-rejection warning to rely on: a future
+      returning <code>Result</code> that you <code>.await</code> but don't use triggers the normal "unused
+      Result" warning instead.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q"><code>let f = publisher.publish(&amp;mut tx, &amp;event);</code> and then the function returns
+      without <code>.await</code>. Was the event published?</p>
+    <ul class="options">
+      <li>Yes, the future started running when it was created</li>
+      <li data-correct>No, futures do nothing until they're awaited or polled</li>
+      <li>Yes, but only after the current function has returned</li>
+      <li>It depends on whether the runtime is multi-threaded</li>
+    </ul>
+    <div class="explain">Rust futures are lazy. Dropping one cancels it before it starts, and the compiler warns
+      about it.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why isn't Ledgerly's <code>main</code> an <code>async fn</code>?</p>
+    <ul class="options">
+      <li>Rust doesn't allow main to be async at all</li>
+      <li data-correct>It sets things up before building the runtime itself</li>
+      <li>Async main functions can't return an ExitCode value ever</li>
+      <li>Tokio requires binaries to block in main manually</li>
+    </ul>
+    <div class="explain">The comment says it: the telemetry exporter uses a blocking HTTP client and must be created
+      before the runtime exists. <code>#[tokio::main]</code> would hide that order.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How would you read <code>Pin&lt;Box&lt;dyn Future&lt;Output = Result&lt;Verdict, ScanError&gt;&gt; + Send&gt;&gt;</code>?</p>
+    <ul class="options">
+      <li>A pinned result that is already available right now</li>
+      <li data-correct>Like a Promise of Result&lt;Verdict, ScanError&gt;, boxed for traits</li>
+      <li>A thread handle that returns the verdict much later</li>
+      <li>A stream of verdicts arriving one at a time</li>
+    </ul>
+    <div class="explain">A heap-allocated future yielding that result, safe to move between threads.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch17-00-async-await.html">chapter 17 "Async and Await"</a>,
+      sections 17.0 and 17.1. The <a href="https://tokio.rs/tokio/tutorial/async">Tokio tutorial's "Async in
+      depth"</a> explains polling if you're curious.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

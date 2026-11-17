@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Comments and doc comments</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Basic syntax and code organisation</p>
+  <h1>Comments and doc comments</h1>
+  <p class="lede">Three kinds of comment: <code>//</code>, <code>///</code> and <code>//!</code>. Two of them become
+    documentation, and the code examples in them run as tests.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can tell at a glance whether a comment is a note, docs for the next item, or docs for the whole module,
+      and you know that <code>```</code> blocks in docs are compiled and run.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What turns an expression into a statement?</summary>
+      <div>A trailing semicolon. The statement's value is <code>()</code>.</div></details>
+    <details><summary>Where does a function's return type go?</summary>
+      <div>After <code>-&gt;</code>: <code>fn rank(self) -&gt; u8</code>. Without one, the function returns
+        <code>()</code>.</div></details>
+  </div>
+
+  <h2>The three kinds</h2>
+  <table>
+    <thead><tr><th>Rust</th><th>TypeScript</th><th>Documents</th></tr></thead>
+    <tbody>
+      <tr><td><code>// note</code>, <code>/* … */</code></td><td>same</td><td>Nothing; for the reader of the code</td></tr>
+      <tr><td><code>/// text</code></td><td><code>/** JSDoc */</code> above a declaration</td><td>The item that <strong>follows</strong>: fn, struct, enum, field, variant</td></tr>
+      <tr><td><code>//! text</code></td><td><code>@packageDocumentation</code> / <code>@module</code></td><td>The item that <strong>contains</strong> it: the module or crate (top of a file)</td></tr>
+    </tbody>
+  </table>
+  <p>Doc comments are written in <strong>Markdown</strong>, not with <code>@param</code> tags. Rust signatures
+    already carry the types. <code>cargo doc --open</code> renders them as HTML, and rust-analyzer shows them on
+    hover (<a href="https://doc.rust-lang.org/book/ch03-04-comments.html">Book 3.4</a>,
+    <a href="https://doc.rust-lang.org/rustdoc/how-to-write-documentation.html">rustdoc guide</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: all three in one file</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/lib.rs" data-line="1">
+      //! The expenses module: the `Expense` aggregate and its approval workflow.
+      //!
+      //! Java counterpart: `src/main/java/com/ledgerly/expenses/` in Ledgerly-Java at the commit in
+      //! `vendor/ledgerly-java/SOURCE`.
+      // …
+      /// The expense endpoints, ready to be merged into the API's route table.
+      ///
+      /// Roles come from `teams` on every call. A submit asks `receipts` for the expense's receipts. Every change
+      /// publishes an [`ExpenseEvent`] through `events`, in its transaction. Lists are capped at
+      /// `limits.max_page_size`.
+      #[must_use]
+      pub fn routes(
+    </script>
+    <p><code>//!</code> describes the crate <code>ledgerly_expenses</code> itself. <code>///</code> describes
+      <code>routes</code>. <code>[`ExpenseEvent`]</code> is an <strong>intra-doc link</strong>: rustdoc resolves the
+      name like code does and warns if it doesn't exist.</p>
+  </div>
+
+  <h2>Doc tests: examples that can't go stale</h2>
+  <p>A fenced code block inside a doc comment is compiled and run by <code>cargo test</code> (Ledgerly:
+    <code>cargo test --doc</code> inside <code>just test</code>). Ledgerly uses one to prove a point no ordinary
+    test could, namely that some code <em>doesn't</em> compile:</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/id.rs" data-line="9">
+    //! ```
+    //! use ledgerly_shared::id::{ExpenseId, TeamId};
+    //!
+    //! fn find(_team: TeamId, _expense: ExpenseId) {}
+    //!
+    //! find(TeamId::new_v7(), ExpenseId::new_v7());
+    //! ```
+    //!
+    //! Swapping the two arguments is a type error, not a bug found in a test:
+    //!
+    //! ```compile_fail,E0308
+    //! use ledgerly_shared::id::{ExpenseId, TeamId};
+    //!
+    //! fn find(_team: TeamId, _expense: ExpenseId) {}
+    //!
+    //! find(ExpenseId::new_v7(), TeamId::new_v7());
+    //! ```
+  </script>
+  <p>The first block must compile and run. The second is marked <code>compile_fail,E0308</code>: the test
+    <em>passes only if</em> it fails to compile with a type mismatch. If someone made ids interchangeable, this
+    test would break (<a href="https://doc.rust-lang.org/rustdoc/write-documentation/documentation-tests.html">rustdoc:
+    documentation tests</a>). Other markers: <code>```text</code> (not code, as in <code>action.rs</code>'s
+    diagram), <code>```ignore</code>, <code>```no_run</code>.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>JSDoc examples are prose, and nothing checks them. Rust's are tests. Also, <code>///</code> is <em>not</em>
+      a stylistic variant of <code>//</code>: it attaches to the next item, so a <code>///</code> before nothing
+      (for example inside a function body, before a <code>let</code>) produces a warning, "unused doc comment".</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it</span>
+    <ol>
+      <li>Hover over <code>routes</code> where <code>crates/app/src/lib.rs</code> calls
+        <code>ledgerly_expenses::routes</code> (search for it). rust-analyzer shows the <code>///</code> text.</li>
+      <li>Run <code>cargo doc -p ledgerly-shared --no-deps --open</code> and open the <code>id</code> module. The
+        <code>//!</code> text is the page's introduction.</li>
+      <li>Run <code>cargo test -p ledgerly-shared --doc id</code> and find the <code>compile_fail</code> test in the
+        output.</li>
+    </ol>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A file starts with <code>//! Typed ids: one newtype per kind of thing</code>. What does it
+      document?</p>
+    <ul class="options">
+      <li>The first item declared below it</li>
+      <li data-correct>The module that this file defines</li>
+      <li>Nothing; it's an ordinary code comment</li>
+      <li>The crate's README on crates.io</li>
+    </ul>
+    <div class="explain"><code>//!</code> documents the enclosing item. At the top of <code>id.rs</code>, that's
+      the <code>id</code> module.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">When does a <code>compile_fail</code> doc test pass?</p>
+    <ul class="options">
+      <li>When the code compiles and runs without panicking</li>
+      <li data-correct>When the code fails to compile, as expected</li>
+      <li>When the code panics while the test runs</li>
+      <li>Never; such tests are skipped by default</li>
+    </ul>
+    <div class="explain">It asserts a compile error, optionally with a specific code like E0308. Useful to pin down
+      what the type system forbids.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How do you document a parameter in a <code>///</code> comment?</p>
+    <ul class="options">
+      <li>With a JSDoc-style @param tag for every argument</li>
+      <li data-correct>In Markdown prose, since types are in signatures</li>
+      <li>With an attribute such as #[param(name)] above it</li>
+      <li>Parameters can't be documented in Rust at all</li>
+    </ul>
+    <div class="explain">rustdoc has no tags. Ledgerly's docs name parameters in backticks inside sentences, like
+      "capped at <code>limits.max_page_size</code>".</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch03-04-comments.html">3.4 "Comments"</a> (short), then
+      <a href="https://doc.rust-lang.org/book/ch14-02-publishing-to-crates-io.html">14.2</a>, section "Making Useful
+      Documentation Comments".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sharing state across tasks</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Async Rust</p>
+  <h1>Sharing state across tasks</h1>
+  <p class="lede">In Node, a module-level <code>Map</code> is shared by every request for free. In Ledgerly, requests
+    run in parallel on several threads, so shared state needs a recipe: <code>Arc</code> to share, a lock to change,
+    <code>Clone</code> to hand it out.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read the rate limiter's <code>Arc&lt;Mutex&lt;HashMap&lt;…&gt;&gt;&gt;</code>, explain why handler
+      state types derive <code>Clone</code>, and recognise a <code>watch</code> channel used as a shutdown switch.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What do <code>Send</code> and <code>Sync</code> mean?</summary>
+      <div>Can be moved to another thread / can be shared between threads by reference. (53)</div></details>
+    <details><summary>What does <code>Arc</code> allow, and what doesn't it?</summary>
+      <div>Many owners across threads; only shared (read-only) access to the inside. (42)</div></details>
+  </div>
+
+  <h2>The recipe</h2>
+  <table>
+    <thead><tr><th>Need</th><th>Use</th><th>Ledgerly example</th></tr></thead>
+    <tbody>
+      <tr><td>read-only service shared by all requests</td><td><code>Arc&lt;T&gt;</code> / <code>Arc&lt;dyn Trait&gt;</code></td><td><code>clock</code>, <code>events</code>, <code>memberships</code></td></tr>
+      <tr><td>shared data that changes</td><td><code>Arc&lt;Mutex&lt;T&gt;&gt;</code> (or <code>RwLock</code>)</td><td>rate limiter buckets</td></tr>
+      <tr><td>a resource that already shares internally</td><td>just <code>.clone()</code> it</td><td><code>PgPool</code></td></tr>
+      <tr><td>"tell everyone something happened"</td><td>a channel: <code>tokio::sync::watch</code>, <code>mpsc</code>, <code>oneshot</code></td><td>the shutdown switch</td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://tokio.rs/tokio/tutorial/shared-state">Tokio tutorial: shared state</a>,
+    <a href="https://doc.rust-lang.org/book/ch16-03-shared-state.html">Book 16.3</a>.)</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: the rate limiter</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/ratelimit.rs" data-line="92">
+      /// The token buckets of one process. Cheap to clone; clones share the buckets.
+      #[derive(Debug, Clone)]
+      pub struct RateLimiter {
+          clock: Arc<dyn Clock>,
+          buckets: Arc<Mutex<HashMap<String, Entry>>>,
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/ratelimit.rs" data-line="143">
+      let now = nanos(self.clock.now());
+      let accessed = Instant::now();
+      let mut buckets = self.buckets.lock().unwrap_or_else(PoisonError::into_inner);
+      // … find or create the bucket, use it …
+    </script>
+    <ul>
+      <li><code>lock()</code> waits until no one else holds the lock and returns a <em>guard</em>. Through the guard you
+        get <code>&amp;mut HashMap</code>, and when the guard is dropped (end of the function) the lock is released.
+        That's ownership doing the unlocking (lesson 36).</li>
+      <li>A lock is "poisoned" if a thread panicked while holding it. <code>unwrap_or_else(PoisonError::into_inner)</code>
+        means "use the data anyway", because a token count is still fine (and <code>unwrap</code> is banned).</li>
+      <li>The lock is held only for a quick in-memory update and never across an <code>.await</code>, which is why a
+        plain <code>std::sync::Mutex</code> is fine here. Holding a std mutex across <code>.await</code> is a classic
+        mistake, and Tokio's own <code>Mutex</code> exists for that case.</li>
+    </ul>
+  </div>
+
+  <h2>Why handler state is <code>Clone</code></h2>
+  <p><code>ExpensesApi</code> derives <code>Clone</code>, and axum's <code>State&lt;ExpensesApi&gt;</code> clones it
+    for each request. That's cheap because its fields are use cases whose fields are <code>Arc</code>s and a
+    <code>PgPool</code>. Each clone is a bundle of handles to the same shared services. This is the Rust shape of
+    "inject singletons into each request".</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a shutdown switch any task can wait on</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/server.rs" data-line="13">
+      /// The switch that starts a shutdown. Cloning gives another handle to the same switch.
+      #[derive(Debug, Clone)]
+      pub(crate) struct Shutdown {
+          started: watch::Sender<bool>,
+      }
+    </script>
+    <p>A <code>watch</code> channel holds one value that many receivers can observe. <code>start()</code> flips it
+      to <code>true</code>; <code>wait()</code> completes once it's <code>true</code>, immediately if it already is.
+      In Node you'd use an <code>EventEmitter</code> or an <code>AbortSignal</code>.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In Node, data races are impossible because only one callback runs at a time. In Rust they're impossible
+      because the compiler refuses to share non-<code>Sync</code> data or mutate shared data without a lock. Try
+      putting a plain <code>HashMap</code> in an <code>Arc</code> and calling <code>insert</code>: it doesn't compile
+      (no <code>&amp;mut</code> through an <code>Arc</code>). Same safety, enforced by types instead of by a
+      single thread.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">When is the rate limiter's lock released?</p>
+    <ul class="options">
+      <li>When unlock() is called at the end</li>
+      <li data-correct>When the guard returned by lock() is dropped</li>
+      <li>When the request that took it has finished</li>
+      <li>When the runtime runs its next garbage collection</li>
+    </ul>
+    <div class="explain">The <code>MutexGuard</code> releases the lock in its drop. There's no <code>unlock()</code>
+      to forget.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why is cloning <code>ExpensesApi</code> per request cheap?</p>
+    <ul class="options">
+      <li>Clone is always free in Rust for every type</li>
+      <li data-correct>Its fields are Arcs and a pool: clones share them</li>
+      <li>axum clones it once at startup and reuses that</li>
+      <li>ExpensesApi is Copy, so the clone is a memcpy</li>
+    </ul>
+    <div class="explain">Cloning an <code>Arc</code> or <code>PgPool</code> copies a pointer and bumps a count.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's wrong with holding a <code>std::sync::Mutex</code> guard across an <code>.await</code>?</p>
+    <ul class="options">
+      <li>Nothing; std and Tokio mutexes behave the same</li>
+      <li data-correct>The task may pause while locked, blocking others</li>
+      <li>The guard is dropped automatically at every await</li>
+      <li>It turns the async function into blocking code</li>
+    </ul>
+    <div class="explain">While suspended the task still holds the lock, and other threads trying to lock it block.
+      (The compiler also often refuses, because the guard isn't <code>Send</code>.)</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Tokio tutorial, <a href="https://tokio.rs/tokio/tutorial/shared-state">"Shared state"</a>. It builds the
+      exact <code>Arc&lt;Mutex&lt;HashMap&gt;&gt;</code> pattern and discusses holding locks across
+      <code>.await</code>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

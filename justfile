@@ -161,3 +161,18 @@ parity url="":
 # Run the vendored Bruno collection against a running `local` app (`just up` first).
 api-test:
     cd bruno && npx --yes @usebruno/cli@4.3.0 run --env local -r
+
+# --- course website ---
+
+# Links leaving the site go to GitHub at `ref` (default: the current commit, which must be pushed).
+# Build the course in learn/ as a static site in dist/, for Cloudflare Pages.
+learn-build ref="":
+    python3 scripts/build-learn-site.py {{ if ref == "" { "" } else { "--ref " + quote(ref) } }}
+
+# Build the course site and serve dist/ on http://localhost:8000 to check it before deploying.
+learn-serve: learn-build
+    python3 -m http.server 8000 --directory dist
+
+# Build the course site and upload dist/ to the Cloudflare Pages project `project` (needs `npx wrangler login`).
+learn-deploy project="ledgerly-rust": learn-build
+    npx --yes wrangler pages deploy dist --project-name {{ quote(project) }}

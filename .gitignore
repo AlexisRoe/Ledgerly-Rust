@@ -32,3 +32,11 @@ rustc-ice-*.txt
 
 # Scratch space for agents and experiments
 .scratch/
+
+# learning application
+/dist
+/dist/**/*
+__pycache__
+**/__pycache__
+**/__pycache__/*
+**/__pycache__/**

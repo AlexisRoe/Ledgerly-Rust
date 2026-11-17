@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Files become modules</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Basic syntax and code organisation</p>
+  <h1>Files become modules</h1>
+  <p class="lede">In TypeScript every file is a module the moment it exists. In Rust a file is only part of the
+    program once a parent says <code>mod name;</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>Given any <code>.rs</code> file in Ledgerly, you can find the <code>mod</code> line that pulls it in, and given a
+      <code>mod x;</code> line, you can find the file it refers to.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>//!</code> document, compared with <code>///</code>?</summary>
+      <div><code>//!</code> documents the enclosing module or crate. <code>///</code> documents the next item.</div></details>
+    <details><summary>What's the entry file of a library crate, and of a binary crate?</summary>
+      <div><code>src/lib.rs</code> and <code>src/main.rs</code>.</div></details>
+  </div>
+
+  <h2>The module tree is declared, not discovered</h2>
+  <p>A crate is compiled from <strong>one root file</strong>: <code>lib.rs</code> or <code>main.rs</code>. The compiler
+    doesn't scan the folder. It follows <code>mod</code> declarations, and each one says "there's a child module
+    called this; go find its code":</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/lib.rs" data-line="8">
+    mod application;
+    mod domain;
+    mod events;
+    mod facade;
+    mod persistence;
+    mod receipt_checks;
+    mod web;
+  </script>
+  <p>For <code>mod events;</code> written in <code>src/lib.rs</code>, the compiler looks for either
+    (<a href="https://doc.rust-lang.org/book/ch07-05-separating-modules-into-different-files.html">Book 7.5</a>):</p>
+  <table>
+    <thead><tr><th>Declared in</th><th>Declaration</th><th>File (option A)</th><th>File (option B)</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/lib.rs</code></td><td><code>mod events;</code></td><td><code>src/events.rs</code></td><td><code>src/events/mod.rs</code></td></tr>
+      <tr><td><code>src/lib.rs</code></td><td><code>mod domain;</code></td><td><code>src/domain.rs</code></td><td><code>src/domain/mod.rs</code> ← Ledgerly</td></tr>
+      <tr><td><code>src/domain/mod.rs</code></td><td><code>mod action;</code></td><td><code>src/domain/action.rs</code></td><td><code>src/domain/action/mod.rs</code></td></tr>
+    </tbody>
+  </table>
+  <p>Ledgerly uses a plain file for a module without children (<code>events.rs</code>, <code>facade.rs</code>) and a
+    folder with <code>mod.rs</code> for one with children (<code>domain/</code>, <code>web/</code>). Think of
+    <code>mod.rs</code> as a folder's <code>index.ts</code>.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: one level down</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/mod.rs" data-line="1">
+      //! The pure core of the expenses module: no I/O, no async, time only through `Clock` (CONCEPT §3, rule 4).
+
+      #![cfg_attr(not(test), deny(clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
+      mod action;
+      mod actor;
+      mod category;
+      mod error;
+      mod expense;
+      mod status;
+      mod text;
+    </script>
+    <p>So <code>crates/expenses/src/domain/action.rs</code> has the module path
+      <code>crate::domain::action</code>. The tree mirrors the folders, but only because each level
+      <em>declares</em> its children.</p>
+  </div>
+
+  <h2>Modules that exist only sometimes</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/mod.rs" data-line="8">
+    mod csv;
+    mod dto;
+    #[cfg(test)]
+    mod export_tests;
+    #[cfg(test)]
+    mod list_tests;
+    pub(crate) mod problem;
+    #[cfg(test)]
+    mod tests;
+  </script>
+  <p><code>#[cfg(test)]</code> is an attribute that means "only compile the next item when building tests". The test
+    files are real modules, but they don't exist in the production binary at all. (<code>pub(crate)</code> is
+    visibility; that's lesson 13.)</p>
+
+  <h3>Inline modules</h3>
+  <p>A module can also be written in place, with braces. You'll see this at the bottom of many files:</p>
+  <script type="text/x-code" data-lang="rust">
+    #[cfg(test)]
+    mod tests {
+        use super::*;   // everything from the parent module (lesson 12)
+
+        #[test]
+        fn it_works() { /* … */ }
+    }
+  </script>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <ul>
+      <li><strong>A file nobody declares is ignored.</strong> Create <code>src/domain/new_rule.rs</code> and forget
+        <code>mod new_rule;</code>: it isn't compiled, not even checked. No error, no warning. rust-analyzer shows a
+        hint that the file isn't part of the crate.</li>
+      <li><strong>Modules aren't imports.</strong> In TS, <code>import</code> both loads a file and brings names into
+        scope. In Rust, <code>mod</code> <em>adds</em> a file to the tree (once, in its parent), and
+        <code>use</code> creates shortcuts to names (anywhere, any number of times). Next lesson.</li>
+    </ul>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it</span>
+    <ol>
+      <li>Open <code>crates/shared/src/lib.rs</code> and list its <code>mod</code> lines. For each, predict whether
+        the code lives in <code>x.rs</code> or <code>x/mod.rs</code>, then check in the file explorer.</li>
+      <li>What is the module path of <code>crates/shared/src/money/currency.rs</code>? Which line makes it part of
+        the crate?</li>
+    </ol>
+    <details class="reveal"><summary>Answer to 2</summary>
+      <div><code>crate::money::currency</code>. Two lines put it in the tree: <code>pub mod money;</code> in
+        <code>crates/shared/src/lib.rs</code> and <code>mod currency;</code> in
+        <code>crates/shared/src/money/mod.rs</code>. Because that second line has no <code>pub</code>, other crates
+        can't name <code>ledgerly_shared::money::currency</code>. You'll see how they reach <code>Currency</code>
+        anyway in lesson 13.</div></details>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">You add <code>crates/expenses/src/domain/limits.rs</code> with a function, but nothing else. What
+      happens on <code>cargo build</code>?</p>
+    <ul class="options">
+      <li>It's compiled and can be used everywhere</li>
+      <li>The build fails with an orphan-file error</li>
+      <li data-correct>The file is silently ignored by the compiler</li>
+      <li>It becomes a new crate in the workspace</li>
+    </ul>
+    <div class="explain">Only files reached through <code>mod</code> declarations are compiled. Add
+      <code>mod limits;</code> to <code>domain/mod.rs</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Where is the code for <code>mod web;</code> declared in <code>crates/expenses/src/lib.rs</code>?</p>
+    <ul class="options" data-fixed>
+      <li>src/lib/web.rs</li>
+      <li data-correct>src/web.rs or src/web/mod.rs</li>
+      <li>src/web/index.rs</li>
+      <li>web.rs anywhere in the crate</li>
+    </ul>
+    <div class="explain">A child of the crate root lives next to it: <code>src/web.rs</code>, or
+      <code>src/web/mod.rs</code> when it has children of its own. Ledgerly uses the latter.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>#[cfg(test)] mod tests;</code> achieve?</p>
+    <ul class="options">
+      <li>Marks the module as deprecated outside tests</li>
+      <li data-correct>Compiles the module only for test builds</li>
+      <li>Runs the module's code before every test</li>
+      <li>Hides the module from rust-analyzer's index</li>
+    </ul>
+    <div class="explain"><code>cfg</code> is conditional compilation. Under <code>cargo build</code> the module
+      doesn't exist. Under <code>cargo test</code> it does.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch07-02-defining-modules-to-control-scope-and-privacy.html">7.2
+      "Defining Modules"</a> (its cheat sheet at the top is excellent) and
+      <a href="https://doc.rust-lang.org/book/ch07-05-separating-modules-into-different-files.html">7.5 "Separating
+      Modules into Different Files"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

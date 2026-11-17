@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Statements, expressions and the missing semicolon</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Basic syntax and code organisation</p>
+  <h1>Statements, expressions and the missing semicolon</h1>
+  <p class="lede">Why most Ledgerly functions end without <code>return</code>, and why one stray <code>;</code>
+    changes the meaning.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read a function signature (<code>fn name(param: Type) -&gt; ReturnType</code>) and tell which line
+      produces the return value.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's TypeScript's <code>const</code> in Rust, and TypeScript's <code>let</code>?</summary>
+      <div><code>let</code> and <code>let mut</code>.</div></details>
+    <details><summary>Which casing do Rust functions use?</summary>
+      <div><code>snake_case</code>. Types use <code>CamelCase</code>, constants <code>SCREAMING_SNAKE_CASE</code>.</div></details>
+  </div>
+
+  <h2>Functions</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      function includes(self: Role, other: Role): boolean {
+        return rank(self) >= rank(other);
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/role.rs" data-line="35">
+      pub const fn includes(self, other: Self) -> bool {
+          self.rank() >= other.rank()
+      }
+    </script>
+  </div>
+  <p>Parameters are <code>name: Type</code>, as in TS, and every parameter type is mandatory. The return type comes
+    after <code>-&gt;</code>. Without it the function returns <code>()</code>, the "unit" type, Rust's
+    <code>void</code>. Ignore <code>pub</code>, <code>const</code> and <code>self</code> for now (lessons 13, 21,
+    44).</p>
+  <p>And the body has <strong>no <code>return</code> and no semicolon</strong>. That's the point of this lesson.</p>
+
+  <h2>Expressions produce values, statements don't</h2>
+  <p>Rust is an <em>expression language</em>: almost everything produces a value, including blocks
+    <code>{ … }</code>, <code>if</code> and <code>match</code>. The rule
+    (<a href="https://doc.rust-lang.org/book/ch03-03-how-functions-work.html">Book 3.3</a>):</p>
+  <ul>
+    <li>A block's value is its <strong>last expression</strong>, if that expression has no semicolon.</li>
+    <li>Adding <code>;</code> turns an expression into a <strong>statement</strong>, which produces
+      <code>()</code>, i.e. nothing.</li>
+    <li>A function body is a block, so its last expression is the return value.</li>
+  </ul>
+  <script type="text/x-code" data-lang="rust">
+    fn double(x: i32) -> i32 {
+        x * 2          // expression: this is the return value
+    }
+
+    fn broken(x: i32) -> i32 {
+        x * 2;         // statement: the block now ends in (), not i32
+    }                  // error[E0308]: mismatched types … help: remove this semicolon
+
+    let size = {       // a block used as a value, like an IIFE in JS
+        let base = 10;
+        base * 2       // size = 20
+    };
+  </script>
+  <p><code>return x;</code> still exists. Ledgerly uses it for <strong>early</strong> exits, as in
+    <code>main</code>'s <code>Err(error) =&gt; return failed_to_start(&amp;error)</code>. Idiomatic Rust uses no
+    <code>return</code> for the final value.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <p>The whole body of <code>as_str</code> is one <code>match</code> expression. Its value, a string, is the
+      function's return value. Each arm <code>Pattern =&gt; value,</code> is also an expression.</p>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/role.rs" data-line="41">
+      pub const fn as_str(self) -> &'static str {
+          match self {
+              Self::Member => "MEMBER",
+              Self::Approver => "APPROVER",
+              Self::Owner => "OWNER",
+          }
+      }
+    </script>
+    <p>In TypeScript you'd write a <code>switch</code> with a <code>return</code> in each <code>case</code>.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Arrow functions have a taste of this: <code>(x) =&gt; x * 2</code> returns without <code>return</code>, but
+      <code>(x) =&gt; { x * 2 }</code> returns <code>undefined</code>. In Rust it's the <em>semicolon</em>, not the
+      braces, that decides, and it applies to every block: <code>if</code> branches, <code>match</code> arms,
+      loops. The compiler catches the mistake (E0308) because the types don't line up.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p>Open <code>learn/playground/src/ex09_expressions.rs</code>. Fix the three functions so that
+      <code>cargo test ex09</code> passes, without writing <code>return</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What does this function return?</p>
+    <script type="text/x-code" data-lang="rust">
+      fn f() -> i32 {
+          let a = 3;
+          a + 1
+      }
+    </script>
+    <ul class="options" data-fixed>
+      <li>3</li>
+      <li data-correct>4</li>
+      <li>()</li>
+      <li>It doesn't compile</li>
+    </ul>
+    <div class="explain"><code>a + 1</code> has no semicolon, so it's the value of the body.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's the type of <code>x</code> in <code>let x = { 5; };</code>?</p>
+    <ul class="options" data-fixed>
+      <li>i32</li>
+      <li data-correct>()</li>
+      <li>Option&lt;i32&gt;</li>
+      <li>It doesn't compile</li>
+    </ul>
+    <div class="explain">The semicolon makes <code>5;</code> a statement. The block has no final expression, so
+      its value is <code>()</code>. (It compiles; clippy would complain.)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A function with no <code>-&gt; Type</code> returns what?</p>
+    <ul class="options">
+      <li>Nothing; Rust functions can't return void</li>
+      <li data-correct>The unit value (), like void</li>
+      <li>Whatever its last expression evaluates to</li>
+      <li>An Option that is always None</li>
+    </ul>
+    <div class="explain">The implicit return type is <code>()</code>. If the last expression has another type,
+      that's a type error.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">When does idiomatic Rust write <code>return</code>?</p>
+    <ul class="options">
+      <li>On every line that produces a result</li>
+      <li data-correct>Only to leave a function early</li>
+      <li>Only inside closures and async functions</li>
+      <li>Never; the keyword was removed in 2024</li>
+    </ul>
+    <div class="explain">The final value is the last expression. <code>return</code> is for early exits, such as
+      bailing out on an error.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch03-03-how-functions-work.html">3.3 "Functions"</a>,
+      especially "Statements and Expressions" and "Functions with Return Values".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

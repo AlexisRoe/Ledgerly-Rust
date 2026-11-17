@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Result: errors as values</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Data types</p>
+  <h1><code>Result</code>: errors as values</h1>
+  <p class="lede">No <code>throw</code>, no <code>try</code>/<code>catch</code>. A function that can fail says so in
+    its return type, and the caller can't ignore it.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>Result&lt;T, E&gt;</code> signatures in Ledgerly, including
+      <code>Result&lt;(), E&gt;</code> and <code>Result&lt;Option&lt;T&gt;, E&gt;</code>, handle one with
+      <code>match</code>, and recognise <code>?</code> as "return the error to my caller".</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Translate TS <code>user?.name</code> and <code>x ?? 0</code> to Option methods.</summary>
+      <div><code>user.map(|u| u.name)</code> and <code>x.unwrap_or(0)</code>.</div></details>
+    <details><summary>What does <code>.ok_or(E)</code> turn an <code>Option</code> into?</summary>
+      <div>A <code>Result</code>: <code>Some(v)</code> → <code>Ok(v)</code>, <code>None</code> → <code>Err(E)</code>.</div></details>
+  </div>
+
+  <h2>Another enum</h2>
+  <script type="text/x-code" data-lang="rust" data-label="The standard library's definition (simplified)">
+    pub enum Result<T, E> {
+        Ok(T),
+        Err(E),
+    }
+  </script>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      // The signature hides that it can fail.
+      function parseMoney(amount: string, code: string): Money {
+        const value = parseDecimal(amount);       // may throw
+        if (value === undefined) throw new MoneyError("Not a valid decimal number");
+        const currency = Currency.fromCode(code); // may throw
+        return Money.of(value, currency);         // may throw
+      }
+
+      try {
+        const money = parseMoney(body.amount, body.currency);
+      } catch (e) {               // e: unknown
+        return badRequest(String(e));
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/money/mod.rs" data-line="86">
+      pub fn parse(amount: &str, currency_code: &str) -> Result<Self, MoneyError> {
+          let amount = JavaDecimal::parse(amount).ok_or(MoneyError::NotADecimal)?;
+          let currency = Currency::from_code(currency_code)?;
+          Self::from_java_decimal(&amount, currency)
+      }
+      // caller:
+      // match Money::parse(&body.amount, &body.currency) {
+      //     Ok(money) => /* use it */,
+      //     Err(error) => /* error: MoneyError, a precise type */,
+      // }
+    </script>
+  </div>
+  <ul>
+    <li>The <strong>signature tells the truth</strong>: <code>-&gt; Result&lt;Self, MoneyError&gt;</code> can fail, and
+      only with a <code>MoneyError</code>. Ledgerly's doc comments add a <code># Errors</code> section listing which
+      variants, in which order.</li>
+    <li>You can't use the <code>Money</code> without getting past the <code>Err</code> case. Ignoring a
+      <code>Result</code> entirely is a compiler warning (<code>unused Result that must be used</code>).</li>
+    <li><strong><code>?</code></strong> after a <code>Result</code>: if it's <code>Ok(v)</code>, take
+      <code>v</code>; if it's <code>Err(e)</code>, <strong>return <code>Err(e)</code> from the current function
+      immediately</strong>, converting the error type if needed. It's the "rethrow" that you write explicitly.
+      Lesson 34 and section 8 go deeper.</li>
+  </ul>
+
+  <h2>Shapes you'll see constantly</h2>
+  <table>
+    <thead><tr><th>Signature</th><th>Means</th><th>TS feel</th></tr></thead>
+    <tbody>
+      <tr><td><code>Result&lt;Money, MoneyError&gt;</code></td><td>a value, or a typed error</td><td><code>Money</code> that may throw</td></tr>
+      <tr><td><code>Result&lt;(), ExpenseError&gt;</code></td><td>"it worked", or why not</td><td><code>void</code> that may throw</td></tr>
+      <tr><td><code>Result&lt;Option&lt;Expense&gt;, PersistenceError&gt;</code></td><td>the query failed, or it worked and found one or none</td><td><code>Promise&lt;Expense | undefined&gt;</code> that may reject</td></tr>
+    </tbody>
+  </table>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: "not found" is not an error</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/persistence/mod.rs" data-line="42">
+      pub(crate) async fn find(
+          connection: &mut PgConnection,
+          team: TeamId,
+          id: ExpenseId,
+      ) -> Result<Option<Versioned<Expense>>, PersistenceError> {
+    </script>
+    <p>The outer <code>Result</code> says the <em>database call</em> can fail. The inner <code>Option</code> says a
+      successful query may find nothing. The application layer then decides that <code>None</code> means HTTP 404
+      (the <code>access::load</code> chain in the last lesson).</p>
+  </div>
+
+  <h2>A few methods</h2>
+  <table>
+    <thead><tr><th>Method</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>r.is_ok()</code> / <code>r.is_err()</code></td><td><code>bool</code></td></tr>
+      <tr><td><code>r.map(|v| …)</code></td><td>transform the <code>Ok</code> value</td></tr>
+      <tr><td><code>r.map_err(|e| …)</code></td><td>transform the error, often into another error type</td></tr>
+      <tr><td><code>r.ok()</code></td><td><code>Result</code> → <code>Option</code>, dropping the error</td></tr>
+      <tr><td><code>r.unwrap_or(default)</code></td><td>value or fallback</td></tr>
+      <tr><td><code>r.unwrap()</code> / <code>r.expect("…")</code></td><td>value, or <strong>panic</strong>: tests only in Ledgerly</td></tr>
+    </tbody>
+  </table>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Libraries like <code>neverthrow</code> or Effect bring <code>Result</code> to TS, but they compete with
+      <code>throw</code>, so anything can still blow up. In Rust, <code>Result</code> is <em>the</em> way to fail.
+      Panics exist, but they're for bugs, not for expected failures like bad input (<a data-lesson="57"></a>).
+      Also, <code>catch (e)</code> gives you <code>unknown</code>, while <code>Err(e)</code> gives you exactly the
+      declared error type, usually an enum you can <code>match</code> on.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex25_result.rs</code>: a validating constructor returning <code>Result</code>,
+      a function chaining two of them with <code>?</code>, and a caller that <code>match</code>es. Run
+      <code>cargo test ex25</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What does <code>Result&lt;(), ExpenseError&gt;</code> as the return type of <code>approve</code>
+      mean?</p>
+    <ul class="options">
+      <li>It always fails and returns an ExpenseError value</li>
+      <li data-correct>Success carries no value; failure carries the reason</li>
+      <li>It returns either nothing or an expense value</li>
+      <li>The error type stays unknown at compile time</li>
+    </ul>
+    <div class="explain"><code>()</code> is "nothing". The interesting information is whether it worked, and if
+      not, which <code>ExpenseError</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In <code>let currency = Currency::from_code(code)?;</code>, what happens when the code is
+      invalid?</p>
+    <ul class="options">
+      <li>currency is set to None and execution continues</li>
+      <li>The program panics with the currency error text</li>
+      <li data-correct>The enclosing function returns that error right away</li>
+      <li>The error is logged; a default currency follows</li>
+    </ul>
+    <div class="explain"><code>?</code> returns early with the <code>Err</code>. In <code>Money::parse</code>, a
+      <code>CurrencyError</code> is converted into a <code>MoneyError</code> on the way out (section 8 shows how).</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A query returns <code>Ok(None)</code>. What does that mean?</p>
+    <ul class="options">
+      <li>The database call failed with an unknown error</li>
+      <li data-correct>The query worked but matched no row at all</li>
+      <li>The row exists but has only empty columns</li>
+      <li>The connection was closed before it could answer</li>
+    </ul>
+    <div class="explain">The <code>Result</code> is about the call, the <code>Option</code> about the data. Failure
+      would be <code>Err(PersistenceError::Database(…))</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html">9.2
+      "Recoverable Errors with Result"</a>, up to and including "A Shortcut for Propagating Errors: the ? Operator".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: memory and performance</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Memory and performance · Review</p>
+  <h1>Review: memory and performance</h1>
+  <p class="lede">Mixed practice on lessons 106–109 with earlier sections interleaved, then a look at Ledgerly's
+    import path with performance eyes.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>Recall, quizzes, then the reading exercise. The <a href="../reference/performance.html">cheat sheet</a> afterwards.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>Sizes: <code>&amp;str</code>, <code>String</code>, <code>Option&lt;Box&lt;T&gt;&gt;</code>?</summary>
+      <div>16, 24, 8. (106)</div></details>
+    <details><summary>Three habits that avoid allocations?</summary>
+      <div><code>with_capacity</code>; reusing a cleared buffer; borrowing instead of cloning; iterator consumers instead
+        of <code>collect</code>; <code>write!</code> instead of <code>format!</code>. (107)</div></details>
+    <details><summary>What do generics cost, and what does <code>dyn</code> cost?</summary>
+      <div>Generics: compile time and binary size. <code>dyn</code>: an indirect call that blocks inlining. (108)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">Why is <code>ExpenseId</code> <code>Copy</code> while <code>Merchant</code> isn't?</p>
+    <ul class="options">
+      <li>Ids are used more often than merchants are</li>
+      <li data-correct>Ids are inline bytes; a merchant owns heap text</li>
+      <li>Merchant has a private field, and ids don't</li>
+      <li>Copy only works for types defined by macros</li>
+    </ul>
+    <div class="explain"><code>Copy</code> means a bitwise copy is a full copy. Heap-owning types can't be. (38, 106)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Iterators) Which allocates nothing?</p>
+    <ul class="options" data-fixed>
+      <li><code>rows.iter().map(|r| r.amount).collect::&lt;Vec&lt;_&gt;&gt;().iter().sum()</code></li>
+      <li data-correct><code>rows.iter().map(|r| r.amount).sum::&lt;u64&gt;()</code></li>
+      <li><code>rows.clone().into_iter().map(|r| r.amount).sum::&lt;u64&gt;()</code></li>
+      <li><code>rows.iter().map(|r| r.amount.to_string()).count()</code></li>
+    </ul>
+    <div class="explain">Lazy adapters plus a consumer: no intermediate collection. (46, 107)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A colleague says "use <code>dyn</code> everywhere, generics bloat the binary". Your answer?</p>
+    <ul class="options">
+      <li>Agreed; dyn is always the better choice</li>
+      <li data-correct>dyn at seams, generics in hot inner code</li>
+      <li>Disagree; dyn always makes code much slower</li>
+      <li>Neither matters once LTO is turned on</li>
+    </ul>
+    <div class="explain">Ledgerly's split: ports are <code>dyn</code>, iterators and serde are generic. (108)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Async) A CPU-heavy CSV parse runs inline in a handler. What does a profile of the release build show?</p>
+    <ul class="options">
+      <li>Nothing, because profilers can't see async code</li>
+      <li data-correct>Time in the parser on a worker thread</li>
+      <li>Time spent waiting inside spawn_blocking calls instead</li>
+      <li>Only time spent in the database driver</li>
+    </ul>
+    <div class="explain">Profilers sample threads; that worker is busy parsing. Then consider
+      <code>spawn_blocking</code>. (104, 109)</div>
+  </div>
+
+  <h2>Read with performance eyes</h2>
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code</span>
+    <ol>
+      <li>Search the <code>imports</code> crate for <code>clone()</code>. For each: is it inside a per-row loop, or
+        once per request? Which, if any, would you look at first?</li>
+      <li>Search the workspace for <code>with_capacity</code>. Is the capacity exact or an estimate in each case?</li>
+      <li>Open <a class="src" data-src="crates/receipts/src/application/upload.rs" data-line="153"></a>. Why does the
+        upload keep only a small <code>head</code> in memory and stream the rest to a temporary file?</li>
+    </ol>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="../reference/performance.html">performance cheat sheet</a>; deeper:
+      <a href="https://nnethercote.github.io/perf-book/">The Rust Performance Book</a> in full.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

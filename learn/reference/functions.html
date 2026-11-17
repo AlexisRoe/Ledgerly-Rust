@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: functions, closures, iterators</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Functions, closures, iterators</h1>
+  <p class="lede">Section 6 on one page.</p>
+
+  <h2>Signatures</h2>
+  <script type="text/x-code" data-lang="rust">
+    #[must_use]                                   // warn if result ignored
+    pub(crate) async fn name<'a>(                 // visibility, async, lifetimes
+        &mut self,                                // &self | &mut self | self | (none = associated fn)
+        actor: Actor,                             // Copy value
+        new: &NewExpense,                         // read-only borrow
+        clock: &dyn Clock,                        // any implementation of a trait
+        message: impl Into<String>,               // anything convertible
+        reason: Option<&str>,                     // "optional parameter"
+    ) -> Result<(), ExpenseError>                 // may fail, nothing to return
+  </script>
+  <p>No overloads, no default values: use different names, <code>Option</code> parameters, or an argument struct.
+    <code>const fn</code> may run at compile time.</p>
+
+  <h2>Closures</h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td><code>x =&gt; x * 2</code></td><td><code>|x| x * 2</code></td></tr>
+      <tr><td><code>(a, b): number =&gt; { … }</code></td><td><code>|a, b| -&gt; i32 { … }</code></td></tr>
+      <tr><td><code>() =&gt; …</code></td><td><code>|| …</code></td></tr>
+      <tr><td>(capture by reference, GC keeps alive)</td><td>borrow by default; <code>move |…|</code> takes ownership</td></tr>
+      <tr><td><code>fn: (x: T) =&gt; U</code> param</td><td><code>f: impl Fn(T) -&gt; U</code> (<code>FnMut</code>, <code>FnOnce</code>)</td></tr>
+      <tr><td><code>arr.map(parse)</code></td><td><code>.map(Type::from)</code>, <code>.any(Option::is_some)</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Iterators</h2>
+  <table>
+    <thead><tr><th>TS array method</th><th>Rust iterator</th></tr></thead>
+    <tbody>
+      <tr><td>(start)</td><td><code>.iter()</code> → <code>&amp;T</code> · <code>.iter_mut()</code> → <code>&amp;mut T</code> · <code>.into_iter()</code> → <code>T</code></td></tr>
+      <tr><td><code>map</code></td><td><code>map</code></td></tr>
+      <tr><td><code>filter</code></td><td><code>filter</code> (closure gets <code>&amp;&amp;T</code> from <code>iter()</code>)</td></tr>
+      <tr><td><code>map(…).filter(Boolean)</code></td><td><code>filter_map</code> (closure returns <code>Option</code>)</td></tr>
+      <tr><td><code>flatMap</code></td><td><code>flat_map</code></td></tr>
+      <tr><td><code>forEach((x, i) =&gt; …)</code></td><td><code>for (i, x) in it.enumerate()</code></td></tr>
+      <tr><td><code>find</code></td><td><code>find</code> → <code>Option</code></td></tr>
+      <tr><td><code>findIndex</code></td><td><code>position</code></td></tr>
+      <tr><td><code>some</code> / <code>every</code></td><td><code>any</code> / <code>all</code></td></tr>
+      <tr><td><code>reduce</code></td><td><code>fold(init, |acc, x| …)</code>, <code>sum</code>, <code>count</code>, <code>max</code>, <code>min</code></td></tr>
+      <tr><td><code>slice(0, n)</code> / <code>slice(n)</code></td><td><code>take(n)</code> / <code>skip(n)</code></td></tr>
+      <tr><td><code>zip</code> (lodash)</td><td><code>zip</code></td></tr>
+      <tr><td><code>join(", ")</code></td><td><code>vec.join(", ")</code> (on a <code>Vec&lt;String&gt;</code>/slice)</td></tr>
+      <tr><td>(result array)</td><td><code>collect::&lt;Vec&lt;_&gt;&gt;()</code>, <code>collect::&lt;HashMap&lt;_, _&gt;&gt;()</code>, <code>collect::&lt;String&gt;()</code></td></tr>
+    </tbody>
+  </table>
+  <p>Lazy: adapters do nothing until a consumer runs. One fused loop, no intermediate arrays.</p>
+
+  <h2>Errors in chains</h2>
+  <table>
+    <thead><tr><th>Want</th><th>Write</th></tr></thead>
+    <tbody>
+      <tr><td>all values or first error</td><td><code>.collect::&lt;Result&lt;Vec&lt;_&gt;, _&gt;&gt;()?</code></td></tr>
+      <tr><td>every outcome</td><td><code>.collect::&lt;Vec&lt;Result&lt;_, _&gt;&gt;&gt;()</code></td></tr>
+      <tr><td>only the successes</td><td><code>.filter_map(Result::ok)</code></td></tr>
+      <tr><td>only the errors</td><td><code>.filter_map(Result::err)</code></td></tr>
+      <tr><td><code>Option&lt;Result&gt;</code> → <code>Result&lt;Option&gt;</code></td><td><code>.transpose()</code></td></tr>
+      <tr><td>replace the error type</td><td><code>.map_err(|e| MyError(e))</code></td></tr>
+      <tr><td>lazy fallback</td><td><code>.ok_or_else(|| …)</code>, <code>.unwrap_or_else(|| …)</code></td></tr>
+    </tbody>
+  </table>
+
+  <p>Lessons: <a data-lesson="44"></a> · <a data-lesson="45"></a> · <a data-lesson="46"></a> · <a data-lesson="47"></a></p>
+</main>
+</body>
+</html>

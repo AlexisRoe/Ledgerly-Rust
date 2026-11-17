@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The crate map</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Reading Ledgerly end to end</p>
+  <h1>The crate map</h1>
+  <p class="lede">Nine crates, one binary. Before following a request through them, learn what each crate owns and
+    which may depend on which. The compiler enforces those arrows.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>Given a feature ("refresh tokens", "receipt virus scan", "audit trail"), you can name the crate it lives in and
+      the crates it's allowed to use, and explain how <code>expenses</code> asks <code>receipts</code> a question
+      without depending on it.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does cargo do with a dependency cycle between crates?</summary>
+      <div>Refuses it, so module boundaries become compile errors. (4)</div></details>
+    <details><summary>How does a trait object help two crates talk without a dependency?</summary>
+      <div>One crate defines the trait, the other implements it, and the app wires them together. (53)</div></details>
+  </div>
+
+  <h2>Who owns what</h2>
+  <table>
+    <thead><tr><th>Crate</th><th>Owns</th><th>Public face</th></tr></thead>
+    <tbody>
+      <tr><td><code>shared</code></td><td>Money, typed ids, roles, clock, config types, problem/error catalogue, paging, idempotency, outbox, web helpers</td><td>many small modules</td></tr>
+      <tr><td><code>identity</code></td><td>users, passwords, email verification, refresh tokens, JWT, JWKS</td><td>routes, facade, events</td></tr>
+      <tr><td><code>teams</code></td><td>teams, memberships, roles, invitations, <code>/me</code></td><td><code>TeamsFacade</code>, events</td></tr>
+      <tr><td><code>expenses</code></td><td>the <code>Expense</code> aggregate, workflow, list/export, batch</td><td><code>ExpensesFacade</code>, events, the <code>ReceiptChecks</code> trait</td></tr>
+      <tr><td><code>receipts</code></td><td>upload, virus scan (ClamAV), S3 storage, download</td><td>implements <code>ReceiptChecks</code></td></tr>
+      <tr><td><code>imports</code></td><td>CSV import jobs</td><td>routes, events</td></tr>
+      <tr><td><code>audit</code></td><td>append-only trail built from everyone's events</td><td>routes, listener</td></tr>
+      <tr><td><code>app</code></td><td>the <code>ledgerly</code> binary: config, logging, wiring, router, layers, startup, shutdown</td><td><code>main</code></td></tr>
+      <tr><td><code>parity-tests</code></td><td>the black-box HTTP suite</td><td>tests only</td></tr>
+    </tbody>
+  </table>
+
+  <h2>The arrows</h2>
+  <script type="text/x-code" data-lang="text" data-label="CONCEPT.md §3: allowed dependencies">
+                shared  ◄──────────── everyone
+                   ▲
+    identity ◄── teams ◄── expenses ◄── receipts
+                               ▲
+                               └────── imports ──► teams
+    audit ──► events of identity, teams, expenses, receipts, imports
+    app ──► everything (wiring only)
+  </script>
+  <p>"<code>receipts</code> → <code>expenses</code>" means receipts may use expenses' public API, never the other way
+    round. So how does submitting an expense check its receipts? The <strong>dependency inversion</strong> you saw in
+    lesson 53: <code>expenses</code> owns <code>trait ReceiptChecks</code>, <code>receipts</code> implements it, and
+    <code>app</code> passes <code>Receipts::checks()</code> into <code>ledgerly_expenses::routes(…)</code>. The
+    arrows stay one-way.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: the arrows are tested</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/tests/architecture.rs" data-line="112">
+      #[test]
+      fn the_crate_graph_equals_the_allowed_arrows() {
+          let found = violations(&workspace_graph());
+          assert!(
+              found.is_empty(),
+    </script>
+    <p>Cargo already forbids cycles. This test also catches an arrow that isn't a cycle but isn't allowed (say,
+      <code>receipts → identity</code>) by reading <code>cargo metadata</code>. The same file checks that only
+      "adapter" modules (persistence, scanners, storage) open network connections. That's Ledgerly's SSRF protection
+      (OWASP API7).</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In a TS monorepo, nothing stops <code>expenses</code> from importing a file deep inside <code>receipts</code>,
+      or two packages from importing each other. Ledgerly gets three levels of enforcement: cargo (no cycles),
+      visibility (<code>pub(crate)</code> internals), and the architecture test (exact arrows). Rule 2 from CONCEPT
+      §3 adds a convention on top: a module never touches another module's tables.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Where would you look for the refresh-token rotation logic?</p>
+    <ul class="options" data-fixed>
+      <li><code>crates/shared</code></li>
+      <li data-correct><code>crates/identity</code></li>
+      <li><code>crates/teams</code></li>
+      <li><code>crates/app</code></li>
+    </ul>
+    <div class="explain">Users, passwords and tokens are identity's. (The use case is
+      <code>identity/src/application/refresh.rs</code>.)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">May <code>teams</code> call a function of <code>expenses</code>?</p>
+    <ul class="options">
+      <li>Yes, every crate may use every other crate</li>
+      <li data-correct>No, the arrow points from expenses to teams</li>
+      <li>Yes, but only through the expenses facade</li>
+      <li>Only inside tests marked with cfg test</li>
+    </ul>
+    <div class="explain"><code>expenses → teams</code> exists, so <code>teams → expenses</code> would be a cycle that
+      cargo refuses.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How does the audit trail learn that an expense was approved?</p>
+    <ul class="options">
+      <li>It queries the expenses table every few seconds</li>
+      <li data-correct>It listens to the events that expenses publishes</li>
+      <li>expenses calls an audit function after each change</li>
+      <li>app copies rows between the tables at shutdown</li>
+    </ul>
+    <div class="explain"><code>audit</code> depends only on events. Expenses writes an event in its transaction, and
+      the outbox delivers it to audit's listener after commit.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><code>CONCEPT.md</code> §3 "Architecture" in this repo (the diagrams above come from it), and
+      <a href="../../docs/adr/0010-one-crate-per-module.md">ADR 0010</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

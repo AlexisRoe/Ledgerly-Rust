@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: traits in depth</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits in depth · Review</p>
+  <h1>Review: traits in depth</h1>
+  <p class="lede">Mixed practice on lessons 88–95, with section 15 and Part I interleaved, then a trait hunt in
+    Ledgerly's dependencies.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>Recall out loud first. Then the quizzes. Keep the <a href="../reference/traits-deep.html">cheat sheet</a>
+      closed until the end.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>Associated type or type parameter: the rule of thumb?</summary>
+      <div>One sensible answer per implementing type → associated type; callers choose → parameter. (88)</div></details>
+    <details><summary>Three things that make a trait not dyn-compatible?</summary>
+      <div>Generic methods, methods returning or taking <code>Self</code> by value, <code>async fn</code> /
+        <code>-&gt; impl Trait</code> methods (unless <code>where Self: Sized</code>). (92)</div></details>
+    <details><summary>The orphan rule in one sentence?</summary>
+      <div>You may implement a trait for a type only if the trait or the type is local. (91)</div></details>
+    <details><summary>What does <code>PhantomData&lt;S&gt;</code> cost?</summary>
+      <div>Nothing: it's zero-sized. (95)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">A trait you design will be stored as <code>Arc&lt;dyn Notifier&gt;</code> and needs an async
+      <code>send</code>. What signature?</p>
+    <ul class="options" data-fixed>
+      <li><code>async fn send(&amp;self, msg: &amp;str) -&gt; Result&lt;(), E&gt;;</code></li>
+      <li data-correct><code>fn send&lt;'a&gt;(&amp;'a self, msg: &amp;'a str) -&gt; BoxFuture&lt;'a, Result&lt;(), E&gt;&gt;;</code></li>
+      <li><code>fn send(&amp;self, msg: &amp;str) -&gt; impl Future&lt;Output = Result&lt;(), E&gt;&gt;;</code></li>
+      <li><code>fn send&lt;F: Future&gt;(&amp;self, msg: &amp;str) -&gt; F;</code></li>
+    </ul>
+    <div class="explain">Only the boxed future is one nameable type that a vtable can hold. (92)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You implement <code>From&lt;Uuid&gt; for ExpenseId</code>. What do you get for free?</p>
+    <ul class="options">
+      <li>Nothing; Into needs its own separate impl</li>
+      <li data-correct>uuid.into() to ExpenseId, through a blanket impl</li>
+      <li>Display and Debug for ExpenseId as well</li>
+      <li>TryFrom&lt;String&gt; for ExpenseId, through the same impl</li>
+    </ul>
+    <div class="explain"><code>impl&lt;T, U: From&lt;T&gt;&gt; Into&lt;U&gt; for T</code>. (51, 90)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Lifetimes) A method returns <code>impl Iterator&lt;Item = &amp;str&gt;</code> over
+      <code>self.lines</code>. What does the <code>&amp;str</code> borrow from?</p>
+    <ul class="options">
+      <li>Nothing; the iterator copies each line out</li>
+      <li data-correct>From self, by the third elision rule</li>
+      <li>From a static buffer inside the iterator</li>
+      <li>From the caller's own stack frame only</li>
+    </ul>
+    <div class="explain">Rule 3: with <code>&amp;self</code>, output references get self's lifetime. (80, 89)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which design keeps a <code>Vec</code> of claims in different states?</p>
+    <ul class="options">
+      <li>Typestate, with one separate Claim type per state</li>
+      <li data-correct>One Claim type with a status enum field</li>
+      <li>A PhantomData field holding every possible state</li>
+      <li>A blanket impl over all the marker types</li>
+    </ul>
+    <div class="explain"><code>Claim&lt;Draft&gt;</code> and <code>Claim&lt;Approved&gt;</code> are different types. (95)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Interior mutability) A <code>&amp;self</code> method on a shared, thread-safe cache must insert. Field type?</p>
+    <ul class="options" data-fixed>
+      <li><code>RefCell&lt;HashMap&lt;K, V&gt;&gt;</code></li>
+      <li data-correct><code>RwLock&lt;HashMap&lt;K, V&gt;&gt;</code></li>
+      <li><code>Cell&lt;HashMap&lt;K, V&gt;&gt;</code></li>
+      <li><code>PhantomData&lt;HashMap&lt;K, V&gt;&gt;</code></li>
+    </ul>
+    <div class="explain">Thread-safe and read-mostly: <code>RwLock</code> (or <code>Mutex</code>). (84)</div>
+  </div>
+
+  <h2>Trait hunt</h2>
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code</span>
+    <ol>
+      <li>In <a class="src" data-src="crates/expenses/src/persistence/mod.rs" data-line="345"></a>, hover
+        <code>TryFrom</code>. Which of its types is a parameter and which is associated?</li>
+      <li>In any test file, find a <code>.oneshot(</code> call. Ctrl/⌘-click it: which <code>…Ext</code> trait does it
+        come from, and where is that trait imported?</li>
+      <li>Search for <code>impl Default for</code>. Why did Ledgerly write these by hand instead of deriving them?</li>
+    </ol>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="../reference/traits-deep.html">traits in depth cheat sheet</a>. Deeper reading:
+      <a href="https://www.lurklurk.org/effective-rust/">Effective Rust</a>, chapter 2 ("Traits").</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
