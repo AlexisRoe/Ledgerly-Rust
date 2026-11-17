@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: macros and attributes</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Macros and attributes</h1>
+  <p class="lede">Section 9 on one page.</p>
+
+  <h2>Attributes</h2>
+  <p><code>#[…]</code> → next item. <code>#![…]</code> → enclosing item (file/module/crate). All act at compile
+    time.</p>
+  <table>
+    <thead><tr><th>Attribute</th><th>Kind</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>#[derive(Debug, Clone, …)]</code></td><td>generate</td><td>trait impls</td></tr>
+      <tr><td><code>#[derive(thiserror::Error)]</code> + <code>#[error]</code>, <code>#[from]</code></td><td>generate / configure</td><td>error types (lesson 56)</td></tr>
+      <tr><td><code>#[derive(Serialize, Deserialize)]</code> + <code>#[serde(…)]</code></td><td>generate / configure</td><td>JSON (lesson 68)</td></tr>
+      <tr><td><code>#[test]</code>, <code>#[tokio::test]</code></td><td>generate</td><td>test functions (async with tokio)</td></tr>
+      <tr><td><code>#[cfg(test)]</code></td><td>conditional</td><td>only in test builds</td></tr>
+      <tr><td><code>#[cfg(any(test, feature = "testing"))]</code></td><td>conditional</td><td>tests or a feature</td></tr>
+      <tr><td><code>#![cfg_attr(cond, attr)]</code></td><td>conditional</td><td>apply <code>attr</code> only if <code>cond</code></td></tr>
+      <tr><td><code>#![forbid(unsafe_code)]</code></td><td>lint</td><td>error, not overridable</td></tr>
+      <tr><td><code>#[must_use]</code></td><td>lint</td><td>warn if the result is ignored</td></tr>
+      <tr><td><code>#[expect(lint, reason = "…")]</code></td><td>lint</td><td>allow once, documented; fails if unneeded</td></tr>
+      <tr><td><code>#[allow(lint)]</code> / <code>#[deny(lint)]</code></td><td>lint</td><td>set a level</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Everyday macros</h2>
+  <table>
+    <thead><tr><th>Macro</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>println!</code> / <code>eprintln!</code></td><td>print (stdout / stderr)</td></tr>
+      <tr><td><code>format!</code> / <code>write!</code></td><td>to a <code>String</code> / to a writer</td></tr>
+      <tr><td><code>vec![…]</code></td><td><code>Vec</code> literal</td></tr>
+      <tr><td><code>assert!</code>, <code>assert_eq!</code>, <code>assert_ne!</code></td><td>test assertions</td></tr>
+      <tr><td><code>matches!(v, pat)</code></td><td>pattern → <code>bool</code></td></tr>
+      <tr><td><code>tracing::{info,warn,error}!</code></td><td>log events with fields</td></tr>
+      <tr><td><code>sqlx::query!</code>, <code>query_as!</code></td><td>compile-time checked SQL</td></tr>
+      <tr><td><code>tokio::join!</code> / <code>select!</code></td><td>all / first of several futures</td></tr>
+      <tr><td><code>todo!</code>, <code>unimplemented!</code>, <code>panic!</code></td><td>panic (banned in production code)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Format specifiers</h2>
+  <p><code>{}</code> Display · <code>{:?}</code> Debug · <code>{:#?}</code> pretty Debug · <code>{name}</code> a
+    variable · <code>{0}</code> positional · <code>{:02}</code> zero-pad · <code>{:.2}</code> precision ·
+    <code>{:&gt;8}</code> right-align · <code>{{</code> literal brace.</p>
+
+  <h2><code>macro_rules!</code> reading guide</h2>
+  <script type="text/x-code" data-lang="rust">
+    macro_rules! name {
+        (pattern with $x:ident and $(#[$m:meta])*) => { expansion using $x and $(#[$m])* };
+        (@helper …) => { … };      // literal tokens like @helper or v7 select a rule
+    }
+    // fragments: ident · expr · ty · meta · tt · literal · pat · block
+    // repetition: $( … )*  zero or more,  $( … ),+  one or more, comma-separated
+  </script>
+  <p>See the expansion: rust-analyzer → "Expand macro recursively", or <code>cargo expand</code>.</p>
+
+  <p>Lessons: <a data-lesson="60"></a> · <a data-lesson="61"></a></p>
+</main>
+</body>
+</html>
