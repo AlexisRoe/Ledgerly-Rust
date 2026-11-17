@@ -1,0 +1,22 @@
+{
+  "name": "ledgerly-rust",
+  "version": "0.1.0",
+  "description": "\"real-world\" application to learn Rust",
+  "keywords": [
+    "rust"
+  ],
+  "homepage": "https://github.com/AlexisRoe/Ledgerly-Rust#readme",
+  "bugs": {
+    "url": "https://github.com/AlexisRoe/Ledgerly-Rust/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlexisRoe/Ledgerly-Rust.git"
+  },
+  "license": "MIT",
+  "author": "Alexis Roehrling",
+  "scripts": {
+    "build": "python3 scripts/build-learn-site.py",
+    "deploy": "npx --yes wrangler pages deploy dist"
+  }
+}
