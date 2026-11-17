@@ -4,7 +4,7 @@
 
 Ledgerly is a REST backend in which small teams record expenses, attach receipts, import CSV files and move each expense through an approval workflow. It was first written in Java with Spring Boot ([Ledgerly-Java](https://github.com/AlexisRoe/Ledgerly-Java)). This repository is its **drop-in replacement in Rust**: the same HTTP contract, database schema, configuration, operational endpoints and demo data. You can point it at a database written by the Java version and it keeps working.
 
-> 📚 **Lessons:** _coming soon_
+> 📚 **Lessons:** a Rust course for TypeScript developers in [`learn/`](learn/index.html), see [Learning Rust with this repository](#learning-rust-with-this-repository)
 > 🌐 **Live demo:** _coming soon_
 
 ---
@@ -12,6 +12,7 @@ Ledgerly is a REST backend in which small teams record expenses, attach receipts
 ## Contents
 
 - [Intention](#intention)
+- [Learning Rust with this repository](#learning-rust-with-this-repository)
 - [Requirements](#requirements)
 - [How to start](#how-to-start)
 - [Important commands](#important-commands)
@@ -36,6 +37,60 @@ That makes it a good place to learn because:
 - **Security is designed in, not bolted on.** Typed ids, secrets that cannot be logged, team-scoped queries, rate limits, CORS, an SSRF architecture test, supply-chain checks, and no `unsafe`, `unwrap` or `panic!` outside tests.
 
 Who it is for: developers who know a backend language (Java, Kotlin, C#, Go, TypeScript…) and want to see idiomatic Rust in a realistic code base.
+
+## Learning Rust with this repository
+
+[`learn/`](learn/) holds a self-paced course, **Rust for TypeScript developers**, that uses this code base as its
+worked example. Every Rust idea is introduced next to its TypeScript counterpart, followed by where that comparison
+breaks, and then shown in Ledgerly's own code.
+
+### What you can learn
+
+| Part | Sections | You'll be able to… |
+| --- | --- | --- |
+| **I · Reading and changing Ledgerly** (lessons 1–79) | toolbox and project setup · syntax, modules, imports, folders · data types · control flow · ownership and borrowing · functions, closures, iterators · traits and generics · error handling · macros and attributes · async · testing · serde, sqlx, axum, tracing · reading Ledgerly end to end · making changes | open any file in `crates/`, explain it, follow a request through every layer, and make small changes with the compiler's help |
+| **II · Rust in depth** (lessons 80–128) | ownership and lifetimes in depth · traits in depth · concurrency and async internals · memory and performance · designing Rust code · writing macros · `unsafe`, briefly · capstone: a service from scratch | understand what's underneath (lifetimes, `Send`/`Sync`, futures and `Pin`, layout), design your own types and APIs, and build a concurrent service from `cargo new` |
+
+Each lesson takes 10–15 minutes and has:
+
+- recall questions on earlier lessons;
+- real Ledgerly code;
+- quizzes with instant feedback;
+- a link to a primary source.
+
+Around them are:
+
+- **21 printable cheat sheets** and a glossary, in `learn/reference/`;
+- **57 hands-on exercises** with solutions, in `learn/playground/`. Each exercise is a set of failing tests for you to make pass;
+- **a reference solution for the capstone service**, in `learn/capstone/`.
+
+### Using it locally
+
+```sh
+open learn/index.html            # macOS; or open the file in any browser: no server, no build step
+                                 # lessons record progress in your browser's local storage
+
+cd learn/playground              # exercises: needs only the Rust toolchain (step 2 of "How to start")
+cargo test ex16                  # one lesson's exercise; the README there explains the loop
+
+cd learn/capstone && cargo test  # the capstone's reference solution
+```
+
+When you open the pages from a clone, the file paths under code snippets open that file at that line in VS Code.
+Neither the playground nor the capstone is part of the Cargo workspace, so `just check` ignores both. Docker is
+only needed for the lessons that run Ledgerly's own test suite or the app.
+
+A deployed version of the course is linked from this repository's page on GitHub, for reading without a clone.
+
+### What it was built on
+
+- **Created:** 17 November 2026. All external resources (the Rust Book, std docs, Tokio, crate docs, articles) were
+  cited and checked on that date. Later versions of those pages may differ.
+- **Rust:** toolchain 1.99.1 (pinned in `rust-toolchain.toml`), edition 2024.
+- **Ledgerly-Rust:** version 0.1.0, as of the completed M0–M11 implementation (commit `255db67` on `main`). Line
+  numbers in lessons refer to that code; `python3 learn/check-lessons.py` reports any snippet that has drifted
+  since.
+- **Behaviour baseline:** Ledgerly-Java at commit `e2a1390` (see `vendor/ledgerly-java/SOURCE`).
 
 ---
 
@@ -251,6 +306,7 @@ Ledgerly-Rust/
 ├── api/openapi.yaml        the HTTP contract (shared with Java, read-only)
 ├── bruno/                  the request collection (shared with Java, read-only)
 ├── vendor/ledgerly-java/   migrations, realm, config and docs from Java (read-only)
+├── learn/                the Rust course: lessons, cheat sheets, playground, capstone
 ├── docs/
 │   ├── adr/                architecture decision records
 │   ├── implementation-plan.md   milestones M0–M11, step by step
@@ -300,6 +356,7 @@ The scripts in [`scripts/`](scripts/) are called by `just` tasks and CI; you rar
 | [`docs/adr/`](docs/adr/) | Every decision and why it was made |
 | [`docs/implementation-plan.md`](docs/implementation-plan.md) | The build order, milestone by milestone |
 | [`docs/learning-log.md`](docs/learning-log.md) | What each milestone taught: Java constructs and their Rust counterparts |
+| [`learn/index.html`](learn/index.html) | The Rust course for TypeScript developers, taught on this code base |
 | [`docs/local-setup.md`](docs/local-setup.md) | Everything about the developer setup |
 | [`docs/deployment.md`](docs/deployment.md) | Configuration, the image, Keycloak, TLS, the runbook |
 | [Ledgerly-Java](https://github.com/AlexisRoe/Ledgerly-Java) | The original, for side-by-side reading |
