@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rustup and toolchains</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Setting up and the toolbox</p>
+  <h1>rustup and toolchains</h1>
+  <p class="lede">rustup is nvm for Rust, and <code>rust-toolchain.toml</code> is the <code>.nvmrc</code> that
+    pins Ledgerly to one exact compiler.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>rust-toolchain.toml</code> and <code>mise.toml</code>, say which Rust version Ledgerly
+      builds with and why, and check your own setup with <code>rustup show</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up: answer from memory first</span>
+    <details><summary>What does <code>rustc</code> produce, and what runs it?</summary>
+      <div>A native binary for one OS/CPU. Nothing "runs" it: no VM, no interpreter, no GC.</div></details>
+    <details><summary>What replaces <code>throw</code> in Rust?</summary>
+      <div>Returning a <code>Result</code>: <code>Ok(value)</code> or <code>Err(error)</code>.</div></details>
+  </div>
+
+  <h2>The pieces</h2>
+  <table>
+    <thead><tr><th>Rust</th><th>Node / TS world</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td><code>rustup</code></td><td><code>nvm</code> / <code>fnm</code> / <code>volta</code></td><td>Installs and switches Rust versions ("toolchains")</td></tr>
+      <tr><td>toolchain</td><td>a Node version</td><td>A compiler (<code>rustc</code>), <code>cargo</code> and the standard library, at one version</td></tr>
+      <tr><td>channel</td><td>LTS / Current / nightly</td><td><code>stable</code> (every 6 weeks), <code>beta</code>, <code>nightly</code></td></tr>
+      <tr><td>component</td><td>a global tool shipped with Node</td><td>Optional extras: <code>rustfmt</code>, <code>clippy</code>, <code>rust-analyzer</code>, <code>rust-src</code></td></tr>
+      <tr><td><code>rust-toolchain.toml</code></td><td><code>.nvmrc</code></td><td>Pins the toolchain for a directory. rustup reads it automatically</td></tr>
+      <tr><td><code>rust-version</code> in <code>Cargo.toml</code></td><td><code>"engines"</code> in <code>package.json</code></td><td>Minimum Rust version the crate supports</td></tr>
+      <tr><td><code>edition</code></td><td>roughly the <code>"target"</code> in <code>tsconfig</code></td><td>Which language dialect the crate is written in (2015, 2018, 2021, 2024)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Ledgerly's pins</h2>
+  <script type="text/x-code" data-lang="toml" data-src="rust-toolchain.toml" data-line="1">
+    [toolchain]
+    channel = "1.99.1"
+    components = ["rustfmt", "clippy"]
+    profile = "minimal"
+  </script>
+  <p>Whenever you run <code>cargo</code> anywhere inside the repo, rustup notices this file and uses exactly
+    1.99.1, installing it first if needed. <code>profile = "minimal"</code> means "only the compiler, cargo and std",
+    and <code>components</code> adds the formatter and linter
+    (<a href="https://rust-lang.github.io/rustup/overrides.html">rustup book: overrides</a>).</p>
+
+  <script type="text/x-code" data-lang="toml" data-src="mise.toml" data-line="1">
+    # Every tool the project needs, pinned (docs/local-setup.md §2). `mise install` reads this file.
+    # The Rust version is repeated in rust-toolchain.toml so that cargo and rust-analyzer agree without mise.
+
+    [tools]
+    rust = { version = "1.99.1", components = "rustfmt,clippy" }
+    just = "1.59.0"
+    # …
+    "cargo:cargo-nextest" = "0.9.151"
+    cargo-deny = "0.20.2"
+    "cargo:sqlx-cli" = "0.9.0"
+    node = "26.13.1"
+  </script>
+  <p><a href="https://mise.jdx.dev/">mise</a> is one level up: it pins <em>every</em> tool (Rust, just, Node for the
+    OpenAPI linter, cargo plugins) like <code>volta</code> plus <code>asdf</code>. The comment says why Rust appears
+    twice: rust-analyzer and plain <code>cargo</code> only read <code>rust-toolchain.toml</code>.</p>
+
+  <h2>Editions: a dialect, not a version</h2>
+  <p>The root <code>Cargo.toml</code> says <code>edition = "2024"</code>. An edition is an opt-in set of language
+    changes that would otherwise break old code: new keywords, changed defaults. A 2024-edition crate can depend on a
+    2018-edition crate without trouble. The compiler handles both
+    (<a href="https://doc.rust-lang.org/edition-guide/">Edition Guide</a>). Unlike tsconfig's
+    <code>target</code>, it says nothing about the output: every edition compiles to the same machine code.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>With nvm you switch Node by hand (<code>nvm use</code>) unless your shell hooks <code>.nvmrc</code>. rustup
+      needs no hook: <code>cargo</code> and <code>rustc</code> are small rustup proxies that read
+      <code>rust-toolchain.toml</code> on every call. So <code>cd</code> into another project can silently give you a
+      different compiler.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it (2 minutes)</span>
+    <p>In a terminal at the repo root:</p>
+    <script type="text/x-code" data-lang="bash">
+      $ rustup show            # active toolchain and why ("overridden by .../rust-toolchain.toml")
+      $ rustc --version        # rustc 1.99.1 (…)
+      $ cargo --version
+      $ rustup component list --installed
+      $ cd /tmp && rustc --version && cd -   # outside the repo: your default toolchain
+    </script>
+    <p>If <code>cargo</code> isn't found, your shell doesn't have <code>~/.cargo/bin</code> on its
+      <code>PATH</code>. Run <code>mise install</code> or add it to <code>~/.zshrc</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">You <code>cd</code> into Ledgerly and run <code>cargo build</code>. Which compiler version is used?</p>
+    <ul class="options">
+      <li data-correct>Exactly 1.99.1, as rust-toolchain.toml pins it</li>
+      <li>The newest stable you have installed</li>
+      <li>At least 1.99, per rust-version field</li>
+      <li>Whatever version mise last activated globally</li>
+    </ul>
+    <div class="explain">rustup's proxies find <code>rust-toolchain.toml</code> by walking up from the current
+      directory. <code>rust-version = "1.99"</code> in <code>Cargo.toml</code> is only a minimum check, like
+      <code>engines</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What is <code>clippy</code> to rustup?</p>
+    <ul class="options">
+      <li>A separate tool installed through npm</li>
+      <li data-correct>A component added to the toolchain</li>
+      <li>A dependency listed in each Cargo.toml</li>
+      <li>A feature flag of the compiler</li>
+    </ul>
+    <div class="explain">Components ship with a toolchain version. <code>rust-toolchain.toml</code> asks for
+      <code>rustfmt</code> and <code>clippy</code>, so everyone lints with the same version.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Ledgerly uses <code>edition = "2024"</code>. A dependency uses edition 2018. What happens?</p>
+    <ul class="options">
+      <li>The build fails until both editions match</li>
+      <li>The dependency is upgraded to 2024 automatically</li>
+      <li data-correct>It just works; editions mix freely across crates</li>
+      <li>You need a nightly toolchain to mix them</li>
+    </ul>
+    <div class="explain">Editions are per crate. One compiler understands all of them, and crates of different
+      editions link together normally.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://rust-lang.github.io/rustup/overrides.html">The rustup book: Overrides</a> explains the order
+      rustup uses to pick a toolchain. Then skim
+      <a href="https://rust-lang.github.io/rustup/concepts/components.html">Components</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

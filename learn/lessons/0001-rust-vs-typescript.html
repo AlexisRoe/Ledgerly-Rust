@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rust vs TypeScript: the big picture</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Setting up and the toolbox</p>
+  <h1>Rust vs TypeScript: the big picture</h1>
+  <p class="lede">Before any syntax: what changes when you trade Node + <code>tsc</code> for a compiled language with
+    no garbage collector.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can name the five big differences between running TypeScript and running Rust, and say which line of
+      Ledgerly's <code>main</code> function each one explains.</p>
+  </div>
+
+  <h2>What happens when you run your code</h2>
+  <p>In TypeScript, <code>tsc</code> checks your types and then <em>throws them away</em>. What runs is JavaScript,
+    inside an engine (V8 in Node) that interprets and JIT-compiles it, with a garbage collector freeing memory behind
+    you and an event loop that's always there.</p>
+  <p>Rust's compiler, <code>rustc</code>, checks your types and then uses them to produce <strong>native machine
+    code</strong>: one executable file for one operating system and CPU. No engine, no garbage collector, no built-in
+    event loop. Ledgerly's whole backend is a single binary called <code>ledgerly</code> in a small container image
+    (<a href="https://doc.rust-lang.org/book/ch00-00-introduction.html">the Book's introduction</a> covers who Rust
+    is for).</p>
+
+  <table>
+    <thead><tr><th></th><th>TypeScript (on Node)</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td>Output</td><td>JavaScript files + <code>node_modules</code></td><td>One native binary</td></tr>
+      <tr><td>Types at runtime</td><td>Gone (erased)</td><td>Gone too, but they decided the memory layout and the code</td></tr>
+      <tr><td>Memory</td><td>Garbage collector</td><td><strong>Ownership</strong>: the compiler inserts the frees (section 5)</td></tr>
+      <tr><td>"No value"</td><td><code>null</code>, <code>undefined</code></td><td>No null. <code>Option&lt;T&gt;</code> (lesson 24)</td></tr>
+      <tr><td>Errors</td><td><code>throw</code> / <code>try</code>/<code>catch</code></td><td>No exceptions. <code>Result&lt;T, E&gt;</code> values (lesson 25)</td></tr>
+      <tr><td>Type system</td><td>Structural: same shape = same type</td><td>Nominal: same name = same type</td></tr>
+      <tr><td>Escape hatch</td><td><code>any</code>, <code>as</code>, <code>// @ts-ignore</code></td><td>None in normal code. It compiles or it doesn't</td></tr>
+      <tr><td>async</td><td>Event loop built into Node</td><td>A library provides the runtime (Tokio)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Five differences, all in one function</h2>
+  <p>Here is the start of Ledgerly's <code>main</code>. Don't try to read every token yet. Look for the five ideas
+    from the table.</p>
+
+  <script type="text/x-code" data-lang="rust" data-src="crates/app/src/main.rs" data-line="12">
+    fn main() -> ExitCode {
+        let config = match Config::from_environment(&ProcessEnvironment) {
+            Ok(config) => config,
+            Err(error) => return failed_to_start(&error),
+        };
+        // …
+        let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+            Ok(runtime) => runtime,
+            Err(error) => return failed_to_start(&error),
+        };
+        let result = runtime.block_on(run(config, telemetry.clone()));
+        // Stopping the runtime ends any request that outlasted the drain time.
+        drop(runtime);
+        // …
+    }
+  </script>
+
+  <ol>
+    <li><strong>Errors are values.</strong> <code>Config::from_environment</code> doesn't throw. It returns either
+      <code>Ok(config)</code> or <code>Err(error)</code>, and <code>match</code> handles both. Forgetting the
+      <code>Err</code> case doesn't compile.</li>
+    <li><strong>The async runtime is a library.</strong> In Node the event loop just exists. Here
+      <code>main</code> builds a Tokio runtime itself and hands it the async function <code>run</code>
+      (<code>block_on</code> means "run this future until it finishes").</li>
+    <li><strong>Memory is freed at a known point.</strong> <code>drop(runtime)</code> destroys the runtime right
+      there, not "whenever the GC gets to it". Usually Rust inserts the drop for you at the end of a scope. Here
+      it's written out because the timing matters.</li>
+    <li><strong>The <code>&amp;</code>.</strong> <code>&amp;error</code> <em>lends</em> the error to
+      <code>failed_to_start</code> without giving it away. This is borrowing, the idea TypeScript has no word
+      for.</li>
+    <li><strong>A typed exit.</strong> <code>main</code> returns an <code>ExitCode</code>, not
+      <code>process.exit(1)</code> from somewhere deep in the stack.</li>
+  </ol>
+
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      // What the same start looks like in a Node service
+      function main(): void {
+        let config: Config;
+        try {
+          config = Config.fromEnvironment(process.env);
+        } catch (error) {
+          failedToStart(error); // error is `unknown`
+          process.exit(1);
+        }
+        // the event loop is already running
+        run(config).catch(failedToStart);
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      // Ledgerly, shortened
+      fn main() -> ExitCode {
+          let config = match Config::from_environment(&ProcessEnvironment) {
+              Ok(config) => config,
+              // `error` has a precise type, not `unknown`
+              Err(error) => return failed_to_start(&error),
+          };
+          let runtime = /* build Tokio */;
+          let result = runtime.block_on(run(config, telemetry));
+          // …
+      }
+    </script>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TypeScript is a type layer on top of a dynamic language. If <code>tsc</code> complains you can still run the
+      JavaScript, and <code>any</code> switches checking off. Rust has no "run it anyway": the type checker and the
+      <strong>borrow checker</strong> (which checks how memory is shared) must both agree before any binary exists.
+      That's why Rust feels strict at first. In exchange, a whole class of bugs (null dereferences, use after
+      free, data races, unhandled errors) can't reach production.</p>
+  </div>
+
+  <h2>Why bother, for a backend?</h2>
+  <ul>
+    <li><strong>Small and fast:</strong> one binary, no runtime to install, low memory use. The <code>ledgerly</code>
+      image is about 39 MB.</li>
+    <li><strong>Refactoring with a net:</strong> add a variant to an enum, and the compiler lists every
+      <code>match</code> that must now handle it. You'll use this in the capstone
+      (<a data-lesson="77"></a>).</li>
+    <li><strong>Rules as types:</strong> Ledgerly makes a <code>TeamId</code> and an <code>ExpenseId</code> different
+      types, so swapping them doesn't compile (<a data-lesson="26"></a>).</li>
+  </ul>
+  <p>Comprehensive Rust's <a href="https://google.github.io/comprehensive-rust/why-rust.html">"Why Rust?"</a> page
+    sums up the trade-off well.</p>
+
+  <h2>Check yourself</h2>
+
+  <div class="quiz">
+    <p class="q">What does the Rust compiler produce for Ledgerly?</p>
+    <ul class="options">
+      <li data-correct>One native binary per platform</li>
+      <li>JavaScript plus a type map</li>
+      <li>Bytecode for a virtual machine</li>
+      <li>Source files for an interpreter</li>
+    </ul>
+    <div class="explain"><code>rustc</code> compiles to machine code for one target platform. There is no VM or
+      interpreter at runtime, which is why the image needs no Rust installation.</div>
+  </div>
+
+  <div class="quiz">
+    <p class="q">In TypeScript a failed config read would <code>throw</code>. What does Ledgerly's
+      <code>Config::from_environment</code> do instead?</p>
+    <ul class="options">
+      <li>Panics and the process just stops</li>
+      <li data-correct>Returns a value: Ok(config) or Err(error)</li>
+      <li>Returns null and logs a warning</li>
+      <li>Sets a global error flag instead</li>
+    </ul>
+    <div class="explain">Rust has no exceptions. A function that can fail returns <code>Result&lt;T, E&gt;</code>,
+      and the caller must handle both cases, here with <code>match</code>.</div>
+  </div>
+
+  <div class="quiz">
+    <p class="q">Why does Ledgerly's <code>main</code> build a Tokio runtime itself?</p>
+    <ul class="options">
+      <li>Tokio acts as Rust's garbage collector here</li>
+      <li>The compiler requires it for every program</li>
+      <li data-correct>Rust has no built-in async event loop</li>
+      <li>It makes the binary smaller and faster</li>
+    </ul>
+    <div class="explain">Rust's language has <code>async</code>/<code>await</code>, but the scheduler that runs
+      futures comes from a library. Ledgerly uses Tokio (section 10).</div>
+  </div>
+
+  <div class="quiz">
+    <p class="q">Which of these has <em>no</em> equivalent in Rust?</p>
+    <ul class="options">
+      <li>Generics with constraints like extends</li>
+      <li data-correct>A value that is null</li>
+      <li>Union-like types with several variants</li>
+      <li>Interfaces that types can implement</li>
+    </ul>
+    <div class="explain">Rust has generics with bounds, enums (much stronger than unions) and traits (interfaces).
+      It has no <code>null</code>: possible absence is spelled <code>Option&lt;T&gt;</code>, and the compiler makes
+      you handle <code>None</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://doc.rust-lang.org/book/ch00-00-introduction.html">The Rust Programming Language,
+      Introduction</a>, a five-minute read. It's the first page of "the Book", which most lessons in this course
+      cite.</p>
+  </aside>
+
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cargo is npm + tsc + jest</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Setting up and the toolbox</p>
+  <h1>Cargo is npm + tsc + jest</h1>
+  <p class="lede">One tool installs dependencies, compiles, runs, tests and documents. Its manifest is
+    <code>Cargo.toml</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can create, build, check, run and test a Rust project with cargo, and read a crate's
+      <code>Cargo.toml</code> line by line.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Which file decides the Rust version inside Ledgerly, and what's its Node equivalent?</summary>
+      <div><code>rust-toolchain.toml</code> (<code>channel = "1.99.1"</code>), like <code>.nvmrc</code>.</div></details>
+    <details><summary>What is an edition?</summary>
+      <div>An opt-in language dialect per crate (2024 in Ledgerly). Editions mix freely between crates.</div></details>
+  </div>
+
+  <h2>The commands you'll use daily</h2>
+  <table>
+    <thead><tr><th>cargo</th><th>Node world</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>cargo new name</code></td><td><code>npm init</code></td><td>New project with <code>Cargo.toml</code>, <code>src/main.rs</code>, git repo</td></tr>
+      <tr><td><code>cargo check</code></td><td><code>tsc --noEmit</code></td><td>Type- and borrow-check only, no binary. Fastest feedback</td></tr>
+      <tr><td><code>cargo build</code></td><td><code>tsc</code></td><td>Compile (debug) into <code>target/debug/</code></td></tr>
+      <tr><td><code>cargo build --release</code></td><td>a production bundle</td><td>Optimised build into <code>target/release/</code></td></tr>
+      <tr><td><code>cargo run</code></td><td><code>npm start</code> / <code>tsx src/index.ts</code></td><td>Build, then run the binary</td></tr>
+      <tr><td><code>cargo test</code></td><td><code>jest</code> / <code>vitest</code></td><td>Build and run every test, including examples in docs</td></tr>
+      <tr><td><code>cargo add serde</code></td><td><code>npm install serde</code></td><td>Add a dependency to <code>Cargo.toml</code></td></tr>
+      <tr><td><code>cargo doc --open</code></td><td>TypeDoc</td><td>HTML docs for your crate <em>and all dependencies</em></td></tr>
+      <tr><td><code>cargo fmt</code> / <code>cargo clippy</code></td><td>Prettier / ESLint</td><td>Lesson 5</td></tr>
+    </tbody>
+  </table>
+  <p>Note what's missing: there's no <code>cargo install</code> step for dependencies. <code>cargo build</code>
+    downloads what <code>Cargo.lock</code> lists from <a href="https://crates.io">crates.io</a> (the npm registry of
+    Rust) and compiles them <em>from source</em> into <code>target/</code>. <code>target/</code> is
+    <code>node_modules</code> and <code>dist</code> in one folder, and it gets big: delete it any time, and the next
+    build recreates it.</p>
+
+  <h2>Reading a manifest</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="json">
+      {
+        "name": "@ledgerly/expenses",
+        "version": "0.1.0",
+        "private": true,
+        "engines": { "node": ">=26" },
+        "dependencies": {
+          "zod": "^3.23.0",
+          "@ledgerly/shared": "workspace:*"
+        },
+        "devDependencies": { "vitest": "^2.0.0" }
+      }
+    </script>
+    <script type="text/x-code" data-lang="toml" data-src="crates/expenses/Cargo.toml" data-line="1">
+      [package]
+      name = "ledgerly-expenses"
+      version.workspace = true
+      edition.workspace = true
+      rust-version.workspace = true
+      license.workspace = true
+      publish.workspace = true
+
+      [lints]
+      workspace = true
+
+      [dependencies]
+      axum.workspace = true
+      serde.workspace = true
+      ledgerly-shared.workspace = true
+      sqlx = { workspace = true, features = ["macros"] }
+      # …
+
+      [dev-dependencies]
+      ledgerly-shared = { workspace = true, features = ["testing"] }
+      tokio.workspace = true
+    </script>
+  </div>
+  <ul>
+    <li><code>[package]</code> is the top of <code>package.json</code>. <code>x.workspace = true</code> means "take
+      this from the root <code>Cargo.toml</code>" (next lesson).</li>
+    <li><code>[dependencies]</code> and <code>[dev-dependencies]</code> mean what they do in npm: dev-dependencies are
+      only for tests, examples and benchmarks.</li>
+    <li><code>features = ["macros"]</code> has no npm equivalent. A <strong>feature</strong> switches on an optional,
+      compile-time part of a crate. Code behind a disabled feature isn't compiled at all
+      (<a href="https://doc.rust-lang.org/cargo/reference/features.html">Cargo book: features</a>). Ledgerly's
+      <code>testing</code> feature exposes test helpers such as a fixed clock, and only the dev-dependencies turn it
+      on.</li>
+    <li>Version strings default to <strong>caret</strong> rules: <code>"1.0.229"</code> means
+      <code>^1.0.229</code> (<a href="https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html">specifying
+      dependencies</a>).</li>
+  </ul>
+
+  <h3><code>Cargo.lock</code></h3>
+  <p>The same job as <code>package-lock.json</code>: exact versions of the whole dependency tree, committed for
+    applications. Ledgerly's lock lists 418 packages. <code>--locked</code> (used in the <code>justfile</code>) is
+    <code>npm ci</code>: fail if the lock would have to change
+    (<a href="https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html">Cargo.toml vs Cargo.lock</a>).</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <ul>
+      <li><strong>One copy per compatible version range.</strong> npm happily nests five copies of a package. Cargo
+        unifies semver-compatible requirements into one version, and only builds a second copy when the requirements
+        are incompatible (a different major, or a different minor below 1.0, such as 0.4 vs 0.5).</li>
+      <li><strong>Packages vs crates.</strong> A <em>package</em> (one <code>Cargo.toml</code>) contains one or more
+        <em>crates</em>, the unit of compilation: a <em>library crate</em> (<code>src/lib.rs</code>) and/or
+        <em>binary crates</em> (<code>src/main.rs</code>, <code>src/bin/*.rs</code>). Ledgerly's
+        <code>crates/app</code> package has both: the library <code>ledgerly_app</code> and the binary
+        <code>ledgerly</code>.</li>
+      <li><strong>Hyphens become underscores.</strong> The package <code>ledgerly-expenses</code> is written
+        <code>ledgerly_expenses</code> in Rust code, because <code>-</code> isn't allowed in identifiers.</li>
+    </ul>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it (5 minutes)</span>
+    <script type="text/x-code" data-lang="bash">
+      $ cd /tmp && cargo new hello-cargo && cd hello-cargo
+      $ ls -a                 # Cargo.toml  src/  .git  .gitignore
+      $ cat src/main.rs       # fn main() { println!("Hello, world!"); }
+      $ cargo check           # fast: no binary
+      $ cargo run             # compiles to target/debug/hello-cargo, then runs it
+      $ ./target/debug/hello-cargo
+      $ cargo build --release && ls -lh target/release/hello-cargo
+    </script>
+    <p>Then open <code>Cargo.lock</code> in the Ledgerly repo and find the <code>[[package]]</code> entry for
+      <code>axum</code>. Note its exact version and checksum.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">You only want to know whether your change type-checks. What's the fastest command?</p>
+    <ul class="options">
+      <li data-correct>cargo check</li>
+      <li>cargo build</li>
+      <li>cargo test</li>
+      <li>cargo run</li>
+    </ul>
+    <div class="explain"><code>cargo check</code> runs every analysis (types, borrow checker) but skips code
+      generation. It's the <code>tsc --noEmit</code> of Rust.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>sqlx = { workspace = true, features = ["macros"] }</code> turn on?</p>
+    <ul class="options">
+      <li>A newer sqlx version taken from the workspace</li>
+      <li data-correct>An optional compile-time part of the sqlx crate</li>
+      <li>A runtime flag read from the environment variable</li>
+      <li>A plugin installed separately from crates.io later</li>
+    </ul>
+    <div class="explain">Features are compile-time switches the crate author defines. Here they enable sqlx's
+      <code>query!</code>/<code>query_as!</code> macros, which <code>expenses</code> uses for checked SQL.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How do you refer to the package <code>ledgerly-shared</code> in Rust code?</p>
+    <ul class="options" data-fixed>
+      <li>ledgerly-shared</li>
+      <li data-correct>ledgerly_shared</li>
+      <li>LedgerlyShared</li>
+      <li>@ledgerly/shared</li>
+    </ul>
+    <div class="explain">Hyphens aren't valid in identifiers, so cargo exposes the crate as
+      <code>ledgerly_shared</code>, e.g. <code>use ledgerly_shared::clock::Clock;</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Where do compiled dependencies end up?</p>
+    <ul class="options">
+      <li>In a global cache shared by projects</li>
+      <li>Inside a node_modules-like folder for each crate</li>
+      <li data-correct>Inside target/, built from their source code</li>
+      <li>They're downloaded as prebuilt binaries per platform</li>
+    </ul>
+    <div class="explain">Sources are cached in <code>~/.cargo/registry</code>, but compiled output lives in each
+      project's (or workspace's) <code>target/</code>. That's why the first build is slow and later ones are
+      incremental.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://doc.rust-lang.org/book/ch01-03-hello-cargo.html">The Book 1.3, "Hello, Cargo!"</a>, then the
+      <a href="https://doc.rust-lang.org/cargo/reference/manifest.html">Cargo book's manifest reference</a> as a
+      lookup for any key you don't recognise.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

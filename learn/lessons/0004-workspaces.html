@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workspaces</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Setting up and the toolbox</p>
+  <h1>Workspaces</h1>
+  <p class="lede">Ledgerly is a monorepo of nine crates. A Cargo workspace works like pnpm workspaces: one lock file,
+    one build folder, shared settings.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read the root <code>Cargo.toml</code>: which crates belong to the workspace, how settings and
+      dependency versions are shared, and what the <code>[profile.release]</code> block does.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's the difference between a package and a crate?</summary>
+      <div>A package is one <code>Cargo.toml</code>. A crate is a unit of compilation: a library
+        (<code>lib.rs</code>) or a binary (<code>main.rs</code>). One package can contain both.</div></details>
+    <details><summary>What does <code>cargo check</code> skip that <code>cargo build</code> does?</summary>
+      <div>Generating code: it type- and borrow-checks but produces no binary.</div></details>
+    <details><summary>What is a cargo feature?</summary>
+      <div>An optional, compile-time part of a crate, switched on in the dependent's <code>Cargo.toml</code>.</div></details>
+  </div>
+
+  <h2>The root manifest</h2>
+  <script type="text/x-code" data-lang="toml" data-src="Cargo.toml" data-line="1">
+    [workspace]
+    resolver = "3"
+    members = ["crates/*"]
+
+    [workspace.package]
+    version = "0.1.0"
+    edition = "2024"
+    rust-version = "1.99"
+    license = "MIT"
+    publish = false
+
+    [workspace.lints.rust]
+    unsafe_code = "forbid"
+
+    [workspace.lints.clippy]
+    unwrap_used = "deny"
+    expect_used = "deny"
+    panic = "deny"
+    todo = "deny"
+    unimplemented = "deny"
+
+    [workspace.dependencies]
+    ledgerly-audit = { path = "crates/audit" }
+    ledgerly-expenses = { path = "crates/expenses" }
+    # …
+    axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+    serde = { version = "1.0.229", features = ["derive"] }
+    # …
+  </script>
+  <p>Notice what's <em>not</em> there: no <code>[package]</code>. The root is a "virtual manifest", so it describes
+    the workspace but is not a crate itself.</p>
+
+  <table>
+    <thead><tr><th>Root <code>Cargo.toml</code></th><th>pnpm / npm workspaces</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>members = ["crates/*"]</code></td><td><code>packages: ["crates/*"]</code></td><td>Every folder under <code>crates/</code> with a <code>Cargo.toml</code> is in</td></tr>
+      <tr><td><code>[workspace.package]</code></td><td>(no equivalent)</td><td>Values a crate inherits with <code>version.workspace = true</code></td></tr>
+      <tr><td><code>[workspace.dependencies]</code></td><td>pnpm <code>catalog:</code></td><td>Each external version is written once; crates say <code>axum.workspace = true</code></td></tr>
+      <tr><td><code>{ path = "crates/audit" }</code></td><td><code>"workspace:*"</code></td><td>Depend on a sibling crate by folder</td></tr>
+      <tr><td><code>[workspace.lints]</code></td><td>a shared ESLint config</td><td>Lint levels every crate opts into with <code>[lints] workspace = true</code></td></tr>
+      <tr><td><code>resolver = "3"</code></td><td>(no equivalent)</td><td>The dependency-resolution algorithm version; 3 is the 2024-edition default</td></tr>
+    </tbody>
+  </table>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <p>The lints table is a design decision. <code>unwrap_used = "deny"</code> makes
+      <code>.unwrap()</code> in production code an error whenever clippy runs (and <code>just check</code> always
+      runs it). <code>unsafe_code = "forbid"</code> is a lint of the compiler itself, so <code>unsafe</code> doesn't
+      even build. You'll see why in <a data-lesson="57"></a>. Every crate's manifest contains
+      <code>[lints] workspace = true</code>, so no crate can quietly opt out.</p>
+  </div>
+
+  <h2>One lock, one <code>target/</code></h2>
+  <p>All members share the root <code>Cargo.lock</code> and the root <code>target/</code>. Building
+    <code>ledgerly-expenses</code> and <code>ledgerly-app</code> compiles <code>serde</code> once. You can still work
+    on one crate (<a href="https://doc.rust-lang.org/cargo/reference/workspaces.html">Cargo book: workspaces</a>):</p>
+  <script type="text/x-code" data-lang="bash">
+    $ cargo check                          # every member (from the root)
+    $ cargo test -p ledgerly-expenses      # one package: like pnpm --filter
+    $ cargo run -p ledgerly-app --bin ledgerly
+  </script>
+
+  <h2>Profiles: debug vs release</h2>
+  <script type="text/x-code" data-lang="toml" data-src="Cargo.toml">
+    [profile.release]
+    lto = "fat"
+    codegen-units = 1
+    strip = "symbols"
+    panic = "unwind"
+  </script>
+  <p><code>cargo build</code> uses the <code>dev</code> profile: fast to compile, slow to run, debug info included.
+    <code>--release</code> uses this one. Ledgerly asks for whole-program link-time optimisation (<code>lto</code>)
+    and one code-generation unit (smaller, faster binary, slower build) and strips symbols for the container image
+    (<a href="https://doc.rust-lang.org/cargo/reference/profiles.html">Cargo book: profiles</a>). The comment above
+    it in the file explains <code>panic = "unwind"</code>, which you'll understand after section 8.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In a pnpm monorepo, a cycle between packages is legal and only bites at runtime. Cargo refuses a dependency
+      cycle between crates outright: if <code>teams</code> depends on <code>expenses</code>, then
+      <code>expenses</code> can never depend on <code>teams</code>. Ledgerly uses this to enforce its module
+      boundaries at compile time (<a data-lesson="72"></a>).</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it</span>
+    <ol>
+      <li>Open <code>crates/teams/Cargo.toml</code>. Which sibling crates does it depend on?</li>
+      <li>Run <code>cargo tree -p ledgerly-teams --depth 1</code> at the repo root to confirm.</li>
+      <li>Find <code>tokio</code> in the root <code>[workspace.dependencies]</code>, then find a crate that adds an
+        extra feature to it (hint: <code>crates/shared/Cargo.toml</code>).</li>
+    </ol>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A crate's manifest says <code>serde.workspace = true</code>. Where does the version come from?</p>
+    <ul class="options">
+      <li>The newest serde release on crates.io</li>
+      <li data-correct>The entry in the root's [workspace.dependencies]</li>
+      <li>The version another member already uses</li>
+      <li>The serde entry in its lock</li>
+    </ul>
+    <div class="explain">Versions (and default features) are written once in the root. A member can add features
+      on top, as <code>sqlx = { workspace = true, features = ["macros"] }</code> does.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How many <code>Cargo.lock</code> files does Ledgerly's workspace have?</p>
+    <ul class="options" data-fixed>
+      <li data-correct>One, at the root</li>
+      <li>One per crate</li>
+      <li>One per binary</li>
+      <li>None; it's generated</li>
+    </ul>
+    <div class="explain">A workspace has one lock file and one <code>target/</code> directory, shared by all
+      members.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why can't <code>ledgerly-shared</code> depend on <code>ledgerly-expenses</code>?</p>
+    <ul class="options">
+      <li>Shared crates are not allowed any dependencies</li>
+      <li>The path would point outside the workspace</li>
+      <li data-correct>Expenses depends on shared, and cycles are refused</li>
+      <li>Workspace members may only depend on crates.io</li>
+    </ul>
+    <div class="explain"><code>ledgerly-expenses</code> lists <code>ledgerly-shared</code> as a dependency, and
+      cargo rejects cyclic dependencies between crates.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>[workspace.lints.clippy] unwrap_used = "deny"</code> do to a member crate?</p>
+    <ul class="options">
+      <li>Nothing unless it runs clippy with a flag</li>
+      <li data-correct>Makes .unwrap() a lint error after opting in</li>
+      <li>Removes unwrap from the standard library for it</li>
+      <li>Logs a warning at runtime when unwrap panics</li>
+    </ul>
+    <div class="explain">Member crates opt in with <code>[lints] workspace = true</code>. Every Ledgerly crate does,
+      so <code>cargo clippy</code> fails on an <code>unwrap()</code> in production code.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html">The Book 14.3, "Cargo Workspaces"</a>,
+      then the reference page <a href="https://doc.rust-lang.org/cargo/reference/workspaces.html">Workspaces</a> for
+      <code>[workspace.package]</code>, <code>[workspace.dependencies]</code> and <code>[workspace.lints]</code>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

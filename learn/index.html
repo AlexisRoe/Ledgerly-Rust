@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rust for TypeScript developers, taught on Ledgerly</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/course.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Course</p>
+  <h1>Rust for TypeScript developers</h1>
+  <p class="lede">Taught on Ledgerly-Rust: by the end you can open any file in <code>crates/</code>, say what it
+    does, and make a small change yourself.</p>
+
+  <div class="goal">
+    <span class="box-label">How to use this course</span>
+    <ul>
+      <li>Do the lessons in order. Each takes 10–15 minutes and gives you one concrete skill.</li>
+      <li>Each lesson opens with <strong>recall questions</strong> on earlier lessons. Answer them from memory
+        before you open them. The effort of remembering is what makes it stick.</li>
+      <li>Code captions with a path, such as <code>crates/expenses/src/lib.rs:20</code>, open the real file in
+        VS Code. Read it there, with the surrounding code.</li>
+      <li>Hands-on exercises live in <code>learn/playground/</code>, a small cargo project with failing tests.
+        Its <a href="playground/README.md">README</a> explains how to run them.</li>
+      <li>Each section ends with a printable <strong>cheat sheet</strong>. Come back to those, not to the
+        lessons.</li>
+      <li>Stuck? Ask the agent in Claude Code. That's what it's there for.</li>
+    </ul>
+    <p class="score" id="progress"></p>
+  </div>
+
+  <div id="toc"></div>
+
+  <h2 id="refs">Cheat sheets and reference</h2>
+  <div id="refs-list"></div>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const holder = document.getElementById("refs-list");
+      const ul = document.createElement("ul");
+      ul.className = "two-col";
+      window.LedgerlyCourse.REFERENCES.forEach(([f, t]) => {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = "reference/" + f;
+        a.textContent = t;
+        li.append(a);
+        ul.append(li);
+      });
+      holder.append(ul);
+    });
+  </script>
+
+  <p>See also <a href="MISSION.md">MISSION.md</a> (why this course exists), <a href="RESOURCES.md">RESOURCES.md</a>
+    (the sources the lessons cite) and <a href="CURRICULUM.md">CURRICULUM.md</a> (the plan).</p>
+</main>
+</body>
+</html>
