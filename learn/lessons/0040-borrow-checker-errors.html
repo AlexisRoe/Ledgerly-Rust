@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reading the borrow checker's errors</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and borrowing</p>
+  <h1>Reading the borrow checker's errors</h1>
+  <p class="lede">Six error codes cover nearly everything you'll hit when you change Ledgerly. Each has a usual
+    cause and a usual fix, and the compiler's message tells you most of it.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>Given a borrow-checker error, you can name what went wrong in one sentence and pick the right fix:
+      reorder, borrow instead of move, add <code>mut</code>, shorten a borrow, or (last resort) clone.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>State the borrow rule.</summary>
+      <div>Any number of <code>&amp;</code> or exactly one <code>&amp;mut</code>, and no reference may outlive its
+        value. (39)</div></details>
+    <details><summary>What do you need before calling a <code>&amp;mut self</code> method?</summary>
+      <div>A mutable binding: <code>let mut x</code>. (39)</div></details>
+  </div>
+
+  <h2>The six you'll meet</h2>
+  <table>
+    <thead><tr><th>Code</th><th>Message (short)</th><th>Means</th><th>Usual fix</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://doc.rust-lang.org/error_codes/E0382.html">E0382</a></td><td>use of moved value</td><td>you gave it away, then used it</td><td>borrow (<code>&amp;x</code>) instead; or use it before the move; or clone</td></tr>
+      <tr><td><a href="https://doc.rust-lang.org/error_codes/E0384.html">E0384</a></td><td>cannot assign twice to immutable variable</td><td>reassigned a <code>let</code></td><td><code>let mut</code>, or shadow with a new <code>let</code></td></tr>
+      <tr><td><a href="https://doc.rust-lang.org/error_codes/E0596.html">E0596</a></td><td>cannot borrow as mutable</td><td>called a <code>&amp;mut self</code> method on a non-<code>mut</code> binding</td><td><code>let mut</code>; or the parameter must be <code>&amp;mut T</code></td></tr>
+      <tr><td><a href="https://doc.rust-lang.org/error_codes/E0502.html">E0502</a></td><td>cannot borrow as mutable because it is also borrowed as immutable</td><td>a reader is still alive while you write</td><td>finish using the reader first; copy the value out (<code>*x</code>, <code>.clone()</code>)</td></tr>
+      <tr><td><a href="https://doc.rust-lang.org/error_codes/E0499.html">E0499</a></td><td>cannot borrow as mutable more than once</td><td>two writers alive</td><td>let the first <code>&amp;mut</code> end before the second</td></tr>
+      <tr><td><a href="https://doc.rust-lang.org/error_codes/E0597.html">E0597</a> / <a href="https://doc.rust-lang.org/error_codes/E0106.html">E0106</a></td><td>does not live long enough / missing lifetime specifier</td><td>a reference would outlive its value</td><td>return an owned value (<code>String</code>, not <code>&amp;str</code>); keep the owner alive longer</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Borrows end at their last use</h2>
+  <p>A borrow lasts until the reference is used for the last time, not until the end of the block. So reordering often
+    fixes E0502/E0499:</p>
+  <div class="compare">
+    <script type="text/x-code" data-lang="rust" data-label="E0502">
+      let mut rejections = vec![first];
+      let oldest = &rejections[0];   // shared borrow starts
+      rejections.push(second);       // ✗ needs &mut while `oldest` lives
+      println!("{}", oldest.reason); // …because it's used here
+    </script>
+    <script type="text/x-code" data-lang="rust" data-label="Fixed by reordering">
+      let mut rejections = vec![first];
+      let oldest = &rejections[0];
+      println!("{}", oldest.reason); // last use: the borrow ends here
+      rejections.push(second);       // ✓
+    </script>
+  </div>
+
+  <h2>How to read a full message</h2>
+  <script type="text/x-code" data-lang="text" data-label="cargo check">
+    error[E0502]: cannot borrow `rejections` as mutable because it is also borrowed as immutable
+     --> src/lib.rs:4:5
+      |
+    3 |     let oldest = &rejections[0];
+      |                   ---------- immutable borrow occurs here
+    4 |     rejections.push(second);
+      |     ^^^^^^^^^^^^^^^^^^^^^^^ mutable borrow occurs here
+    5 |     println!("{}", oldest.reason);
+      |                    ------------- immutable borrow later used here
+  </script>
+  <ol>
+    <li>The first line names the rule that was broken.</li>
+    <li>The <code>-</code> and <code>^</code> labels are a timeline: borrow starts, conflict, borrow still used.</li>
+    <li>Look for <code>help:</code> lines. They often contain the exact fix.</li>
+    <li><code>rustc --explain E0502</code> prints a full explanation with examples, offline.</li>
+  </ol>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p><code>tsc</code> errors are about types; borrow errors are about <em>time</em>: who has access when. The
+      instinct from TS is to fight them with casts. Here the equivalent instinct is <code>.clone()</code>
+      everywhere. It works, but first ask whether the value should be borrowed, or whether two lines should swap.
+      Nearly every borrow error in Ledgerly-style code is fixed by one of those two.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex40_borrow_errors.rs</code>: four broken snippets, each behind an
+      <code>UNCOMMENT</code> marker. For each: uncomment, predict the error code <em>before</em> running
+      <code>cargo test ex40</code>, then fix it without <code>.clone()</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">You write <code>let expense = load()?; expense.approve(actor)?;</code>. Which error?</p>
+    <ul class="options" data-fixed>
+      <li>E0382: use of moved value</li>
+      <li data-correct>E0596: cannot borrow as mutable</li>
+      <li>E0499: two mutable borrows</li>
+      <li>E0597: does not live long enough</li>
+    </ul>
+    <div class="explain"><code>approve</code> takes <code>&amp;mut self</code>, so the binding must be <code>let mut
+      expense</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A helper returns <code>&amp;str</code> pointing into a <code>String</code> it created locally.
+      What's the right fix?</p>
+    <ul class="options">
+      <li>Add a 'static lifetime to the return type</li>
+      <li data-correct>Return the String itself, giving its ownership away</li>
+      <li>Wrap the local String in a Box first</li>
+      <li>Clone the &amp;str just before it is returned</li>
+    </ul>
+    <div class="explain">The local <code>String</code> is dropped when the function returns, so no borrow of it can
+      escape. Return the owned value instead.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's usually the <em>first</em> thing to try on E0502?</p>
+    <ul class="options">
+      <li>Add .clone() to the value that's being borrowed</li>
+      <li data-correct>Finish using the reader before the write happens</li>
+      <li>Wrap the value in an Arc and a Mutex</li>
+      <li>Mark the function unsafe to skip the check</li>
+    </ul>
+    <div class="explain">Borrows end at their last use, so reordering often removes the overlap. (And
+      <code>unsafe</code> is forbidden in Ledgerly anyway.)</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="https://doc.rust-lang.org/error_codes/">rustc error code index</a>: open the six codes in the
+      table and read each "erroneous code example". They're short, and they're the fastest way to recognise the
+      patterns.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

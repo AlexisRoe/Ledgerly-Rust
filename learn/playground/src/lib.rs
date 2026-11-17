@@ -20,3 +20,6 @@ pub mod ex30_loops;
 pub mod ex31_match;
 pub mod ex33_if_let;
 pub mod ex34_question_mark;
+pub mod ex37_moves;
+pub mod ex39_borrowing;
+pub mod ex40_borrow_errors;

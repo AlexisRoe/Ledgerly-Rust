@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Why ownership: memory without a GC</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and borrowing</p>
+  <h1>Why ownership: memory without a GC</h1>
+  <p class="lede">JavaScript frees memory "eventually", whenever the garbage collector notices nobody uses an object.
+    Rust frees it at a point the compiler knows in advance. Three rules make that possible.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can state the three ownership rules, say when a value is dropped, and explain why a Ledgerly database
+      transaction rolls back by itself when a <code>?</code> returns early.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Which of <code>String</code> and <code>&amp;str</code> owns its bytes?</summary>
+      <div><code>String</code>. <code>&amp;str</code> borrows a view. (18)</div></details>
+    <details><summary>What does <code>?</code> do on <code>Err</code>?</summary>
+      <div>Converts the error and returns from the function immediately. (34)</div></details>
+  </div>
+
+  <h2>Stack and heap, in one paragraph</h2>
+  <p>Values whose size is known at compile time (numbers, <code>bool</code>, a <code>TeamId</code>, a fixed array) live
+    on the <strong>stack</strong>, which is fast and cleaned up automatically when a function returns. Values that grow
+    (a <code>String</code>'s text, a <code>Vec</code>'s elements) live on the <strong>heap</strong>, and someone must
+    free that memory exactly once. Free it too early and you have a crash or security hole. Free it twice, same.
+    Never free it, and you leak. JavaScript hands the problem to a garbage collector. C hands it to you. Rust hands it
+    to the compiler, through ownership
+    (<a href="https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html">Book 4.1</a>).</p>
+
+  <h2>The three rules</h2>
+  <div class="goal">
+    <ol>
+      <li>Each value has an <strong>owner</strong>, a variable or a field.</li>
+      <li>There's exactly <strong>one owner at a time</strong>.</li>
+      <li>When the owner goes <strong>out of scope</strong>, the value is <strong>dropped</strong> (its memory and
+        any other resources are released).</li>
+    </ol>
+  </div>
+  <script type="text/x-code" data-lang="rust">
+    fn handle() {
+        let merchant = String::from("Deutsche Bahn"); // `merchant` owns the heap text
+        {
+            let note = String::from("ICE to Hamburg");  // `note` owns its text
+        }                                               // ← `note` dropped here
+        println!("{merchant}");
+    }                                                   // ← `merchant` dropped here
+  </script>
+  <p>No <code>free()</code> calls, no GC pauses: the compiler inserts the drop at each closing brace. That's also
+    why section 1's <code>main</code> could write <code>drop(runtime)</code> to end the runtime at a precise
+    moment.</p>
+
+  <h2>Drop is more than memory</h2>
+  <p>"Release resources" includes files, sockets, locks, and database transactions. TS has
+    <code>try/finally</code> and the newer <code>using</code> declarations for this. In Rust every value works that
+    way.</p>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a transaction that can't be left open</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/transition_expense.rs" data-line="59">
+      let mut transaction = self.pool.begin().await?;
+      let actor = access::actor(&mut transaction, self.memberships.as_ref(), team, caller).await?;
+      let found = access::load(&mut transaction, actor, team, id).await?;
+      let mut expense = found.value;
+      // … the transition (may return early with ?) …
+      let version = persistence::update(&mut transaction, &expense, found.version, self.clock.now()).await?;
+      // …
+      self.events.publish(&mut transaction, &event).await?;
+      // …
+      transaction.commit().await?;
+    </script>
+    <p>This function owns <code>transaction</code>. Every <code>?</code> before <code>commit()</code> is an early
+      return, and when the function returns, <code>transaction</code> goes out of scope and is dropped. sqlx's
+      transaction <strong>rolls back on drop</strong> unless it was committed. So a refused approval, a database
+      error or a failed event publish leaves no half-written change behind. There's no <code>catch</code>/<code>rollback</code>
+      boilerplate, and nobody can forget it.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In JS, <code>const a = obj; const b = obj;</code> gives you two references to one object, and the GC keeps it
+      alive while any reference exists. Rule 2 forbids that kind of sharing by default: assigning a
+      <code>String</code> to another variable <em>moves</em> ownership. That's the next lesson, and it's the single
+      biggest mental shift from TypeScript.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">When is the <code>String</code> in <code>let note = String::from("x");</code> freed?</p>
+    <ul class="options">
+      <li>When the garbage collector next runs a cycle</li>
+      <li data-correct>When note's owning scope ends at its brace</li>
+      <li>When the program exits and memory is reclaimed</li>
+      <li>When you call free(note) somewhere explicitly later on</li>
+    </ul>
+    <div class="explain">Rule 3: the owner going out of scope drops the value. The compiler knows exactly
+      where.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">An approval is refused and <code>expense.approve(actor)?</code> returns early. What happens to the
+      open transaction?</p>
+    <ul class="options">
+      <li>It stays open until a timeout closes the connection</li>
+      <li data-correct>It's dropped, and dropping it rolls it back</li>
+      <li>It commits whatever was written up to that point</li>
+      <li>It panics, because transactions must be closed by hand</li>
+    </ul>
+    <div class="explain">The function returns, the owner <code>transaction</code> goes out of scope, and its drop
+      code rolls back.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which value lives entirely on the stack?</p>
+    <ul class="options" data-fixed>
+      <li><code>String::from("EUR")</code></li>
+      <li><code>vec![1, 2, 3]</code></li>
+      <li data-correct><code>42_u32</code></li>
+      <li><code>Box::new(42)</code></li>
+    </ul>
+    <div class="explain">A <code>u32</code> has a fixed size. <code>String</code>, <code>Vec</code> and
+      <code>Box</code> keep a small handle on the stack and their contents on the heap.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html">4.1 "What Is
+      Ownership?"</a>, up to "Variables and Data Interacting with Move". This lesson and the next two follow that chapter.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
