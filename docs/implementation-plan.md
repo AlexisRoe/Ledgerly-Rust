@@ -523,7 +523,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: harden the Dockerfile. Release profile (`lto`, `codegen-units = 1`, `strip`), all digests pinned, no build secrets in layers, a healthcheck via the orchestrator (distroless has no shell, so Compose uses the management port from outside).
   - Accept: the image is under 50 MB, Trivy shows nothing high or critical with a fix, and the container runs `read_only` with no capabilities.
 
-- [ ] **M11.2 Image job in CI**
+- [x] **M11.2 Image job in CI**
   - Do: the `image` job builds the image, asserts it runs as non-root, runs Trivy (failing on high or critical with a fix) and uploads a CycloneDX SBOM (`cargo cyclonedx`) as an artifact. (Java documented this job but never implemented it.)
   - Accept: CI is green, as checked by the reviewer after pushing.
 

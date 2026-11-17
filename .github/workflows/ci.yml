@@ -56,6 +56,28 @@ jobs:
         if: always()
         run: docker compose --profile app down -v
 
+  # The production image (plan M11.2; Java documented this job but never had it): built as `just image` builds
+  # it, then it must not run as root and Trivy must find nothing rated high or critical that has a fix. The
+  # binary's CycloneDX SBOM is kept with the run.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: rust just cargo-binstall cargo:cargo-cyclonedx
+      - run: just image
+      - run: just image-check
+      - run: just sbom
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-cyclonedx
+          path: target/sbom/ledgerly.cdx.json
+          if-no-files-found: error
+
   openapi-lint:
     runs-on: ubuntu-latest
     steps:

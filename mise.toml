@@ -4,11 +4,12 @@
 [tools]
 rust = { version = "1.99.1", components = "rustfmt,clippy" }
 just = "1.59.0"
-# Lets the two `cargo:` tools below install as prebuilt binaries instead of compiling from source.
+# Lets the `cargo:` tools below install as prebuilt binaries instead of compiling from source.
 cargo-binstall = "1.27.0"
 "cargo:cargo-nextest" = "0.9.151"
 cargo-deny = "0.20.2"
 "cargo:sqlx-cli" = "0.9.0"
+"cargo:cargo-cyclonedx" = "0.5.10"
 node = "26.13.1"
 pre-commit = "4.7.0"
 gitleaks = "8.30.1"

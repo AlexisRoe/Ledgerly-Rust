@@ -23,6 +23,7 @@ Do not install the other tools with `curl | sh` or globally with `cargo install`
 | `cargo-nextest` | Faster test runner with per-test isolation |
 | `cargo-deny` | Advisories, licences, banned crates, allowed sources |
 | `sqlx-cli` | Regenerates the offline query metadata in `.sqlx/` |
+| `cargo-cyclonedx` | The image binary's SBOM (`just sbom`) |
 | Node (LTS) | Runs the pinned `npx` tools: Redocly 2.76.0, Prettier 3.9.10, Bruno CLI 4.3.0, with `NPM_CONFIG_IGNORE_SCRIPTS=true` |
 | `pre-commit`, `gitleaks` | Secret scan and format checks before each commit |
 
@@ -56,6 +57,7 @@ just up        # build the image, start the dependencies, run Flyway, start the 
 | Run the Bruno collection | `just api-test` |
 | Refresh `.sqlx/` after changing a query | `just sqlx-prepare` (needs `just deps`) |
 | Start everything in Docker, the app included | `just up` |
+| Check the image as CI does: non-root, Trivy, SBOM | `just image && just image-check && just sbom` (Trivy runs in Docker) |
 | Stop everything, the app included, and keep the data | `just down` (or `just stop`) |
 | Remove every container and all data | `just reset` |
 | Remove a left-over integration-test Postgres | `just test-db-down` (normally not needed) |

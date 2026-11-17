@@ -100,6 +100,22 @@ run:
 image:
     docker build --build-arg LEDGERLY_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t {{ image_tag }} .
 
+# Fail if the image runs as root or has a high or critical vulnerability with a fix (Trivy, in Docker). `just image` first.
+image-check:
+    scripts/image-check.sh {{ image_tag }}
+
+# The image binary's dependencies as a CycloneDX SBOM (JSON, CycloneDX 1.6) in target/sbom/, for linux/amd64.
+sbom:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo cyclonedx --manifest-path crates/app/Cargo.toml --format json --spec-version 1.6 --describe binaries \
+        --no-build-deps --target x86_64-unknown-linux-gnu --quiet
+    mkdir -p target/sbom
+    mv crates/app/ledgerly_bin.cdx.json target/sbom/ledgerly.cdx.json
+    # It writes one for every binary of the workspace; only the app's is shipped.
+    find crates -name '*_bin.cdx.json' -delete
+    echo "target/sbom/ledgerly.cdx.json"
+
 # Build the image and run everything in Docker; returns when the app is ready (API http://localhost:8080).
 up: image
     docker compose --profile app up -d postgres seaweedfs clamav lgtm app
