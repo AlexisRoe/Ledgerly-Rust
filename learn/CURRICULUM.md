@@ -152,3 +152,100 @@ Capstone exercises run on a throwaway branch and are reverted afterwards: Ledger
 ---
 
 **Reference documents** (`learn/reference/`): TS↔Rust syntax sheet, tool and command sheet, data types sheet, control flow sheet, ownership rules card, traits table, error-handling flow, a glossary, and a Ledgerly map (crate → layer → file).
+
+---
+
+# Part II · Rust in depth (added 2026-11-17)
+
+Part I teaches the Rust that Ledgerly uses, so you can read it and change it. Part II is for an experienced backend
+developer who wants to understand the language itself: what's underneath, how to design Rust code, and how
+concurrency works when there is more than one thread. The format is the same: TS comparison, real Ledgerly code
+where it exists, quizzes, a playground exercise for most lessons. It ends with a capstone that builds a small
+service from an empty `cargo new`.
+
+## 15 · Ownership and lifetimes in depth
+| # | Lesson | You'll be able to… | Anchor |
+|---|---|---|---|
+| 80 | Writing lifetime annotations | apply the three elision rules; annotate a function the compiler can't infer | `java_lines` |
+| 81 | Structs that borrow | design `struct Parser<'a>`; know when a borrowing struct is worth it | `receipts::Modules<'a>` |
+| 82 | `'static` and `T: 'static` | tell "lives forever" from "owns all its data"; read why `tokio::spawn` needs `'static` | `ensure_bucket` |
+| 83 | Borrowing in practice | split borrows of fields; the entry API; "get, then insert" patterns that compile | playground |
+| 84 | Interior mutability | choose `Cell`, `RefCell`, `Mutex`, `OnceLock`/`LazyLock` | `FixedClock`, `match_nothing` |
+| 85 | `Cow`: borrow when you can | return borrowed or owned data from one function | `typed_id` deserialiser |
+| 86 | Drop, RAII and `mem::take` | write `impl Drop` guards; move out of a `&mut` with `take`/`replace` | `Observation`, `java_lines` |
+| 87 | ★ Review + cheat sheet | | |
+
+## 16 · Traits in depth
+| # | Lesson | You'll be able to… | Anchor |
+|---|---|---|---|
+| 88 | Associated types vs generic parameters | know why `Iterator` has `Item` but `From` has `<T>` | `impl Iterator<Item = &str>` |
+| 89 | Implementing `Iterator` yourself | write `next`, get all adapters free; `IntoIterator`; `iter::from_fn` | `java_lines` |
+| 90 | Default methods, blanket impls, extension traits | add behaviour to every type that has a trait | `Clock::today` |
+| 91 | Coherence: the orphan rule | know which impls you may write; the newtype workaround | `typed_id` |
+| 92 | `dyn` compatibility and async in traits | know which traits can be `dyn`; read `BoxFuture` ports | `MembershipLookup` |
+| 93 | `AsRef`, `Borrow`, `Deref` and flexible parameters | accept `impl AsRef<str>` / `impl Into<String>`; avoid `Deref` abuse | `invalid(…, impl Into<String>)` |
+| 94 | Comparison and operator traits | the contracts of `Eq`, `Ord`, `Hash`; overload `+`; when *not* to | `Money::cmp` |
+| 95 | Typestate: states as types | make invalid transitions fail to compile; `PhantomData` | vs `ExpenseStatus` |
+| 96 | ★ Review + cheat sheet | | |
+
+## 17 · Concurrency and async internals
+| # | Lesson | You'll be able to… | Anchor |
+|---|---|---|---|
+| 97 | Threads and scoped threads | spawn and join OS threads; borrow from the stack with `thread::scope` | clock test |
+| 98 | `Send` and `Sync`, really | explain what each means and read the errors when they're missing | `Clock: Send + Sync` |
+| 99 | Shared mutable state | `Arc<Mutex<_>>`, `RwLock`, atomics, poisoning, std vs tokio `Mutex` | `FixedClock` |
+| 100 | Channels and the actor pattern | `mpsc`, `oneshot`, `watch`, `broadcast`; own state in one task | `Shutdown` |
+| 101 | Inside a future: `poll` and `Waker` | write a `Future` by hand and a tiny `block_on` executor | playground |
+| 102 | `Pin`, just enough | why self-referential futures need pinning; read `Pin<Box<dyn Future>>` | `BoxFuture` |
+| 103 | Cancellation and structured concurrency | cancel-safety, `select!` in loops, `JoinSet`, aborting | `server.rs` |
+| 104 | Blocking inside async | `spawn_blocking` for CPU work; why it hurts more than in Node | `hash_password` |
+| 105 | ★ Review + cheat sheet | | |
+
+## 18 · Memory and performance
+| # | Lesson | You'll be able to… | Anchor |
+|---|---|---|---|
+| 106 | Stack, heap and layout | predict `size_of`; niches make `Option<Box<T>>` free | playground |
+| 107 | Where allocations hide | `with_capacity`, `&str` params, avoiding clones and temporary `Vec`s | `hex` in `upload.rs` |
+| 108 | Generics vs `dyn`: what abstractions cost | monomorphisation, inlining, code size and compile times | `Arc<dyn Clock>` |
+| 109 | Measuring: release builds, benchmarks, profiles | `--release`, `black_box`, criterion, flamegraphs | playground `bench` |
+| 110 | ★ Review + cheat sheet | | |
+
+## 19 · Designing Rust code
+| # | Lesson | You'll be able to… | Anchor |
+|---|---|---|---|
+| 111 | Error design: libraries vs applications | `thiserror` enums vs `anyhow` with context | `ExpenseError` vs `main` |
+| 112 | Parse, don't validate, in depth | private fields, smart constructors, `serde(try_from)` | `text.rs` |
+| 113 | Constructors, `Default` and builders | pick between `new`, `Default`, struct update and a builder | `Limits`, runtime `Builder` |
+| 114 | APIs others enjoy | naming (`as_`/`to_`/`into_`), `#[must_use]`, `#[non_exhaustive]`, the API guidelines | across the code |
+| 115 | Module and crate boundaries | facades, features, semver; when to split a crate | ADR 0010 |
+| 116 | Documentation as code | rustdoc, doc tests, intra-doc links, `# Errors` sections | `Money` |
+| 117 | ★ Review + cheat sheet | | |
+
+## 20 · Writing macros
+| # | Lesson | You'll be able to… | Anchor |
+|---|---|---|---|
+| 118 | `macro_rules!` from scratch | matchers and fragment types; write a small macro | `display_as_text!` |
+| 119 | Repetition, internal rules and hygiene | `$(…),*`, `@internal` arms, why macros don't capture names | `required_in_prod!`, `typed_id!` |
+| 120 | Procedural macros, and when not to write one | how derives work, `cargo expand`, functions first | `#[derive]`, `#[tokio::main]` |
+
+## 21 · `unsafe`, briefly
+| # | Lesson | You'll be able to… | Anchor |
+|---|---|---|---|
+| 121 | What `unsafe` allows | the five superpowers; why Ledgerly forbids it | `#![forbid(unsafe_code)]` |
+| 122 | Reading `unsafe` in dependencies | `// SAFETY:` comments, Miri, how to judge a crate | `deny.toml` |
+
+## 22 · Capstone: a service from scratch
+A small link-shortener service, built by you from `cargo new`. A complete reference solution lives in
+`learn/capstone/`; each lesson shows the decisions, gives tests to start from, and links the solution's code.
+
+| # | Lesson | You'll be able to… |
+|---|---|---|
+| 123 | Plan and set up | create the crate, lints, dependencies; turn requirements into types |
+| 124 | The domain, types first | newtypes with smart constructors, a domain error, unit tests |
+| 125 | Storage behind a trait | a `LinkStore` port, an in-memory adapter with `RwLock`, `Arc<dyn …>` |
+| 126 | HTTP with axum | handlers, state, errors → responses, in-process tests with `oneshot` |
+| 127 | Background work and shutdown | count visits through a channel and a worker task; graceful shutdown |
+| 128 | Review your own code | clippy pedantic, docs, the API checklist; where to go next |
+
+New cheat sheets: ownership in depth, traits in depth, concurrency, performance, design, macros and `unsafe`,
+capstone checklist.
