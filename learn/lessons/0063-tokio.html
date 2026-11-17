@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tokio: the runtime</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Async Rust</p>
+  <h1>Tokio: the runtime</h1>
+  <p class="lede">Tokio is Ledgerly's event loop, with one difference from Node's: it runs tasks on several threads
+    at once. Its toolbox maps neatly onto <code>Promise.all</code>, <code>Promise.race</code>,
+    <code>setTimeout</code> and fire-and-forget.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read Ledgerly's startup and shutdown code: <code>tokio::join!</code>, <code>tokio::select!</code>,
+      <code>tokio::spawn</code>, <code>tokio::time::sleep</code>, and the <code>#[tokio::test]</code> attribute.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What happens to a future nobody awaits?</summary>
+      <div>Nothing. It never runs. (62)</div></details>
+    <details><summary>What does <code>block_on</code> do?</summary>
+      <div>Drives a future to completion on the runtime, blocking the calling thread. (62)</div></details>
+  </div>
+
+  <h2>Node → Tokio</h2>
+  <table>
+    <thead><tr><th>Node / TS</th><th>Tokio</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td><code>await Promise.all([a, b])</code></td><td><code>tokio::join!(a, b)</code></td><td>runs both concurrently in this task, returns a tuple</td></tr>
+      <tr><td><code>await Promise.race([a, b])</code></td><td><code>tokio::select! { x = a =&gt; …, y = b =&gt; … }</code></td><td>first one wins; the others are <strong>dropped (cancelled)</strong></td></tr>
+      <tr><td>fire-and-forget <code>doWork()</code></td><td><code>tokio::spawn(async move { … })</code></td><td>a new task, possibly on another thread; returns a <code>JoinHandle</code></td></tr>
+      <tr><td><code>await new Promise(r =&gt; setTimeout(r, 2000))</code></td><td><code>tokio::time::sleep(Duration::from_secs(2)).await</code></td><td></td></tr>
+      <tr><td><code>AbortController</code></td><td><code>handle.abort()</code>, or dropping a future</td><td></td></tr>
+      <tr><td>vitest <code>it("…", async () =&gt; …)</code></td><td><code>#[tokio::test] async fn …</code></td><td>a runtime per test</td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://tokio.rs/tokio/tutorial/spawning">Tokio tutorial: spawning</a>,
+    <a href="https://tokio.rs/tokio/tutorial/select">select</a>.)</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: waiting for SIGTERM or Ctrl-C</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/lib.rs" data-line="426">
+      let mut terminate = signal(SignalKind::terminate())?;
+      let mut interrupt = signal(SignalKind::interrupt())?;
+      Ok(async move {
+          tokio::select! {
+              _ = terminate.recv() => {}
+              _ = interrupt.recv() => {}
+          }
+      })
+    </script>
+    <p>A future that completes when <em>either</em> signal arrives: <code>Promise.race</code> of two listeners. It's
+      returned unawaited (lazy!) and awaited later by <code>serve</code>.</p>
+  </div>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: drain, but not forever</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/server.rs" data-line="61">
+      let deadline = async {
+          shutdown.wait().await;
+          tokio::time::sleep(drain).await;
+      };
+      tokio::select! {
+          result = server => result,
+          () = deadline => Ok(()),
+      }
+    </script>
+    <p>Graceful shutdown: when shutdown starts, the server stops accepting connections and lets running requests
+      finish. If that takes longer than <code>drain</code> (30 s), the deadline wins the race and the server future is
+      dropped, which cancels it.</p>
+  </div>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: two servers side by side</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/lib.rs" data-line="410">
+      let (api_result, management_result, ()) = tokio::join!(api_then_management, management, trigger);
+    </script>
+    <p>The API listener, the management listener (health checks, metrics) and the shutdown trigger run concurrently,
+      and <code>serve</code> returns when all three are done. Background work, like the event outbox dispatcher,
+      runs as spawned tasks that are <code>abort()</code>ed afterwards.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Node runs your JS on one thread, so two callbacks never run at the same instant. Tokio's multi-threaded runtime
+      runs spawned tasks truly in parallel on a thread pool. That's why everything shared between tasks must be
+      <code>Send + Sync</code> and why mutable shared state needs a lock (next lesson). Also, never do blocking work
+      (a slow CPU loop, a blocking file read) inside an async task: it stalls that worker thread. Tokio has
+      <code>spawn_blocking</code> for that.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex63_tokio.rs</code>: use <code>join!</code> to run two "lookups" concurrently,
+      <code>select!</code> to add a timeout, and <code>spawn</code> to run work in the background. Run
+      <code>cargo test ex63</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">In <code>tokio::select! { r = server =&gt; r, () = deadline =&gt; Ok(()) }</code>, the deadline
+      finishes first. What happens to <code>server</code>?</p>
+    <ul class="options">
+      <li>It keeps running in the background until it finishes</li>
+      <li data-correct>It's dropped, which cancels it at its current await</li>
+      <li>select! waits for it too before returning anything</li>
+      <li>It panics because it was interrupted in mid-request</li>
+    </ul>
+    <div class="explain">Unlike <code>Promise.race</code>, losers aren't left running: their futures are dropped.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's the Tokio for <code>await Promise.all([loadUser(), loadTeam()])</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>load_user().await; load_team().await;</code></li>
+      <li data-correct><code>tokio::join!(load_user(), load_team())</code></li>
+      <li><code>tokio::select! { … }</code></li>
+      <li><code>tokio::spawn(load_user()).await</code></li>
+    </ul>
+    <div class="explain"><code>join!</code> runs them concurrently and waits for both. Two sequential awaits would run
+      one after the other.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why must a future passed to <code>tokio::spawn</code> be <code>Send</code>?</p>
+    <ul class="options">
+      <li>Spawned futures are serialised and sent across the network</li>
+      <li data-correct>The task may run on another thread of the pool</li>
+      <li>Send makes the future start immediately when it's created</li>
+      <li>Only Send futures may return a Result to callers</li>
+    </ul>
+    <div class="explain">The multi-threaded runtime moves tasks between worker threads.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="https://tokio.rs/tokio/tutorial">Tokio tutorial</a>: "Hello Tokio", "Spawning" and "Select".
+      It's the best-written introduction to async Rust there is.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
