@@ -254,10 +254,13 @@ fn crate_violations(dependencies: &BTreeSet<(String, String)>) -> Vec<String> {
 }
 
 /// The production code of a file: everything before its `#[cfg(test)]` module, or nothing for a file that only
-/// tests.
+/// tests (`tests.rs`, `*_tests.rs`, `testing.rs`, `doubles.rs`, anything under `tests/`: all `cfg(test)` or test-only).
 fn production_code(path: &str, text: &str) -> String {
     let file = path.rsplit('/').next().unwrap_or(path);
-    if matches!(file, "tests.rs" | "testing.rs" | "doubles.rs") || path.contains("/tests/") {
+    if matches!(file, "tests.rs" | "testing.rs" | "doubles.rs")
+        || file.ends_with("_tests.rs")
+        || path.contains("/tests/")
+    {
         return String::new();
     }
     text.split("#[cfg(test)]").next().unwrap_or_default().to_owned()
