@@ -35,7 +35,7 @@ Set `SPRING_PROFILES_ACTIVE=prod`. The prod profile has **no defaults**: unless 
 
 | Setting (environment variable) | What |
 | --- | --- |
-| `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | PostgreSQL. The URL may be in JDBC form (`jdbc:postgresql://host:5432/db`) or `postgres://` form |
+| `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | PostgreSQL. The URL may be in JDBC form (`jdbc:postgresql://host:5432/db`) or `postgres://` form. Parameters: `ApplicationName`, `sslmode` (pgjdbc's `disable`, `allow`, `prefer` (default), `require`, `verify-ca`, `verify-full`) and `sslrootcert`; any other stops the start. `verify-*` trust `sslrootcert` (default `~/.postgresql/root.crt`, as pgjdbc) *and* the system's CA certificates, and both check the host name: `verify-ca` is as strict as `verify-full` here |
 | `LEDGERLY_AUTH_JWT_PRIVATE_KEY`, `LEDGERLY_AUTH_JWT_PUBLIC_KEY` | ES256 key pair for access tokens: PKCS#8 (private) and X.509 SubjectPublicKeyInfo (public), as PEM with its line breaks or as the bare Base64 body. The `kid` is the public key's RFC 7638 thumbprint. Not needed with the `keycloak` profile. Use the *same* pair as a Java deployment if both serve the same users |
 | `LEDGERLY_STORAGE_S3_ENDPOINT`, `_REGION`, `_BUCKET`, `_ACCESS_KEY`, `_SECRET_KEY` | S3-compatible object store (private bucket) |
 | `LEDGERLY_RECEIPTS_CLAMAV_HOST`, `_PORT` | clamd |
@@ -93,6 +93,12 @@ Identical to Java ([Java deployment doc, Keycloak section](../vendor/ledgerly-ja
 - `/api/v1/auth/*` and the JWKS endpoint disappear.
 - Tokens must come from that issuer and carry `ledgerly-api` in `aud`.
 - On a person's first valid token, their user is created just in time. If an existing account has the same verified email, it is linked instead of duplicated.
+
+What differs from Java, on purpose:
+
+- The issuer is asked nothing at start-up; the first token triggers discovery, as in Java. Its requests time out (5 s to connect, 10 s in all) and don't follow redirects. Java's `RestTemplate` waits forever and follows them.
+- The issuer is reached over HTTPS with rustls, trusting the system's CA certificates (the image has Debian's). A private CA must be added to the image's trust store.
+- Accepted signature algorithms: RS256/384/512, PS256/384/512, ES256 and ES384, as the JWK set allows. ES512 and ES256K, which Nimbus also knows, are refused. Keycloak signs RS256 unless a realm says otherwise.
 
 ## Demo data
 

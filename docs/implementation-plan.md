@@ -534,7 +534,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
     - JIT provisioning and linking by `external_subject`, or by verified email, exactly as port spec §4 says.
   - Accept: against the composed Keycloak with the vendored realm, alice logs in through Keycloak and reads her team. A token for another client → 401. Nothing outside `identity` and `app` changed (`git diff --stat`).
 
-- [ ] **M11.4 TLS to Postgres**
+- [x] **M11.4 TLS to Postgres**
   - Do: build sqlx with `tls-rustls` (ring, webpki roots) and accept `sslmode=require`, `verify-ca` and `verify-full` in `SPRING_DATASOURCE_URL`, plus `sslrootcert`, with pgjdbc's meanings. Until then these modes stop the start with a clear message (decided after M2).
   - Accept: the app connects to a TLS-only Postgres with `verify-full`, and refuses one whose certificate doesn't match the host.
 

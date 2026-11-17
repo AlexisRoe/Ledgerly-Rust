@@ -29,16 +29,21 @@ pub enum InvalidDatabaseUrl {
     InvalidPort,
     #[error("must name a database, as in jdbc:postgresql://host:5432/database")]
     MissingDatabase,
-    #[error("has the parameter {0}, which Ledgerly does not support; supported are ApplicationName and sslmode")]
+    #[error(
+        "has the parameter {0}, which Ledgerly does not support; supported are ApplicationName, sslmode and sslrootcert"
+    )]
     UnsupportedParameter(String),
-    #[error("has an sslmode Ledgerly does not support; supported are disable, allow and prefer (no TLS yet)")]
+    #[error(
+        "has an sslmode Ledgerly does not support; supported are disable, allow, prefer, require, verify-ca and verify-full"
+    )]
     UnsupportedSslMode,
 }
 
 /// The connection parameters Ledgerly passes on. Any other would be ignored silently, which for a setting
 /// such as `ssl=true` would mean an unencrypted connection the operator did not ask for. So they are refused.
-const SUPPORTED_PARAMETERS: [&str; 2] = ["ApplicationName", "sslmode"];
-const SUPPORTED_SSL_MODES: [&str; 3] = ["disable", "allow", "prefer"];
+const SUPPORTED_PARAMETERS: [&str; 3] = ["ApplicationName", "sslmode", "sslrootcert"];
+/// pgjdbc's modes (`org.postgresql.jdbc.SslMode`), written as pgjdbc wants them.
+const SUPPORTED_SSL_MODES: [&str; 6] = ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"];
 
 const DEFAULT_PORT: u16 = 5432;
 
@@ -214,11 +219,28 @@ mod tests {
             Err(InvalidDatabaseUrl::UnsupportedParameter("ssl".to_owned()))
         );
         assert_eq!(
-            DatabaseUrl::parse("jdbc:postgresql://db/ledgerly?sslmode=require"),
+            DatabaseUrl::parse("jdbc:postgresql://db/ledgerly?sslmode=verify_full"),
             Err(InvalidDatabaseUrl::UnsupportedSslMode)
+        );
+        assert_eq!(
+            DatabaseUrl::parse("jdbc:postgresql://db/ledgerly?sslcert=/client.crt"),
+            Err(InvalidDatabaseUrl::UnsupportedParameter("sslcert".to_owned()))
         );
         let error = DatabaseUrl::parse("jdbc:postgresql://db/ledgerly?sslpassword=hunter2").unwrap_err();
         assert!(!error.to_string().contains("hunter2"));
+    }
+
+    /// pgjdbc's modes, and the root certificate for the `verify-*` ones (M11.4).
+    #[test]
+    fn every_pgjdbc_ssl_mode_and_a_root_certificate_are_accepted() {
+        for mode in ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"] {
+            let url = DatabaseUrl::parse(&format!(
+                "jdbc:postgresql://db/ledgerly?sslmode={mode}&sslrootcert=/certs/root.crt"
+            ))
+            .unwrap();
+            assert_eq!(url.parameter("sslmode"), Some(mode));
+            assert_eq!(url.parameter("sslrootcert"), Some("/certs/root.crt"));
+        }
     }
 
     #[test]

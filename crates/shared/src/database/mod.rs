@@ -7,6 +7,8 @@ mod migrations;
 mod schema;
 #[cfg(feature = "testing")]
 pub(crate) mod testing;
+#[cfg(all(test, feature = "testing"))]
+mod tls_tests;
 
 use std::time::Duration;
 
@@ -61,18 +63,95 @@ pub fn connect_options(config: &DatabaseConfig) -> PgConnectOptions {
         .username(&config.username)
         .password(config.password.expose_secret())
         .ssl_mode(ssl_mode(url));
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    if let Some(root) = ssl_root_cert(url, home.as_deref()) {
+        options = options.ssl_root_cert(root);
+    }
     if let Some(name) = url.parameter("ApplicationName") {
         options = options.application_name(name);
     }
     options
 }
 
-/// The JDBC driver's default is `prefer`, as is `sqlx`'s. [`DatabaseUrl::parse`] has already refused every
-/// mode that needs TLS.
+/// pgjdbc's `sslmode`, whose default is `prefer`, as is `sqlx`'s (decided after M11.4):
+///
+/// - `disable`, `allow`, `prefer` and `require` as in pgjdbc: `require` encrypts but checks no certificate,
+///   `prefer` encrypts if the server can, `allow` only if the server insists.
+/// - `verify-full`: the certificate must chain to a trusted root and name the host.
+/// - `verify-ca` is checked like `verify-full`, stricter than pgjdbc, which leaves out the host name. sqlx
+///   trusts the system's CA certificates besides `sslrootcert` (pgjdbc trusts only that file), and with them a
+///   check without the host name would accept any publicly trusted certificate.
 fn ssl_mode(url: &DatabaseUrl) -> PgSslMode {
     match url.parameter("sslmode") {
         Some("disable") => PgSslMode::Disable,
         Some("allow") => PgSslMode::Allow,
+        Some("require") => PgSslMode::Require,
+        Some("verify-ca" | "verify-full") => PgSslMode::VerifyFull,
         _ => PgSslMode::Prefer,
+    }
+}
+
+/// The root certificate a `verify-*` connection trusts besides the system's: `sslrootcert`, or as in pgjdbc
+/// `~/.postgresql/root.crt` when that file exists. Other modes check no certificate, so they need none.
+fn ssl_root_cert(url: &DatabaseUrl, home: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    if !matches!(ssl_mode(url), PgSslMode::VerifyFull) {
+        return None;
+    }
+    if let Some(path) = url.parameter("sslrootcert") {
+        return Some(path.into());
+    }
+    let default = home?.join(".postgresql").join("root.crt");
+    default.is_file().then_some(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn url(parameters: &str) -> DatabaseUrl {
+        DatabaseUrl::parse(&format!("jdbc:postgresql://db/ledgerly?{parameters}")).unwrap()
+    }
+
+    #[test]
+    fn the_ssl_modes_are_pgjdbcs_with_verify_ca_checked_like_verify_full() {
+        for (parameters, mode) in [
+            ("", PgSslMode::Prefer),
+            ("sslmode=disable", PgSslMode::Disable),
+            ("sslmode=allow", PgSslMode::Allow),
+            ("sslmode=prefer", PgSslMode::Prefer),
+            ("sslmode=require", PgSslMode::Require),
+            ("sslmode=verify-ca", PgSslMode::VerifyFull),
+            ("sslmode=verify-full", PgSslMode::VerifyFull),
+        ] {
+            assert_eq!(
+                format!("{:?}", ssl_mode(&url(parameters))),
+                format!("{mode:?}"),
+                "{parameters}"
+            );
+        }
+    }
+
+    /// pgjdbc reads `~/.postgresql/root.crt` when `sslrootcert` is not given.
+    #[test]
+    fn the_root_certificate_is_sslrootcert_or_the_one_in_the_home_directory() {
+        let home = tempfile::tempdir().unwrap();
+        let default = home.path().join(".postgresql").join("root.crt");
+
+        assert_eq!(ssl_root_cert(&url("sslmode=verify-full"), Some(home.path())), None);
+        std::fs::create_dir_all(default.parent().unwrap()).unwrap();
+        std::fs::write(&default, "").unwrap();
+        assert_eq!(
+            ssl_root_cert(&url("sslmode=verify-full"), Some(home.path())),
+            Some(default)
+        );
+        assert_eq!(
+            ssl_root_cert(&url("sslmode=verify-ca&sslrootcert=/certs/ca.crt"), Some(home.path())),
+            Some("/certs/ca.crt".into())
+        );
+        assert_eq!(
+            ssl_root_cert(&url("sslmode=require&sslrootcert=/certs/ca.crt"), Some(home.path())),
+            None,
+            "require checks no certificate"
+        );
     }
 }

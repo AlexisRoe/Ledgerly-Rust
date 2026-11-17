@@ -68,7 +68,7 @@ serde-saphyr = "2.1.1"
 sha2 = "0.11.1"
 subtle = "2.6.1"
 tempfile = "3.27.0"
-sqlx = { version = "0.9.0", default-features = false, features = ["chrono", "postgres", "runtime-tokio", "rust_decimal", "uuid"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["chrono", "postgres", "runtime-tokio", "rust_decimal", "tls-rustls-ring-native-roots", "uuid"] }
 thiserror = "2.0.21"
 tower = { version = "0.5.3", default-features = false, features = ["util"] }
 tower-http = { version = "0.6.11", default-features = false, features = ["catch-panic"] }
