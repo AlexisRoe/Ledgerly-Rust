@@ -7,7 +7,14 @@ all-features = true
 version = 2
 # A yanked version is refused like an advisory: the author withdrew it for a reason.
 yanked = "deny"
-ignore = []
+# Every entry says why, and is an open question in the learning log.
+ignore = [
+    # chrono is unmaintained (informational, no patched version, published 2026-09-14). Not a vulnerability: it
+    # holds timestamps for the clock, the domain, sqlx and token checks in every crate. Moving to `time` or
+    # `jiff` touches every module and the byte-exact timestamp formats; decided after M11: ignore for now, open
+    # question in the M11 learning-log entry.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; migration to time/jiff is an open question (M11)" },
+]
 
 [licenses]
 version = 2
