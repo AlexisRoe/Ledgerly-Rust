@@ -8,6 +8,7 @@
 //
 // data-lang:  rust | ts | toml | bash | json | text   (default rust)
 // data-src:   optional repo-relative path; adds a caption that opens the file in VS Code
+//             (on the published site: on GitHub)
 // data-line:  optional first line number of the excerpt in that file
 // data-label: optional caption text (defaults to the language name)
 // data-hl:    optional lines to highlight, 1-based within the excerpt
@@ -144,14 +145,26 @@
     return at >= 0 ? path.slice(0, at) : null;
   }
 
+  // The published site (scripts/build-learn-site.py) sets this to the repository's GitHub URL at the deployed commit.
+  function sourceBase() {
+    const meta = document.querySelector('meta[name="ledgerly-source-base"]');
+    return meta ? meta.content : null;
+  }
+
   function sourceLink(src, line) {
     const root = repoRoot();
+    const base = sourceBase();
     const text = src + (line ? ":" + line : "");
     const a = document.createElement("a");
     a.textContent = text;
-    a.title = "Open in VS Code";
-    a.href = root && location.protocol === "file:" ? "vscode://file" + root + "/" + src + (line ? ":" + line : "")
-      : "../../" + src;
+    if (base) {
+      a.title = "Open on GitHub";
+      a.href = base + src + (line ? "#L" + line : "");
+    } else {
+      a.title = "Open in VS Code";
+      a.href = root && location.protocol === "file:" ? "vscode://file" + root + "/" + src + (line ? ":" + line : "")
+        : "../../" + src;
+    }
     return a;
   }
 

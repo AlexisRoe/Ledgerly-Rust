@@ -82,6 +82,25 @@ only needed for the lessons that run Ledgerly's own test suite or the app.
 
 A deployed version of the course is linked from this repository's page on GitHub, for reading without a clone.
 
+### Publishing the website
+
+`just learn-build` turns `learn/` into a static site in `dist/` (git-ignored), using
+[`scripts/build-learn-site.py`](scripts/build-learn-site.py) and nothing but Python's standard library. `dist/` is
+generated from scratch on every run, from whatever `learn/` contains: every page, stylesheet, script and image is
+published at the same path, except in the Cargo projects (`playground/`, `capstone/`). New lessons, cheat sheets or
+folders need no change to the script. It adds the favicons from `learn/assets/icons/`, a web manifest, a 404 page
+and Cloudflare's `_headers`. It also points every link that leaves the site (the playground README, ADRs, code
+captions) at GitHub, at the commit being built, so that commit must be pushed. The build fails on a broken link, on
+a lesson or cheat sheet in `learn/assets/course.js` without a page, and on a linked file that isn't committed.
+
+```sh
+just learn-serve                 # build, then preview on http://localhost:8000
+just learn-deploy                # build, then upload with wrangler to the Pages project `ledgerly-rust`
+```
+
+With Cloudflare Pages' Git integration instead, set the build command to `python3 scripts/build-learn-site.py` and
+the output directory to `dist`. The links then use the commit Cloudflare built (`CF_PAGES_COMMIT_SHA`).
+
 ### What it was built on
 
 - **Created:** 17 November 2026. All external resources (the Rust Book, std docs, Tokio, crate docs, articles) were
