@@ -11,6 +11,8 @@ description = "Hands-on exercises for the Rust-for-TypeScript-developers course 
 
 # Same versions as Ledgerly's root Cargo.toml, so cargo reuses what is already downloaded.
 [dependencies]
+# Not a Ledgerly dependency: lesson 111 contrasts it with thiserror. Already in Ledgerly's lock file (transitively).
+anyhow = "1.0.104"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"

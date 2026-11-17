@@ -55,3 +55,7 @@ pub mod ex103_cancellation;
 pub mod ex104_blocking;
 pub mod ex106_layout;
 pub mod ex107_allocations;
+pub mod ex111_error_design;
+pub mod ex112_parse_dont_validate;
+pub mod ex113_builders;
+pub mod ex116_docs;

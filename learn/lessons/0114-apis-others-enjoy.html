@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>APIs others enjoy</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Designing Rust code</p>
+  <h1>APIs others enjoy</h1>
+  <p class="lede">Rust has strong naming and design conventions, written down in the official API Guidelines. Following
+    them makes your types feel like std's: readers guess correctly what a method costs and returns before opening it.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can name conversion methods by their cost, choose which traits a public type should implement, and use
+      <code>#[must_use]</code> and <code>#[non_exhaustive]</code> where they help. Then you review a small API.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why mark a builder <code>#[must_use]</code>?</summary>
+      <div>So forgetting <code>.build()</code> gives a warning. (113)</div></details>
+    <details><summary><code>impl Into&lt;String&gt;</code> vs <code>&amp;str</code> as a parameter?</summary>
+      <div><code>Into&lt;String&gt;</code> when the function stores it; <code>&amp;str</code> when it only reads. (93)</div></details>
+  </div>
+
+  <h2>Names that tell the cost</h2>
+  <table>
+    <thead><tr><th>Prefix</th><th>Cost</th><th>Ownership</th><th>Example</th></tr></thead>
+    <tbody>
+      <tr><td><code>as_</code></td><td>free</td><td>borrowed → borrowed</td><td><code>Merchant::as_str</code>, <code>ExpenseStatus::as_str</code></td></tr>
+      <tr><td><code>to_</code></td><td>expensive (allocates, computes)</td><td>borrowed → owned</td><td><code>str::to_lowercase</code>, <code>to_string</code></td></tr>
+      <tr><td><code>into_</code></td><td>usually free</td><td>owned → owned (consumes <code>self</code>)</td><td><code>String::into_bytes</code>, <code>into_inner</code></td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://rust-lang.github.io/api-guidelines/naming.html">API Guidelines: naming</a>.) Also: getters have no
+    <code>get_</code> prefix (<code>expense.status()</code>), iterators are <code>iter</code> / <code>iter_mut</code> /
+    <code>into_iter</code>, constructors are <code>new</code>, <code>with_…</code>, <code>from_…</code>, and conversions that
+    can fail are <code>try_…</code> or <code>parse</code>.</p>
+
+  <h2>Traits a public type should have</h2>
+  <p>Derive eagerly what makes sense: <code>Debug</code> always (even for types holding secrets, with a hand-written
+    redacting impl), <code>Clone</code>, <code>PartialEq</code>/<code>Eq</code>, <code>Hash</code>, <code>Default</code> where
+    meaningful, <code>Display</code> for anything users see, <code>serde</code> behind a feature in libraries. Callers can't
+    add these themselves later: the orphan rule (lesson 91).</p>
+
+  <h2>Two attributes</h2>
+  <ul>
+    <li><strong><code>#[must_use]</code></strong> on functions whose only point is their result. Ledgerly marks pure getters
+      like <code>Money::amount</code> with it: calling one and ignoring the value is certainly a bug.</li>
+    <li><strong><code>#[non_exhaustive]</code></strong> on a public enum or struct in a <em>library</em> means "I may add
+      variants or fields". Other crates must then write a <code>_</code> arm and can't build the struct literally. That's
+      the opposite of Ledgerly's choice: inside one workspace, it wants every <code>match</code> to break when a variant is
+      added (lesson 77).</li>
+  </ul>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/money/mod.rs" data-line="116">
+      /// The amount, with exactly [`Currency::minor_units`] decimal places. Its `to_string()` is the API's form.
+      #[must_use]
+      pub const fn amount(&self) -> Decimal {
+          self.amount
+      }
+    </script>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Review this API</span>
+    <p>Find at least five things the guidelines would change, then compare with the answer.</p>
+    <script type="text/x-code" data-lang="rust">
+      pub struct Report { pub lines: Vec<Line>, title: String }
+
+      impl Report {
+          pub fn create(title: String) -> Report { … }
+          pub fn get_title(&self) -> String { self.title.clone() }
+          pub fn as_csv(&self) -> String { … }                  // builds the whole CSV
+          pub fn to_lines(self) -> Vec<Line> { self.lines }
+          pub fn total(&self) -> u64 { … }
+      }
+    </script>
+    <details><summary>Answer</summary>
+      <div><code>create</code> → <code>new</code>, taking <code>impl Into&lt;String&gt;</code>; <code>get_title</code> →
+        <code>title(&amp;self) -&gt; &amp;str</code> (no prefix, no clone); <code>as_csv</code> allocates, so
+        <code>to_csv</code>; <code>to_lines(self)</code> consumes, so <code>into_lines</code>; <code>total</code> should be
+        <code>#[must_use]</code>; derive <code>Debug</code>, <code>Clone</code>, <code>PartialEq</code>; and a public
+        <code>lines</code> field next to a private <code>title</code> is inconsistent: if lines have invariants, make the
+        field private and offer <code>lines(&amp;self) -&gt; &amp;[Line]</code>.</div></details>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS naming conventions are mostly about style. Rust's encode facts the type system also checks: an
+      <code>into_</code> method takes <code>self</code>, so the compiler will stop you using the value afterwards, and
+      <code>as_</code> returns a borrow. When names and signatures agree, readers can trust the name.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A method returns a new <code>String</code> built from <code>&amp;self</code>. Which name fits?</p>
+    <ul class="options" data-fixed>
+      <li><code>as_label</code></li>
+      <li data-correct><code>to_label</code></li>
+      <li><code>into_label</code></li>
+      <li><code>get_label</code></li>
+    </ul>
+    <div class="explain">Borrowed → owned and allocating: <code>to_</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why doesn't Ledgerly put <code>#[non_exhaustive]</code> on <code>ExpenseError</code>?</p>
+    <ul class="options">
+      <li>Because the attribute only works on struct types</li>
+      <li data-correct>It wants matches to break on new variants</li>
+      <li>Because thiserror cannot derive non_exhaustive enum types</li>
+      <li>Because the enum is private to its crate</li>
+    </ul>
+    <div class="explain">Inside one workspace, exhaustive matches are the safety net.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What should a getter for a <code>String</code> field usually return?</p>
+    <ul class="options" data-fixed>
+      <li><code>String</code>, cloned</li>
+      <li data-correct><code>&amp;str</code></li>
+      <li><code>&amp;String</code></li>
+      <li><code>Cow&lt;'static, str&gt;</code></li>
+    </ul>
+    <div class="explain">Borrow, and the most general borrowed form: <code>&amp;str</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="https://rust-lang.github.io/api-guidelines/checklist.html">Rust API Guidelines checklist</a>: one page,
+      with links to the reasoning behind each item.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

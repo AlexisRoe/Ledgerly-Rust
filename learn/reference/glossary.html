@@ -24,6 +24,9 @@
       <tr><td><strong>crate</strong></td><td>One unit of compilation: a library (<code>lib.rs</code>) or a binary (<code>main.rs</code>).</td></tr>
       <tr><td><strong>workspace</strong></td><td>Several packages sharing one lock file and <code>target/</code>. (a pnpm workspace)</td></tr>
       <tr><td><strong>feature</strong></td><td>An optional, compile-time part of a crate, switched on by dependents.</td></tr>
+      <tr><td><strong>builder</strong></td><td>A value that collects settings step by step and validates them in <code>build()</code>.</td></tr>
+      <tr><td><strong>doc test</strong></td><td>A code block in a doc comment, compiled and run by <code>cargo test</code>.</td></tr>
+      <tr><td><strong>semver</strong></td><td>Version numbers that signal breaking changes; for crates, Cargo's rules decide what counts as breaking.</td></tr>
       <tr><td><strong>lint level</strong></td><td><code>allow</code>, <code>warn</code>, <code>deny</code> (overridable error), <code>forbid</code> (final error).</td></tr>
     </tbody>
   </table>
@@ -110,6 +113,8 @@
       <tr><td><strong>exhaustive</strong></td><td>Covering every possible value; required of every <code>match</code>.</td></tr>
       <tr><td><strong>refutable pattern</strong></td><td>A pattern that might not match (<code>Some(x)</code>); needs <code>if let</code> / <code>let … else</code>.</td></tr>
       <tr><td><strong><code>?</code> operator</strong></td><td>Unwraps <code>Ok</code>/<code>Some</code>, or returns the converted error from the function.</td></tr>
+      <tr><td><strong>error context</strong></td><td>An explanation added to an error on its way up (<code>anyhow</code>'s <code>.context</code>).</td></tr>
+      <tr><td><strong>smart constructor</strong></td><td>The one fallible function that creates a type with a private field, so every value is valid.</td></tr>
       <tr><td><strong>panic</strong></td><td>Unwinding on a bug (failed <code>unwrap</code>, index out of bounds); not for expected errors.</td></tr>
     </tbody>
   </table>

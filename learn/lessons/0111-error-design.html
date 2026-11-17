@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Error design: libraries vs applications</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Designing Rust code</p>
+  <h1>Error design: libraries vs applications</h1>
+  <p class="lede">Part I taught you to read Ledgerly's error enums. Designing your own starts with one question:
+    will the caller <em>handle</em> this error, or only <em>report</em> it? The answer picks the tool.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can choose between a <code>thiserror</code> enum and <code>anyhow</code>, design variants around what
+      callers do with them, and add context to errors on their way up.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>#[from]</code> on a variant do?</summary>
+      <div>Generates a <code>From</code> impl, so <code>?</code> converts the inner error into that variant. (55, 56)</div></details>
+    <details><summary>What does <code>#[error(transparent)]</code> do?</summary>
+      <div>Forwards <code>Display</code> and <code>source</code> to the wrapped error. (56)</div></details>
+  </div>
+
+  <h2>Two kinds of callers</h2>
+  <table>
+    <thead><tr><th></th><th>Handle it (library style)</th><th>Report it (application style)</th></tr></thead>
+    <tbody>
+      <tr><td>caller does</td><td><code>match</code> on the variant: 404 vs 409, retry or not</td><td>log it, print it, exit</td></tr>
+      <tr><td>type</td><td>an enum per module or operation, <code>thiserror</code></td><td><code>anyhow::Error</code> (any error, boxed)</td></tr>
+      <tr><td>adds</td><td>precise variants with data</td><td><code>.context("loading config")</code> lines</td></tr>
+      <tr><td>TS analogy</td><td><code>class NotFoundError extends Error</code> + <code>instanceof</code>, but checked</td><td><code>throw new Error("…", { cause })</code></td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://docs.rs/anyhow">anyhow</a>, <a href="https://docs.rs/thiserror">thiserror</a>; both by the same
+    author, meant to be used together.) "Library" and "application" describe the <em>caller</em>, not the crate: inside
+    one app, a domain module is a library for its use cases.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: everything is handled</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/error.rs" data-line="13">
+      pub enum ExpenseError {
+          /// The action is not possible from the expense's current status, for example approving a draft.
+          #[error("Expense is {from} and cannot {action}")]
+          InvalidTransition { from: ExpenseStatus, action: Action },
+    </script>
+    <p>Every Ledgerly error ends as an HTTP problem response whose status and body must match Java's exactly, so every
+      error is matched, and Ledgerly has no <code>anyhow</code>. Variants are designed around what the web layer must
+      decide: <code>InvalidTransition</code> becomes 409, <code>Forbidden</code> 403, <code>InvalidInput</code> 400 with
+      a field name. Even startup failures are typed (<code>ConfigError</code>), because their message format is part of
+      the operational contract with Java (ADR 0013).</p>
+  </div>
+
+  <h2>Designing variants</h2>
+  <ul>
+    <li><strong>One variant per different reaction</strong>, not per underlying cause. Three ways a database call can
+      fail usually become one <code>Storage(#[from] sqlx::Error)</code> variant, because callers treat them the same.</li>
+    <li><strong>Carry data the handler needs</strong> (<code>from</code> and <code>action</code>, a field name), not
+      preformatted strings.</li>
+    <li><strong>Don't leak internals</strong> into messages users see: SQL, file paths, secrets.</li>
+    <li><strong>Add context where you know it:</strong> with anyhow, <code>.with_context(|| format!("reading {path}"))</code>;
+      with enums, a variant that wraps the source.</li>
+  </ul>
+  <script type="text/x-code" data-lang="rust">
+    fn limit_setting(name: &str) -> anyhow::Result<u32> {
+        let text = read_setting(name).with_context(|| format!("{name} is not set"))?;   // Option → error
+        Ok(parse_limit(text).with_context(|| format!("invalid {name}"))?)
+    }
+    // format!("{error:#}") → "invalid PAGE_LIMIT: limit 250 is above the maximum of 100"
+  </script>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TS, any function can throw anything, and the type system doesn't track it. Rust puts the error type in the
+      signature. That's more work up front, but it's the only way the compiler can tell you that a new variant needs
+      handling somewhere (lesson 77). <code>anyhow</code> opts out of that on purpose, for code where nobody will
+      ever match.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex111_error_design.rs</code>: a precise <code>LimitError</code> enum, then an
+      application-level function that adds context with anyhow. Run <code>cargo test ex111</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A CLI tool's <code>main</code> loads a file, parses it, and prints any failure. Which error type fits?</p>
+    <ul class="options" data-fixed>
+      <li>A hand-written enum with one variant per line of <code>main</code></li>
+      <li data-correct><code>anyhow::Result</code> with <code>.context(…)</code></li>
+      <li><code>Box&lt;dyn Any&gt;</code></li>
+      <li><code>String</code> errors built with <code>format!</code></li>
+    </ul>
+    <div class="explain">Nobody matches; the error is reported. Context makes the report useful.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does Ledgerly not use anyhow at all?</p>
+    <ul class="options">
+      <li>anyhow is not allowed by the cargo-deny licence list</li>
+      <li data-correct>Every error must map to a precise, Java-identical response</li>
+      <li>anyhow does not work inside async functions at all</li>
+      <li>thiserror and anyhow cannot be used in one project</li>
+    </ul>
+    <div class="explain">Handled errors need variants; reported-only errors are rare in a parity port.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Three sqlx failures (timeout, connection reset, deadlock) all lead to a 500. How many variants?</p>
+    <ul class="options">
+      <li>Three, one for each distinct sqlx failure</li>
+      <li data-correct>One wrapping sqlx::Error; the reaction is identical</li>
+      <li>None; sqlx errors should simply panic instead</li>
+      <li>Four: one per failure plus a fallback</li>
+    </ul>
+    <div class="explain">Variants follow the caller's decisions, not the causes.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="https://docs.rs/anyhow">anyhow</a> and <a href="https://docs.rs/thiserror">thiserror</a> crate docs
+      (both short), and <a href="https://www.lurklurk.org/effective-rust/errors.html">Effective Rust, item 4: "Prefer
+      idiomatic Error types"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

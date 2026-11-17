@@ -172,6 +172,16 @@
         [109, "measuring", "Measuring: release builds, benchmarks, profiles"],
         [110, "review-performance", "Review: memory and performance"],
       ] },
+    { title: "Designing Rust code", blurb: "Error design, parse-don't-validate, constructors and builders, API conventions, crate boundaries, docs.",
+      ref: "design.html", lessons: [
+        [111, "error-design", "Error design: libraries vs applications"],
+        [112, "parse-dont-validate", "Parse, don't validate, in depth"],
+        [113, "constructors-and-builders", "Constructors, Default and builders"],
+        [114, "apis-others-enjoy", "APIs others enjoy"],
+        [115, "crate-boundaries", "Module and crate boundaries"],
+        [116, "documentation-as-code", "Documentation as code"],
+        [117, "review-design", "Review: designing Rust code"],
+      ] },
   ];
 
   const REFERENCES = [
@@ -194,6 +204,7 @@
     ["traits-deep.html", "Traits in depth"],
     ["concurrency.html", "Concurrency and async internals"],
     ["performance.html", "Memory and performance"],
+    ["design.html", "Designing Rust code"],
   ];
 
   const LESSONS = [];

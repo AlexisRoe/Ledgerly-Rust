@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Constructors, Default and builders</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Designing Rust code</p>
+  <h1>Constructors, <code>Default</code> and builders</h1>
+  <p class="lede">Rust has no constructors, no optional parameters and no overloading. What it has instead is a set of
+    conventions, and picking the right one for a type keeps its call sites short and its invariants safe.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can choose between <code>new</code>, <code>Default</code> with struct update syntax, and a builder, and write
+      each one idiomatically.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What makes a newtype "parsed, not validated"?</summary>
+      <div>A private field and one fallible constructor that every entry point uses. (112)</div></details>
+    <details><summary>What does a method taking <code>mut self</code> and returning <code>Self</code> allow?</summary>
+      <div>Chaining: <code>x.a().b().c()</code>, each step consuming and returning the value. (95)</div></details>
+  </div>
+
+  <h2>TypeScript's tools, Rust's replacements</h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td><code>constructor(a, b)</code></td><td><code>fn new(a, b) -&gt; Self</code> (just a convention), or <code>-&gt; Result&lt;Self, E&gt;</code> if it can fail</td></tr>
+      <tr><td><code>{ ...defaults, pageSize: 20 }</code></td><td><code>Limits { page_size: 20, ..Default::default() }</code></td></tr>
+      <tr><td>optional parameters / options object</td><td>a builder, or a struct with <code>Default</code></td></tr>
+      <tr><td>overloads</td><td>differently named constructors: <code>Money::parse</code>, <code>Merchant::stored</code>, <code>from_*</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2><code>Default</code> and struct update</h2>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/config/mod.rs" data-line="44">
+      impl Default for Limits {
+          fn default() -> Self {
+              Self {
+                  max_page_size: 100,
+                  max_batch_size: 100,
+                  max_upload_size: 10 * 1024 * 1024,
+    </script>
+    <p>Hand-written, because <code>#[derive(Default)]</code> would make every limit 0. These are Java's defaults; the
+      config loader starts from them and overrides what the environment sets. Tests write
+      <code>Limits { max_page_size: 5, ..Limits::default() }</code> to change one value and keep the rest.</p>
+  </div>
+
+  <h2>Builders</h2>
+  <p>When a type has a few required and many optional settings, or the combination needs validating, a builder
+    collects them and checks once in <code>build()</code>:</p>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: Tokio's builder</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/main.rs" data-line="32">
+      let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+    </script>
+    <p>The entry point (<code>new_multi_thread</code>) takes the required choice, setters chain, and
+      <code>build()</code> returns a <code>Result</code> because creating threads and I/O drivers can fail. The
+      <code>tempfile::Builder</code> in the receipts upload and reqwest's <code>RequestBuilder</code> in the parity tests
+      are the same pattern.</p>
+  </div>
+  <p>Mark the builder <code>#[must_use]</code>, so a forgotten <code>.build()</code> is a warning. Setters usually take
+    <code>mut self</code> and return <code>Self</code>; that makes chains easy, and makes "reuse a half-configured
+    builder" impossible unless the builder is <code>Clone</code>.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>An options object in TS is checked only for shape; any combination of optional fields compiles. A Rust builder
+      can validate the combination in <code>build()</code>, and with typestate (lesson 95) can even make
+      <code>build()</code> uncallable until required fields are set. For a handful of fields, though, a plain struct with
+      <code>Default</code> is simpler and just as clear.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex113_builders.rs</code>: a hand-written <code>Default</code>, struct update syntax,
+      and a client builder that validates in <code>build()</code>. Run <code>cargo test ex113</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why does Ledgerly write <code>impl Default for Limits</code> by hand?</p>
+    <ul class="options">
+      <li>Because derive(Default) only works on enum types</li>
+      <li data-correct>A derived Default would set limits to zero</li>
+      <li>Because Default must always be written by hand</li>
+      <li>So Limits can be built in const contexts</li>
+    </ul>
+    <div class="explain">Derived <code>Default</code> uses each field's default: <code>0</code> for numbers.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>Limits { max_page_size: 5, ..Limits::default() }</code> do?</p>
+    <ul class="options">
+      <li>Changes the global default page size to five</li>
+      <li data-correct>Builds the defaults with only max_page_size replaced</li>
+      <li>Fails, because Limits has more than one field</li>
+      <li>Copies max_page_size into every field of Limits</li>
+    </ul>
+    <div class="explain">Struct update syntax: like <code>{ ...defaults, maxPageSize: 5 }</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">When is a builder the better choice over <code>Default</code> + struct update?</p>
+    <ul class="options">
+      <li>Whenever a struct has more than two fields</li>
+      <li data-correct>When fields are required or combinations need checking</li>
+      <li>Only when the struct is used across crates</li>
+      <li>Only when every field has a sensible default</li>
+    </ul>
+    <div class="explain">Builders earn their boilerplate through required inputs and a validating <code>build()</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Rust Design Patterns book: <a href="https://rust-unofficial.github.io/patterns/patterns/creational/builder.html">Builder</a>
+      and <a href="https://rust-unofficial.github.io/patterns/idioms/default.html">The Default Trait</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
