@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tracing, metrics and secrecy</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">The libraries Ledgerly is built on</p>
+  <h1><code>tracing</code>, <code>metrics</code> and <code>secrecy</code></h1>
+  <p class="lede">Three small libraries for running in production: structured logs (like pino), counters for
+    Prometheus (like prom-client), and a wrapper that keeps passwords and tokens out of both.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read and add a log line with fields, increment a counter, and handle a secret value the way Ledgerly's
+      rules require.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Which trait does <code>{:?}</code> use, and why does that matter for secrets?</summary>
+      <div><code>Debug</code>. A derived <code>Debug</code> prints every field, secrets included, unless the field's
+        type prints something else. (50)</div></details>
+    <details><summary>What does the panic catcher log, and what does it deliberately not log?</summary>
+      <div>"Unhandled exception" with the trace id, but not the panic message, which might contain data. (57)</div></details>
+  </div>
+
+  <h2><code>tracing</code>: structured logging</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      logger.info({ apiPort, managementPort }, "Started Ledgerly");
+      logger.error({ err }, "Unhandled exception");
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/lib.rs" data-line="405">
+      tracing::info!(apiPort = api_port, managementPort = management_port, "Started Ledgerly");
+      // tracing::error!(error = %storage, "Unhandled exception");
+    </script>
+  </div>
+  <ul>
+    <li>Macros by level: <code>trace!</code>, <code>debug!</code>, <code>info!</code>, <code>warn!</code>,
+      <code>error!</code>. Fields go first as <code>key = value</code>, then the message.</li>
+    <li><code>%value</code> records the field with <code>Display</code>, and <code>?value</code> with
+      <code>Debug</code>.</li>
+    <li><strong>Spans</strong> group events: every request runs inside a span carrying its <code>traceId</code>, so
+      every log line inside it gets the id. It's like AsyncLocalStorage, built in
+      (<a href="https://docs.rs/tracing/latest/tracing/">tracing docs</a>).</li>
+    <li>Where the output goes is configured once, in <code>crates/app/src/logging.rs</code>: JSON lines in Spring
+      Boot's ECS format, so Ledgerly's logs look exactly like Java's.</li>
+  </ul>
+
+  <h2><code>metrics</code>: counters for Prometheus</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/transition_expense.rs" data-line="88">
+    transaction.commit().await?;
+    metrics::counter!("ledgerly.expenses.transitions", "action" => action.metric_tag()).increment(1);
+  </script>
+  <p>A counter with a label, incremented only after the commit succeeded. The exporter serves all metrics on the
+    management port at <code>/actuator/prometheus</code> (<a href="https://docs.rs/metrics/latest/metrics/">metrics
+    docs</a>).</p>
+
+  <h2><code>secrecy</code>: secrets that can't leak by accident</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/identity/src/application/register.rs" data-line="51">
+    pub(crate) async fn execute(&self, email: &str, password: SecretString) -> Result<(), UseCaseError> {
+  </script>
+  <ul>
+    <li><code>SecretString</code>'s <code>Debug</code> prints <code>[REDACTED]</code>, and it has no
+      <code>Display</code>. So <code>format!("{password}")</code> doesn't compile, and <code>{:?}</code> of a
+      config or request struct can't reveal it.</li>
+    <li>Reading it requires an explicit, greppable call: <code>password.expose_secret()</code>, used only where the
+      value is really needed (hashing it, in <code>crates/identity/src/password.rs</code>).</li>
+    <li>It's zeroed in memory when dropped (<a href="https://docs.rs/secrecy/latest/secrecy/">secrecy docs</a>).</li>
+  </ul>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a test that guards the rule</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/config.rs" data-line="1183">
+      fn debug_of_the_config_shows_no_secret() {
+          let debug = format!("{:?}", load(&everything()).unwrap());
+
+          for secret in ["pw-4f9a", "private-7c1d", "key-2b8e", "secret-9d3f"] {
+              assert!(!debug.contains(secret), "{secret} appears in {debug}");
+          }
+          assert!(debug.contains("REDACTED"));
+      }
+    </script>
+    <p>The project rule (from <code>CLAUDE.md</code>): passwords, tokens, keys, cookies and
+      <code>Authorization</code> headers are <code>SecretString</code> from the moment they're read, and never
+      logged. The parity suite's log-hygiene tests check the running app's logs too.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In Node, keeping a token out of the logs depends on remembering pino's <code>redact</code> paths. In Rust the
+      type does it: a <code>SecretString</code> field has no way to print itself, so leaking it requires writing
+      <code>expose_secret()</code>, and that shows up in review.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What does <code>tracing::error!(error = %storage, "Unhandled exception")</code> record for
+      <code>error</code>?</p>
+    <ul class="options">
+      <li>The Debug output of storage, with its fields</li>
+      <li data-correct>The Display output of storage, its error message</li>
+      <li>Only the type name of storage, nothing else</li>
+      <li>A stack trace captured at the call site</li>
+    </ul>
+    <div class="explain"><code>%</code> means <code>Display</code>; <code>?</code> would mean <code>Debug</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What happens with <code>println!("{}", password)</code> when <code>password: SecretString</code>?</p>
+    <ul class="options">
+      <li>It prints the password as plain text output</li>
+      <li>It prints [REDACTED] instead of the actual value</li>
+      <li data-correct>It doesn't compile, since SecretString has no Display</li>
+      <li>It panics at runtime to stop the leak</li>
+    </ul>
+    <div class="explain">No <code>Display</code> impl, so <code>{}</code> is a type error. <code>{:?}</code> would print
+      <code>[REDACTED]</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why is the transitions counter incremented after <code>commit()</code>?</p>
+    <ul class="options">
+      <li>Metrics can only be recorded outside a transaction</li>
+      <li data-correct>So only really stored transitions are counted</li>
+      <li>The counter needs a free database connection first</li>
+      <li>Prometheus rejects counters updated inside async code paths</li>
+    </ul>
+    <div class="explain">A refusal or a failed commit returns earlier via <code>?</code>, so it's never counted.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="https://docs.rs/tracing/latest/tracing/">tracing docs</a> ("Recording Fields", "Spans") and the
+      <a href="https://docs.rs/secrecy/latest/secrecy/">secrecy docs</a> (a single page).</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -31,3 +31,4 @@ pub mod ex51_conversions;
 pub mod ex52_generics;
 pub mod ex56_thiserror;
 pub mod ex63_tokio;
+pub mod ex68_serde;

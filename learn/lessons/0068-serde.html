@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>serde: JSON in and out</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">The libraries Ledgerly is built on</p>
+  <h1>serde: JSON in and out</h1>
+  <p class="lede"><code>JSON.parse</code> gives you <code>any</code>, and zod checks it at runtime. serde
+    generates a typed parser and printer for each struct at compile time: <code>#[derive(Deserialize)]</code> in,
+    <code>#[derive(Serialize)]</code> out.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read Ledgerly's request and response types (DTOs), including <code>rename_all</code>,
+      <code>deny_unknown_fields</code> and <code>transparent</code>, and predict the JSON they accept or produce.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What kind of attribute is <code>#[serde(rename_all = "camelCase")]</code>?</summary>
+      <div>A helper attribute that configures a library's derive. (60)</div></details>
+    <details><summary>Which trait does <code>From&lt;&amp;Versioned&lt;Expense&gt;&gt; for ExpenseResponse</code> implement, and why there?</summary>
+      <div><code>From</code>: the domain → JSON shape mapping lives in the web layer. (51)</div></details>
+  </div>
+
+  <h2>zod → serde</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const CreateExpenseRequest = z.object({
+        money: MoneyBody.optional(),
+        category: CategoryBody.optional(),
+        incurredOn: z.string().date().optional(),
+        merchant: z.string().optional(),
+        note: z.string().optional(),
+      }).strict();                       // unknown keys → error
+
+      const body = CreateExpenseRequest.parse(JSON.parse(raw));
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/dto.rs" data-line="88">
+      #[derive(Debug, Clone, Deserialize)]
+      #[serde(deny_unknown_fields, rename_all = "camelCase")]
+      pub(crate) struct CreateExpenseRequest {
+          pub money: Option<MoneyBody>,
+          pub category: Option<CategoryBody>,
+          pub incurred_on: Option<DateBody>,
+          pub merchant: Option<String>,
+          pub note: Option<String>,
+      }
+      // let body: CreateExpenseRequest = serde_json::from_str(raw)?;
+    </script>
+  </div>
+  <ul>
+    <li><code>rename_all = "camelCase"</code>: Rust field <code>incurred_on</code> ↔ JSON key <code>incurredOn</code>.</li>
+    <li><code>deny_unknown_fields</code>: an unexpected key is an error, like zod's <code>.strict()</code>. This is
+      part of Ledgerly's protection against mass assignment (OWASP API3).</li>
+    <li><code>Option&lt;T&gt;</code>: the key may be missing or <code>null</code>. Why is <em>everything</em> optional
+      here? So that a missing field becomes a proper 400 listing <em>all</em> violations
+      (<code>Validate::validate</code> below the struct), as Java's Bean Validation does, instead of serde's first
+      error.</li>
+    <li>Nested types (<code>MoneyBody</code>, <code>CategoryBody</code>, <code>DateBody</code>) have their own
+      <code>Deserialize</code>, some hand-written to accept exactly Java's formats.</li>
+  </ul>
+  <p>(<a href="https://serde.rs/attributes.html">serde attributes</a>.)</p>
+
+  <h2>Out: <code>Serialize</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/dto.rs" data-line="154">
+    #[derive(Debug, Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub(crate) struct ExpenseResponse {
+        id: String,
+        team_id: String,
+        claimant_id: String,
+        money: MoneyResponse,
+        category: &'static str,
+        incurred_on: String,
+        merchant: String,
+        note: Option<String>,
+        status: &'static str,
+        rejection_reasons: Vec<String>,
+    }
+  </script>
+  <p><code>note: None</code> becomes <code>"note": null</code> (the doc comment explains that Java does the same).
+    <code>axum::Json(response)</code> serialises it with <code>serde_json</code>. Fields are private: the only way
+    to build one is the <code>From</code> impl, so every expense response is built the same way.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: the wrapper is invisible on the wire</span>
+    <p>Recall <code>#[serde(transparent)]</code> on the id types (lesson 26): a <code>TeamId</code> serialises as the
+      bare UUID string, not as <code>["…"]</code>. And hand-written <code>impl Serialize for Role</code> (in
+      <code>role.rs</code>) writes <code>"OWNER"</code> via <code>as_str</code>, keeping Java's spelling.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>zod builds a validator object at runtime and infers a TS type from it. serde generates code at compile time
+      from the Rust type, so the type is the schema and parsing is very fast. serde is format-agnostic: the same
+      derives work for JSON (<code>serde_json</code>), YAML, TOML and more. Business validation (lengths, ranges)
+      isn't serde's job; Ledgerly does it afterwards with <code>Validate</code> and the domain's constructors.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex68_serde.rs</code>: add derives and attributes to make a request type accept
+      camelCase JSON, reject unknown keys, and print a response. Run <code>cargo test ex68</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A client sends <code>{"merchant": "Bahn", "isApproved": true}</code> to create an expense. What
+      happens?</p>
+    <ul class="options">
+      <li>isApproved is ignored and the draft is created</li>
+      <li data-correct>Deserialisation fails: isApproved is an unknown field</li>
+      <li>The expense is created and immediately approved</li>
+      <li>isApproved is stored in a hidden extra column</li>
+    </ul>
+    <div class="explain"><code>deny_unknown_fields</code> rejects it, so a client can't sneak in fields it may not
+      set.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which JSON key does the field <code>rejection_reasons</code> produce?</p>
+    <ul class="options" data-fixed>
+      <li><code>rejection_reasons</code></li>
+      <li data-correct><code>rejectionReasons</code></li>
+      <li><code>RejectionReasons</code></li>
+      <li><code>rejection-reasons</code></li>
+    </ul>
+    <div class="explain"><code>rename_all = "camelCase"</code> on the struct.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why are all fields of <code>CreateExpenseRequest</code> <code>Option</code>s, although most are
+      required?</p>
+    <ul class="options">
+      <li>serde can only deserialise the optional fields of structs</li>
+      <li data-correct>So all missing fields are reported at once</li>
+      <li>Because the PATCH endpoint shares the same type</li>
+      <li>So the database can fill in default values</li>
+    </ul>
+    <div class="explain">serde would stop at the first missing field. Optional fields plus <code>Validate</code>
+      produce one 400 with all violations.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://serde.rs/">serde.rs</a>: the overview, then
+      <a href="https://serde.rs/container-attrs.html">container attributes</a> (<code>rename_all</code>,
+      <code>deny_unknown_fields</code>, <code>transparent</code>).</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
