@@ -59,3 +59,5 @@ pub mod ex111_error_design;
 pub mod ex112_parse_dont_validate;
 pub mod ex113_builders;
 pub mod ex116_docs;
+pub mod ex118_macro_rules;
+pub mod ex119_macro_patterns;

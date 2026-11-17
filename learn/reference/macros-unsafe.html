@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: writing macros and unsafe</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Writing macros, and <code>unsafe</code></h1>
+  <p class="lede">Sections 20 and 21 on one page. Reading macros: <a href="macros.html">macros and attributes</a>.</p>
+
+  <h2><code>macro_rules!</code></h2>
+  <script type="text/x-code" data-lang="rust">
+    macro_rules! name {
+        (@internal $x:expr) => { … };                  // internal rule: convention, not keyword
+        ($only:expr) => { $only };                     // rules tried top to bottom
+        ($first:expr, $($rest:expr),+) => {            // recursion over a list
+            std::cmp::max($first, name!($($rest),+))
+        };
+    }
+  </script>
+  <table>
+    <tbody>
+      <tr><td>fragments</td><td><code>expr</code> <code>ident</code> <code>ty</code> <code>literal</code> <code>meta</code> <code>pat</code> <code>block</code> <code>tt</code></td></tr>
+      <tr><td>repetition</td><td><code>$( … ),*</code> zero+ · <code>$( … ),+</code> one+ · <code>$( … )?</code> optional · <code>$(,)?</code> trailing comma</td></tr>
+      <tr><td>doc pass-through</td><td><code>$(#[$doc:meta])*</code> … <code>$(#[$doc])*</code></td></tr>
+      <tr><td>hygiene</td><td>local variables can't clash with the caller's; item names are visible</td></tr>
+      <tr><td>order</td><td>define before use in a file; <code>#[macro_export]</code> to export from a crate</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Procedural macros</h2>
+  <table>
+    <tbody>
+      <tr><td>derive</td><td><code>#[derive(Serialize)]</code>: adds items</td></tr>
+      <tr><td>attribute</td><td><code>#[tokio::test]</code>: replaces the item</td></tr>
+      <tr><td>function-like</td><td><code>sqlx::query_as!(…)</code>: arbitrary code at compile time</td></tr>
+    </tbody>
+  </table>
+  <p>See the output: <code>cargo expand</code>, or rust-analyzer "Expand macro recursively". Prefer function → generic →
+    <code>macro_rules!</code> → proc macro, in that order.</p>
+
+  <h2><code>unsafe</code></h2>
+  <ul>
+    <li>Allows: raw pointer deref, unsafe fn / FFI calls, mutable statics, unsafe trait impls, union fields. Nothing else;
+      all other checks still run.</li>
+    <li>Wrong use = undefined behaviour, which may appear to work.</li>
+    <li>Conventions: <code># Safety</code> doc on every <code>unsafe fn</code>; <code>// SAFETY:</code> on every block;
+      wrap in a safe API.</li>
+    <li>Ledgerly: <code>unsafe_code = "forbid"</code> (workspace) + <code>#![forbid(unsafe_code)]</code> (each crate).
+      Lints don't reach dependencies.</li>
+  </ul>
+
+  <h2>Judging a dependency</h2>
+  <p>std or existing dep first · maintenance and users · documented unsafe, Miri · <code>cargo deny check</code> ·
+    <code>cargo tree -p crate</code> · reason in the commit message.</p>
+
+  <p>Lessons: <a data-lesson="118"></a> · <a data-lesson="119"></a> · <a data-lesson="120"></a> · <a data-lesson="121"></a> ·
+    <a data-lesson="122"></a></p>
+</main>
+</body>
+</html>

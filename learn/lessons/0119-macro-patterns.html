@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Repetition, internal rules and hygiene</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Writing macros</p>
+  <h1>Repetition, internal rules and hygiene</h1>
+  <p class="lede">Three techniques cover most real macros: recursion for variable-length input, internal
+    <code>@rules</code> for shared code, and generating whole items such as test functions. And one property protects
+    you from the classic macro bug: hygiene.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can write a recursive macro, read and write <code>@internal</code> rules like <code>typed_id!</code>, generate
+      tests from a table like <code>required_in_prod!</code>, and explain which names a macro can see.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What do <code>expr</code>, <code>ident</code> and <code>tt</code> match?</summary>
+      <div>An expression; a name; any single token tree. (118)</div></details>
+    <details><summary>What does <code>$( … )+</code> mean in a template?</summary>
+      <div>Repeat this part once for each match of the corresponding repetition in the pattern. (118)</div></details>
+  </div>
+
+  <h2>Recursion</h2>
+  <script type="text/x-code" data-lang="rust">
+    macro_rules! max_of {
+        ($only:expr) => { $only };
+        ($first:expr, $($rest:expr),+) => { std::cmp::max($first, max_of!($($rest),+)) };
+    }
+    max_of!(3, 9, 4)   // max(3, max(9, 4))
+  </script>
+  <p>Like a recursive function over a list: a base case first, then "head, rest". Order matters, because rules are
+    tried top to bottom.</p>
+
+  <h2>Internal rules</h2>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: one macro, seven id types</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/id.rs" data-line="60">
+      macro_rules! typed_id {
+          ($(#[$doc:meta])* $name:ident, v7) => {
+              typed_id!(@common $(#[$doc])* $name);
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/id.rs" data-line="86">
+      (@common $(#[$doc:meta])* $name:ident) => {
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/id.rs" data-line="132">
+      typed_id!(
+          /// Identifies a user.
+          UserId,
+          v7
+      );
+    </script>
+    <p>The public rules differ only in the constructor they add (<code>new_v7</code> or <code>new_v4</code>). Both call
+      the <code>@common</code> rule, which defines the struct, its derives, <code>Deserialize</code>, <code>FromStr</code>
+      and <code>Display</code>. <code>@common</code> is just a literal token callers are unlikely to type; it's a
+      convention, not a keyword. <code>$(#[$doc:meta])*</code> passes the caller's doc comment through: a
+      <code>///</code> comment <em>is</em> a <code>#[doc = "…"]</code> attribute.</p>
+  </div>
+
+  <h2>Generating tests from a table</h2>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/config.rs" data-line="656">
+      macro_rules! required_in_prod {
+          ($($name:ident: $variable:literal => $property:literal,)*) => {
+              $(
+                  #[test]
+                  fn $name() {
+                      only_this_is_missing(everything(), $variable, $property);
+                  }
+              )*
+          };
+      }
+    </script>
+    <p>A table of "environment variable → Spring property" pairs becomes one named test per line. Each failure is
+      reported by name, which a loop inside one test couldn't do. It's <code>test.each</code> from Jest, made of
+      real functions.</p>
+  </div>
+
+  <h2>Hygiene</h2>
+  <p>A local variable created inside a macro lives in the macro's own syntax context. It can't capture or shadow the
+    caller's variable of the same name, and the caller's code can't see it. So
+    <code>let result = 10; double_it!(result + 1)</code> works even if <code>double_it!</code> declares its own
+    <code>result</code>. Hygiene covers local variables and labels; item names (functions, types) are not hygienic,
+    which is exactly what lets <code>typed_id!</code> define <code>UserId</code> for the caller.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Code generators in the JS world produce text files that you then commit or build. Rust macros run inside the
+      compiler, on every build, with errors pointing into the macro call. The trade-off: macro errors can be hard to
+      read, and rust-analyzer's help (completion, go to definition) is weaker inside macro bodies.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex119_macro_patterns.rs</code>: a recursive <code>max_of!</code>, an <code>@common</code>
+      internal rule, a hygiene check, and a <code>max_cases!</code> macro generating named tests. Run
+      <code>cargo test ex119</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">In <code>typed_id!</code>, what is <code>@common</code>?</p>
+    <ul class="options">
+      <li>A keyword that makes the rule fully private</li>
+      <li data-correct>A literal token that marks an internal rule</li>
+      <li>An attribute telling the compiler to share code</li>
+      <li>A reference to a separate macro named common</li>
+    </ul>
+    <div class="explain">Any token works; <code>@</code> is used because normal callers won't start with it.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why generate one test per table row instead of a loop in one test?</p>
+    <ul class="options">
+      <li>Because loops aren't allowed inside test functions at all</li>
+      <li data-correct>Each row passes or fails under its own name</li>
+      <li>Because generated tests run faster than plain loops</li>
+      <li>So that the table can be read at runtime</li>
+    </ul>
+    <div class="explain">The first failing row doesn't hide the others, and the report names the case.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A macro declares <code>let total = 0;</code>. The caller also has a <code>total</code>. What happens?</p>
+    <ul class="options">
+      <li>The macro's total overwrites the caller's own variable</li>
+      <li data-correct>Nothing clashes; each total has its own context</li>
+      <li>A compile error about a duplicate variable name</li>
+      <li>The caller's total is used inside the macro</li>
+    </ul>
+    <div class="explain">Hygiene: local names from different syntax contexts never collide.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="https://veykril.github.io/tlborm/">The Little Book of Rust Macros</a>: "Patterns" (internal rules, TT
+      munchers) and "Hygiene".</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

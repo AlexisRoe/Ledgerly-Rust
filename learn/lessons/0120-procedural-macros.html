@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Procedural macros, and when not to write one</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Writing macros</p>
+  <h1>Procedural macros, and when not to write one</h1>
+  <p class="lede"><code>#[derive(Serialize)]</code>, <code>#[tokio::test]</code>, <code>sqlx::query_as!</code>,
+    <code>thiserror</code>: the macros doing the heaviest lifting in Ledgerly aren't <code>macro_rules!</code>. They're
+    Rust programs that run inside the compiler.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can name the three kinds of procedural macros, see what one generates with <code>cargo expand</code>, and
+      judge when a macro is the wrong tool.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Which names does macro hygiene protect?</summary>
+      <div>Local variables and labels; item names like functions and types are not hygienic. (119)</div></details>
+    <details><summary>What do <code>#[error("…")]</code> and <code>#[from]</code> generate?</summary>
+      <div>A <code>Display</code> impl and a <code>From</code> impl. (56)</div></details>
+  </div>
+
+  <h2>Three kinds</h2>
+  <table>
+    <thead><tr><th>Kind</th><th>Looks like</th><th>In Ledgerly</th></tr></thead>
+    <tbody>
+      <tr><td>derive</td><td><code>#[derive(Name)]</code> on a struct/enum; adds items next to it</td><td><code>Serialize</code>, <code>Deserialize</code>, <code>thiserror::Error</code></td></tr>
+      <tr><td>attribute</td><td><code>#[name]</code> on an item; replaces the item</td><td><code>#[tokio::test]</code>, <code>#[sqlx::test]</code></td></tr>
+      <tr><td>function-like</td><td><code>name!(…)</code>, like <code>macro_rules!</code> but arbitrary code</td><td><code>sqlx::query_as!</code></td></tr>
+    </tbody>
+  </table>
+  <p>A procedural macro is a function from tokens to tokens, compiled into a separate crate with
+    <code>proc-macro = true</code> and run by the compiler. Almost all use <code>syn</code> (parse tokens into a syntax
+    tree) and <code>quote</code> (write tokens back)
+    (<a href="https://doc.rust-lang.org/reference/procedural-macros.html">Reference: procedural macros</a>). Because it's
+    real code, a proc macro can do anything at compile time.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a macro that talks to a database</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/persistence/mod.rs" data-line="49">
+      let row = sqlx::query_as!(
+          ExpenseRow,
+    </script>
+    <p>At compile time, this macro sends the SQL to Postgres (or reads the cached answer in <code>.sqlx/</code>), learns
+      the column types, and generates code that maps rows into <code>ExpenseRow</code>, failing the <em>build</em> if a
+      column doesn't fit (lesson 69). No <code>macro_rules!</code> could do that.</p>
+  </div>
+
+  <h2>Seeing the output</h2>
+  <script type="text/x-code" data-lang="bash">
+    cargo install cargo-expand          # once
+    cargo expand -p ledgerly-shared id  # the id module with every macro expanded
+  </script>
+  <p>Reading the expansion of <code>#[derive(Debug)]</code> or <code>#[tokio::test]</code> once demystifies them: it's
+    ordinary code you could have written. rust-analyzer can do the same for one macro call ("Expand macro recursively"
+    in the command palette).</p>
+
+  <h2>When not to write a macro</h2>
+  <ul>
+    <li><strong>A function works:</strong> use the function. It type-checks at the definition, has better errors, and
+      tools understand it.</li>
+    <li><strong>A generic or trait works:</strong> use that. Ledgerly's <code>display_as_text!</code> exists only because
+      three impls of a foreign trait can't share code through a generic (a blanket impl over "tuple structs with a
+      <code>String</code>" isn't expressible).</li>
+    <li><strong>Macros pay off</strong> for repeated <em>items</em> (impls, types, tests), variadic syntax, and
+      compile-time checks. Write a proc macro only when you'd otherwise maintain a code generator; for an application,
+      that's rare.</li>
+  </ul>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS decorators run at run time, on values. Rust's attribute macros run at compile time, on syntax, and can rewrite
+      the item entirely: <code>#[tokio::test] async fn t()</code> becomes a plain <code>fn t()</code> that builds a
+      runtime and blocks on the body. Nothing of the macro exists at run time.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Which kind of macro is <code>#[tokio::test]</code>?</p>
+    <ul class="options" data-fixed>
+      <li>a derive macro</li>
+      <li data-correct>an attribute macro</li>
+      <li>a function-like macro</li>
+      <li>a <code>macro_rules!</code> macro</li>
+    </ul>
+    <div class="explain">It takes the function it's attached to and replaces it.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why can <code>sqlx::query_as!</code> check SQL but <code>macro_rules!</code> couldn't?</p>
+    <ul class="options">
+      <li>Because macro_rules! can't take string literals as input</li>
+      <li data-correct>It's real code the compiler runs, doing I/O</li>
+      <li>Because sqlx runs the query when the program starts</li>
+      <li>Because macro_rules! macros only expand at run time</li>
+    </ul>
+    <div class="explain">Procedural macros are programs; declarative ones only rearrange tokens.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A helper formats a money amount the same way in three places. Macro or function?</p>
+    <ul class="options">
+      <li>A macro, because it avoids a function call</li>
+      <li data-correct>A function; nothing here needs a macro at all</li>
+      <li>A proc macro, so the format is checked</li>
+      <li>A macro, so it takes any argument type</li>
+    </ul>
+    <div class="explain">Functions are inlined anyway when it helps. Reach for macros only when functions can't.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch20-05-macros.html">20.5 "Macros"</a>, second half (procedural
+      macros), and the <a href="https://github.com/dtolnay/cargo-expand">cargo-expand</a> README.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

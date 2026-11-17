@@ -40,6 +40,9 @@
       <tr><td><strong>visibility</strong></td><td>Who may use an item: private (default), <code>pub(crate)</code>, <code>pub</code>. (export)</td></tr>
       <tr><td><strong>re-export</strong></td><td><code>pub use</code>: publishing an item at a new path. (<code>export { X } from</code>)</td></tr>
       <tr><td><strong>facade</strong></td><td>A Ledgerly crate's deliberately small public API.</td></tr>
+      <tr><td><strong>fragment specifier</strong></td><td>The kind of syntax a macro variable captures: <code>$x:expr</code>, <code>$n:ident</code>.</td></tr>
+      <tr><td><strong>hygiene</strong></td><td>Local names inside a macro can't clash with the caller's.</td></tr>
+      <tr><td><strong>procedural macro</strong></td><td>A Rust function run by the compiler that turns tokens into tokens: derive, attribute or function-like.</td></tr>
       <tr><td><strong>attribute</strong></td><td><code>#[…]</code> / <code>#![…]</code>: a compile-time instruction on an item.</td></tr>
       <tr><td><strong>macro</strong></td><td>Code that writes code at compile time, called with <code>!</code> or used as a derive/attribute.</td></tr>
     </tbody>

@@ -182,6 +182,12 @@
         [116, "documentation-as-code", "Documentation as code"],
         [117, "review-design", "Review: designing Rust code"],
       ] },
+    { title: "Writing macros", blurb: "macro_rules! from scratch, recursion and internal rules, procedural macros, and when not to.",
+      ref: "macros-unsafe.html", lessons: [
+        [118, "macro-rules", "macro_rules! from scratch"],
+        [119, "macro-patterns", "Repetition, internal rules and hygiene"],
+        [120, "procedural-macros", "Procedural macros, and when not to write one"],
+      ] },
   ];
 
   const REFERENCES = [
@@ -205,6 +211,7 @@
     ["concurrency.html", "Concurrency and async internals"],
     ["performance.html", "Memory and performance"],
     ["design.html", "Designing Rust code"],
+    ["macros-unsafe.html", "Writing macros, and unsafe"],
   ];
 
   const LESSONS = [];
