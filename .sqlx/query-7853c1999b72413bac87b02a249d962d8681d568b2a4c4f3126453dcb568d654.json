@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update users set external_subject = $2 where id = $1 and external_subject is null",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7853c1999b72413bac87b02a249d962d8681d568b2a4c4f3126453dcb568d654"
+}

@@ -108,8 +108,9 @@ pub const GROUPS: &[Group] = &[
         environment: &[],
         stopped_services: &["clamav"],
     },
-    // `KeycloakEndToEndTest`: tokens come from the realm in `compose.yaml`. M11 has to settle the issuer: the
-    // app reaches Keycloak as `keycloak:8080`, the tests as `127.0.0.1:8180`, and both must see one `iss`.
+    // `KeycloakEndToEndTest`: tokens come from the realm in `compose.yaml`. The app reaches Keycloak as
+    // `keycloak:8080`, the tests as `127.0.0.1:8180`; the tests ask with `Host: keycloak:8080`, so both see one
+    // `iss` (`Target::keycloak_issuer_host`).
     Group {
         name: "keycloak",
         files: &["keycloak"],

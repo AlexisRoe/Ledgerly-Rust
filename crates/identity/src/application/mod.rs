@@ -1,13 +1,15 @@
-//! The use cases: register, verify an email, log in, refresh and log out.
+//! The use cases: register, verify an email, log in, refresh and log out; with `keycloak`, provisioning.
 //!
 //! Java counterpart: `identity/internal/application/`.
 
 mod login;
+mod provision;
 mod refresh;
 mod register;
 mod verify_email;
 
 pub(crate) use login::{Login, Session};
+pub(crate) use provision::{Provision, ProvisioningError};
 pub(crate) use refresh::{Logout, Refresh};
 pub(crate) use register::Register;
 pub(crate) use verify_email::VerifyEmail;

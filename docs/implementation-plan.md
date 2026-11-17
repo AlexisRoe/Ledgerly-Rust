@@ -527,7 +527,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: the `image` job builds the image, asserts it runs as non-root, runs Trivy (failing on high or critical with a fix) and uploads a CycloneDX SBOM (`cargo cyclonedx`) as an artifact. (Java documented this job but never implemented it.)
   - Accept: CI is green, as checked by the reviewer after pushing.
 
-- [ ] **M11.3 Keycloak profile**
+- [x] **M11.3 Keycloak profile**
   - Do: with `keycloak`:
     - Issuer discovery from `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI`; the issuer and `aud ∋ ledgerly-api` are required; an unreachable IdP → 401.
     - `/auth/*` and the JWKS endpoint aren't registered.

@@ -43,6 +43,9 @@ futures-util = { version = "0.3.34", default-features = false, features = ["std"
 getrandom = "0.4.3"
 idna = "1.1.0"
 http-body-util = "0.1.5"
+hyper = { version = "1.12.0", default-features = false, features = ["client", "http1"] }
+hyper-rustls = { version = "0.27.10", default-features = false, features = ["http1", "native-tokio", "ring", "tls12"] }
+hyper-util = { version = "0.1.21", default-features = false, features = ["client-legacy", "http1", "tokio"] }
 chrono = { version = "0.4.45", default-features = false, features = ["now", "serde", "std"] }
 multer = "3.1.0"
 metrics = "0.24.6"
@@ -54,6 +57,8 @@ opentelemetry_sdk = { version = "0.33.1", default-features = false, features = [
 p256 = { version = "0.14.0", default-features = false, features = ["ecdsa", "std"] }
 proptest = "1.12.0"
 regex = "1.13.1"
+ring = { version = "0.17.14", default-features = false, features = ["alloc"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["form", "json", "multipart"] }
 rust_decimal = { version = "1.43.0", default-features = false, features = ["std"] }
 secrecy = "0.10.3"

@@ -34,7 +34,7 @@ use ledgerly_shared::database::SchemaError;
 use ledgerly_shared::events::{Outbox, Publisher};
 use ledgerly_shared::ratelimit::{InvalidRateLimit, RateLimiter};
 use ledgerly_shared::storage::{ObjectStorage, S3ObjectStorage};
-use ledgerly_shared::web::{self, Authentication, Cors, Problem, RequestLimits, Routes, TokenVerifier};
+use ledgerly_shared::web::{self, Authentication, Cors, Problem, RequestLimits, Routes};
 use ledgerly_teams::Teams;
 use sqlx::PgPool;
 use tokio::net::TcpListener;
@@ -98,7 +98,15 @@ impl Modules {
         )?;
         let outbox = Outbox::new(pool.clone(), clock.clone());
         let events: Arc<dyn Publisher> = Arc::new(outbox.clone());
-        let identity = Identity::new(&config.auth, config.profiles, pool, &clock, &events, &limiter)?;
+        let identity = Identity::new(
+            &config.auth,
+            config.keycloak.as_ref(),
+            config.profiles,
+            pool,
+            &clock,
+            &events,
+            &limiter,
+        )?;
         let teams = Teams::new(&config.teams, pool, &clock, &events);
         let storage = S3ObjectStorage::new(&config.storage);
         let objects: Arc<dyn ObjectStorage> = Arc::new(storage.clone());
@@ -175,11 +183,7 @@ pub fn router(config: &Config, modules: &Modules, telemetry: &Telemetry, pool: &
     } else {
         Router::new()
     };
-    let verifier = modules
-        .identity
-        .access_tokens()
-        .map(|tokens| Arc::new(tokens.clone()) as Arc<dyn TokenVerifier>);
-    let authentication = Authentication::new(verifier, config.profiles.local);
+    let authentication = Authentication::new(Some(modules.identity.token_verifier()), config.profiles.local);
     let browsers = Browsers {
         cors: Cors::new(&config.security.allowed_origins, config.server.forward_headers),
         local_docs: config.profiles.local,

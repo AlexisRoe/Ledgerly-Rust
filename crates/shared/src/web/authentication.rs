@@ -16,6 +16,8 @@
 //! - the 401 is `UNAUTHENTICATED` with `WWW-Authenticate: Bearer`, the same body for every reason.
 
 use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use axum::extract::{Request, State};
@@ -28,17 +30,32 @@ use super::problem::Problem;
 use super::routing::percent_decode;
 use crate::id::UserId;
 
-/// Checks an access token. Implemented by the identity module for its own tokens.
+/// What checking a bearer token found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenCheck {
+    /// The token is valid and names this user.
+    Valid(UserId),
+    /// Not a token for this API, for whatever reason: 401.
+    Invalid,
+    /// The check itself failed (the database could not be asked): 500, as Spring lets such an exception
+    /// through its filter chain.
+    Failed,
+}
+
+/// A token check in progress.
+pub type Checking<'a> = Pin<Box<dyn Future<Output = TokenCheck> + Send + 'a>>;
+
+/// Checks an access token. Implemented by the identity module: for its own tokens, or, with `keycloak`, for the
+/// identity provider's, which may need the provider's keys and the database (just-in-time provisioning).
 pub trait TokenVerifier: fmt::Debug + Send + Sync {
     /// The user the token names, if it is valid.
-    fn verify(&self, token: &str) -> Option<UserId>;
+    fn verify<'a>(&'a self, token: &'a str) -> Checking<'a>;
 }
 
 /// The authentication layer's state: who checks tokens, and which paths are public.
 #[derive(Debug, Clone)]
 pub struct Authentication {
-    /// `None` when Ledgerly checks no tokens of its own: every token is refused (until the `keycloak` profile
-    /// brings its verifier, M11).
+    /// `None`: every token is refused. Only tests build it so; the app always has a verifier.
     verifier: Option<Arc<dyn TokenVerifier>>,
     /// The `local` profile: `GET /docs` and `GET /swagger-ui/**` are public.
     local_docs: bool,
@@ -121,13 +138,14 @@ pub async fn authenticate(State(authentication): State<Authentication>, mut requ
         Bearer::Malformed => return Problem::unauthenticated().into_response(),
         Bearer::Absent => None,
         Bearer::Token(token) => {
-            match authentication
-                .verifier
-                .as_ref()
-                .and_then(|verifier| verifier.verify(token))
-            {
-                Some(user) => Some(user),
-                None => return Problem::unauthenticated().into_response(),
+            let check = match &authentication.verifier {
+                Some(verifier) => verifier.verify(token).await,
+                None => TokenCheck::Invalid,
+            };
+            match check {
+                TokenCheck::Valid(user) => Some(user),
+                TokenCheck::Invalid => return Problem::unauthenticated().into_response(),
+                TokenCheck::Failed => return Problem::internal_error().into_response(),
             }
         }
     };
@@ -179,8 +197,13 @@ mod tests {
     struct OneToken(UserId);
 
     impl TokenVerifier for OneToken {
-        fn verify(&self, token: &str) -> Option<UserId> {
-            (token == "good").then_some(self.0)
+        fn verify<'a>(&'a self, token: &'a str) -> Checking<'a> {
+            let check = match token {
+                "good" => TokenCheck::Valid(self.0),
+                "unanswerable" => TokenCheck::Failed,
+                _ => TokenCheck::Invalid,
+            };
+            Box::pin(async move { check })
         }
     }
 
@@ -305,6 +328,18 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    /// The verifier could not decide (with `keycloak`: the database is down while provisioning): 500, not 401,
+    /// so that a client does not throw away a token that may well be valid.
+    #[tokio::test]
+    async fn a_check_that_fails_is_a_server_error() {
+        let router = router(UserId::new_v7(), false);
+
+        let (status, body) = call(&router, Method::GET, "/api/v1/me", Some(b"Bearer unanswerable")).await;
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(body.contains("INTERNAL_ERROR"), "{body}");
     }
 
     /// `DefaultBearerTokenResolver`: what starts with `bearer` must be well formed, anything else is no token.

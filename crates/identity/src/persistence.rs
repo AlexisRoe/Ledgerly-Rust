@@ -59,6 +59,92 @@ pub(crate) async fn insert_user(
     Ok(inserted.rows_affected() == 1)
 }
 
+/// An account as just-in-time provisioning (`keycloak`) needs it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LinkedUser {
+    pub id: UserId,
+    pub verified: bool,
+    /// The identity provider's `sub` this account is linked to, if any (V10).
+    pub external_subject: Option<String>,
+}
+
+/// The account linked to the identity provider's `sub`. Java: `UserRepository.findByExternalSubject`.
+pub(crate) async fn find_user_by_external_subject(
+    connection: &mut PgConnection,
+    subject: &str,
+) -> sqlx::Result<Option<LinkedUser>> {
+    let row = sqlx::query!(
+        "select id, verified, external_subject from users where external_subject = $1",
+        subject
+    )
+    .fetch_optional(connection)
+    .await?;
+    Ok(row.map(|row| LinkedUser {
+        id: UserId::from_uuid(row.id),
+        verified: row.verified,
+        external_subject: row.external_subject,
+    }))
+}
+
+/// The account with this normalised email, as provisioning needs it. Java: `UserRepository.findByEmail`.
+pub(crate) async fn find_linked_user_by_email(
+    connection: &mut PgConnection,
+    email: &str,
+) -> sqlx::Result<Option<LinkedUser>> {
+    let row = sqlx::query!(
+        "select id, verified, external_subject from users where email = $1",
+        email
+    )
+    .fetch_optional(connection)
+    .await?;
+    Ok(row.map(|row| LinkedUser {
+        id: UserId::from_uuid(row.id),
+        verified: row.verified,
+        external_subject: row.external_subject,
+    }))
+}
+
+/// A new account managed by the identity provider: no password. `false` if the email or the subject is taken,
+/// also by a first request of the same person that committed a moment ago. Java: `User.external` and
+/// `UserRepository.saveAndFlush`, whose `DataIntegrityViolationException` makes the provisioner look again.
+pub(crate) async fn insert_external_user(
+    connection: &mut PgConnection,
+    id: UserId,
+    email: &str,
+    subject: &str,
+    verified: bool,
+    now: DateTime<Utc>,
+) -> sqlx::Result<bool> {
+    let inserted = sqlx::query!(
+        "insert into users (id, email, password_hash, verified, created_at, external_subject) \
+         values ($1, $2, null, $3, $4, $5) on conflict do nothing",
+        id.as_uuid(),
+        email,
+        verified,
+        now,
+        subject,
+    )
+    .execute(connection)
+    .await?;
+    Ok(inserted.rows_affected() == 1)
+}
+
+/// Links an account to the identity provider's `sub`, unless it was linked meanwhile. Java: `User.linkExternal`.
+pub(crate) async fn link_external_subject(
+    connection: &mut PgConnection,
+    user: UserId,
+    subject: &str,
+) -> sqlx::Result<bool> {
+    let linked = sqlx::query!(
+        "update users set external_subject = $2 where id = $1 and external_subject is null",
+        user.as_uuid(),
+        subject,
+    )
+    .execute(connection)
+    .await?;
+    Ok(linked.rows_affected() == 1)
+}
+
 /// The account's id, email and verified flag. Java: `IdentityFacadeImpl.find` over `UserRepository.findById`.
 pub(crate) async fn find_user_summary(
     connection: &mut PgConnection,

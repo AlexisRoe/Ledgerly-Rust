@@ -173,14 +173,16 @@ fn a_missing_arrow_and_an_unknown_crate_are_reported() {
 // code is exempt, as in Java (`ImportOption.DoNotIncludeTests`).
 
 /// Crates that make outbound connections, and the workspace crates that may depend on them directly. `shared`
-/// holds the object-store adapter. (OTLP export goes through `opentelemetry-otlp`, which is not on this list:
+/// holds the object-store adapter, `identity` the identity provider's (`keycloak`; Java's
+/// `identity.internal.infrastructure.KeycloakResourceServerConfig`). (OTLP export goes through `opentelemetry-otlp`, which is not on this list:
 /// it only ever talks to the configured endpoint.)
 const CLIENT_CRATES: &[(&str, &[&str])] = &[
     ("reqwest", &[]),
     ("aws-sdk-s3", &["shared"]),
     ("aws-smithy-http-client", &["shared"]),
-    ("hyper", &[]),
-    ("hyper-util", &[]),
+    ("hyper", &["identity"]),
+    ("hyper-util", &["identity"]),
+    ("hyper-rustls", &["identity"]),
     ("ureq", &[]),
     ("isahc", &[]),
     ("surf", &[]),
@@ -203,8 +205,13 @@ const CLIENT_PATHS: &[&str] = &[
 /// Listening is not calling out: the app binds its two ports.
 const SERVER_PATHS: &[&str] = &["tokio::net::TcpListener"];
 
-/// The adapters, which are allowed to call out: the object store and the malware scanner.
-const ADAPTERS: &[&str] = &["crates/shared/src/storage/", "crates/receipts/src/scanner.rs"];
+/// The adapters, which are allowed to call out: the object store, the malware scanner and the identity
+/// provider (discovery and its keys).
+const ADAPTERS: &[&str] = &[
+    "crates/shared/src/storage/",
+    "crates/receipts/src/scanner.rs",
+    "crates/identity/src/keycloak/issuer.rs",
+];
 
 /// The crate that is test code as a whole (ADR 0011).
 const TEST_CRATES: &[&str] = &["crates/parity-tests/"];

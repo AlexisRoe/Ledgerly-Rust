@@ -56,6 +56,10 @@ fn run(existing_deployment: Option<&str>) -> Result<bool, String> {
             ),
             None => {
                 eprintln!("parity: group `{}`: starting the app", group.name);
+                // The app does not depend on Keycloak in `compose.yaml`; a group that logs in through it starts it.
+                if needs_keycloak(group) {
+                    compose(&["up", "--detach"], &["keycloak"]);
+                }
                 let container = start_app(group)?;
                 compose(&["stop"], group.stopped_services);
                 let result = wait_until_ready()
@@ -231,6 +235,13 @@ fn wait_for_dependencies(group: &Group) -> Result<(), String> {
         variable("PARITY_S3_BUCKET", "ledgerly-files")
     );
     wait_for(&bucket, Duration::from_secs(120), |status| status == 200)?;
+    if needs_keycloak(group) {
+        let realm = format!(
+            "{}/realms/ledgerly/.well-known/openid-configuration",
+            variable("PARITY_KEYCLOAK_URL", "http://127.0.0.1:8180").trim_end_matches('/')
+        );
+        wait_for(&realm, Duration::from_secs(300), |status| status == 200)?;
+    }
     if group.stopped_services.contains(&"clamav") {
         return Ok(());
     }
@@ -247,6 +258,14 @@ fn wait_for_dependencies(group: &Group) -> Result<(), String> {
         std::thread::sleep(Duration::from_secs(2));
     }
     Ok(())
+}
+
+/// The group runs with the `keycloak` profile and the identity provider up: it needs Keycloak started.
+fn needs_keycloak(group: &Group) -> bool {
+    let keycloak_profile = group.environment.iter().any(|(variable, value)| {
+        *variable == "SPRING_PROFILES_ACTIVE" && value.split(',').any(|profile| profile.trim() == "keycloak")
+    });
+    keycloak_profile && !group.stopped_services.contains(&"keycloak")
 }
 
 /// clamd's `zPING\0`, answered with `PONG\0` once its signatures are loaded.

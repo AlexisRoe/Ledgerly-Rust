@@ -98,7 +98,7 @@ impl World {
         };
         let events = Arc::new(Recorded::default());
         let publisher: Arc<dyn Publisher> = events.clone();
-        let identity = Identity::new(&auth(), profiles, database.pool(), &shared, &publisher, &limiter).unwrap();
+        let identity = Identity::new(&auth(), None, profiles, database.pool(), &shared, &publisher, &limiter).unwrap();
         let router = Router::new()
             .fallback_service(identity.routes().into_service())
             .layer(axum::middleware::from_fn(render));

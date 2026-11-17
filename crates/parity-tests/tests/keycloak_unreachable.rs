@@ -17,7 +17,6 @@ mod m11 {
     use super::*;
 
     #[tokio::test]
-    #[ignore = "M11"]
     async fn a_token_is_refused_cleanly_when_the_identity_provider_cannot_be_reached() {
         let world = World::start().await;
 

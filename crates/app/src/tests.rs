@@ -5,7 +5,7 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use ledgerly_shared::config::TracingConfig;
 use ledgerly_shared::id::UserId;
-use ledgerly_shared::web::{Body as Consumes, Routes};
+use ledgerly_shared::web::{Body as Consumes, Checking, Routes, TokenCheck, TokenVerifier};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -17,8 +17,13 @@ use crate::logging::testing::Captured;
 struct TestTokens;
 
 impl TokenVerifier for TestTokens {
-    fn verify(&self, token: &str) -> Option<UserId> {
-        (token == "test").then(UserId::new_v7)
+    fn verify<'a>(&'a self, token: &'a str) -> Checking<'a> {
+        let check = if token == "test" {
+            TokenCheck::Valid(UserId::new_v7())
+        } else {
+            TokenCheck::Invalid
+        };
+        Box::pin(async move { check })
     }
 }
 

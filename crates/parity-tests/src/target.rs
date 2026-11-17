@@ -16,6 +16,11 @@ pub struct Target {
     pub s3_bucket: String,
     /// `PARITY_KEYCLOAK_URL`: the Keycloak of `compose.yaml`, as the tests reach it.
     pub keycloak_url: String,
+    /// `PARITY_KEYCLOAK_ISSUER_HOST`: the host and port of the issuer the app is configured with. Keycloak in
+    /// development mode writes the `iss` of a token from the request's `Host`, so the tests ask for tokens with
+    /// this `Host`: the app reaches Keycloak as `keycloak:8080`, the tests as `127.0.0.1:8180`, and both must
+    /// see one issuer. Defaults to the `keycloak` group's `http://keycloak:8080/realms/ledgerly`.
+    pub keycloak_issuer_host: String,
     /// `PARITY_APP_CONTAINER`: the name of the container the app runs in, when `just parity` started it. Its
     /// stdout is the app's log.
     pub app_container: Option<String>,
@@ -53,6 +58,7 @@ impl Target {
             s3_endpoint: variable("PARITY_S3_ENDPOINT").unwrap_or_else(|| "http://127.0.0.1:8333".to_owned()),
             s3_bucket: variable("PARITY_S3_BUCKET").unwrap_or_else(|| "ledgerly-files".to_owned()),
             keycloak_url: variable("PARITY_KEYCLOAK_URL").unwrap_or_else(|| "http://127.0.0.1:8180".to_owned()),
+            keycloak_issuer_host: variable("PARITY_KEYCLOAK_ISSUER_HOST").unwrap_or_else(|| "keycloak:8080".to_owned()),
             app_container: variable("PARITY_APP_CONTAINER"),
         }
     }
@@ -129,6 +135,7 @@ mod tests {
             s3_endpoint: "http://127.0.0.1:8333/".to_owned(),
             s3_bucket: "ledgerly-files".to_owned(),
             keycloak_url: String::new(),
+            keycloak_issuer_host: String::new(),
             app_container: None,
         };
 

@@ -44,7 +44,7 @@ repositories, log capture, the registry).
 | `CsvCellsTest` | INT | M8 | `crates/expenses` export cell tests; BB part in `expenses_batch_and_export.rs` |
 | `LazyCsvInputStreamTest` | INT | M8 | `crates/expenses` streaming export tests |
 | `JwtKeysTest` | INT | M5 | `crates/identity` key loading tests |
-| `ExternalIdentityTest` (all but the two HTTP tests in `keycloak.rs` and `keycloak_unreachable.rs`) | INT | M11 | `crates/identity` just-in-time provisioning tests |
+| `ExternalIdentityTest` (all but the two HTTP tests in `keycloak.rs` and `keycloak_unreachable.rs`) | INT | M11 | `crates/identity/src/application/provision/tests.rs` (provisioning, linking, the race of first requests) and `crates/identity/src/keycloak/tests.rs::a_blank_subject_is_refused` (`aMissingSubjectIsRefused`); the converter's mapping of `sub` is `keycloak.rs::a_keycloak_token_works_and_creates_our_user_on_first_use` — done |
 | `LastOwnerConcurrencyTest` | INT | M6 | `crates/teams` application tests (testcontainers) |
 | `FileNamesTest` | INT | M7 | `crates/receipts` file name tests; BB part in `receipts.rs` |
 | `ClamAvScannerTest` | INT | M7 | `crates/receipts` clamd client tests against a fake clamd |

@@ -16,7 +16,7 @@ mod query;
 mod rate_limit;
 mod routing;
 
-pub use authentication::{Authentication, TokenVerifier, authenticate};
+pub use authentication::{Authentication, Checking, TokenCheck, TokenVerifier, authenticate};
 pub use body_limit::{JsonBodyLimit, limit_json_bodies};
 pub use browser::{Cors, cors, management_headers, secure_headers};
 pub use current_user::CurrentUser;

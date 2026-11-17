@@ -25,7 +25,7 @@ use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig, URL_
 use chrono::{DateTime, TimeDelta, Utc};
 use ledgerly_shared::clock::Clock;
 use ledgerly_shared::id::UserId;
-use ledgerly_shared::web::TokenVerifier;
+use ledgerly_shared::web::{Checking, TokenCheck, TokenVerifier};
 use p256::ecdsa::signature::{Signer, Verifier};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use p256::pkcs8::{DecodePrivateKey, DecodePublicKey};
@@ -39,10 +39,10 @@ use zeroize::Zeroizing;
 use crate::strict_json;
 
 /// Java's `JwtTimestampValidator(Duration.ofSeconds(30))`.
-const CLOCK_SKEW: TimeDelta = TimeDelta::seconds(30);
+pub(crate) const CLOCK_SKEW: TimeDelta = TimeDelta::seconds(30);
 
 /// Nimbus' `Base64URL.decode`: padding is neither needed nor refused, and the unused bits are not checked.
-const LENIENT_BASE64URL: GeneralPurpose = GeneralPurpose::new(
+pub(crate) const LENIENT_BASE64URL: GeneralPurpose = GeneralPurpose::new(
     &URL_SAFE,
     GeneralPurposeConfig::new()
         .with_decode_padding_mode(DecodePaddingMode::Indifferent)
@@ -373,27 +373,31 @@ impl AccessTokens {
         Ok(())
     }
 
-    /// Spring's `JwtTimestampValidator` with the application clock.
     fn check_time(&self, claims: &Map<String, Value>) -> Result<(), InvalidToken> {
-        let now = self.clock.now();
-        if let Some(expires) = instant(claims.get("exp"))
-            && now - CLOCK_SKEW > expires
-        {
-            return Err(InvalidToken);
-        }
-        if let Some(not_before) = instant(claims.get("nbf"))
-            && now + CLOCK_SKEW < not_before
-        {
-            return Err(InvalidToken);
-        }
-        Ok(())
+        check_time(self.clock.now(), claims)
     }
+}
+
+/// Spring's `JwtTimestampValidator` with 30 s of skew, at `now` (the application clock).
+pub(crate) fn check_time(now: DateTime<Utc>, claims: &Map<String, Value>) -> Result<(), InvalidToken> {
+    if let Some(expires) = instant(claims.get("exp"))
+        && now - CLOCK_SKEW > expires
+    {
+        return Err(InvalidToken);
+    }
+    if let Some(not_before) = instant(claims.get("nbf"))
+        && now + CLOCK_SKEW < not_before
+    {
+        return Err(InvalidToken);
+    }
+    Ok(())
 }
 
 /// The authentication layer's view of [`AccessTokens::verify`].
 impl TokenVerifier for AccessTokens {
-    fn verify(&self, token: &str) -> Option<UserId> {
-        Self::verify(self, token).ok()
+    fn verify<'a>(&'a self, token: &'a str) -> Checking<'a> {
+        let check = Self::verify(self, token).map_or(TokenCheck::Invalid, TokenCheck::Valid);
+        Box::pin(async move { check })
     }
 }
 
@@ -403,7 +407,7 @@ fn segment(value: &impl Serialize) -> Result<String, IssuingFailed> {
 }
 
 /// A Base64url segment that holds a JSON object. Nimbus parses with Gson, which refuses duplicate members.
-fn object(segment: &str) -> Result<Map<String, Value>, InvalidToken> {
+pub(crate) fn object(segment: &str) -> Result<Map<String, Value>, InvalidToken> {
     let bytes = LENIENT_BASE64URL.decode(segment).map_err(|_| InvalidToken)?;
     match strict_json::parse(&bytes) {
         Some(Value::Object(object)) => Ok(object),
@@ -412,7 +416,7 @@ fn object(segment: &str) -> Result<Map<String, Value>, InvalidToken> {
 }
 
 /// Nimbus' `JWTClaimsSet.parse`: a registered claim of the wrong type makes the token unreadable.
-fn check_claim_types(claims: &Map<String, Value>) -> Result<(), InvalidToken> {
+pub(crate) fn check_claim_types(claims: &Map<String, Value>) -> Result<(), InvalidToken> {
     for (name, value) in claims {
         let fits = match name.as_str() {
             "iss" | "sub" | "jti" => value.is_string(),

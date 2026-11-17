@@ -20,6 +20,7 @@ async fn token_for(world: &World, client_id: &str, username: &str, password: &st
             "{}/realms/ledgerly/protocol/openid-connect/token",
             world.target.keycloak_url
         ))
+        .header("host", &world.target.keycloak_issuer_host)
         .form(&[
             ("grant_type", "password"),
             ("scope", "openid email"),
@@ -68,7 +69,6 @@ mod m11 {
 
     /// Java: `KeycloakEndToEndTest.aKeycloakTokenWorksAndCreatesOurUserOnFirstUse`.
     #[tokio::test]
-    #[ignore = "M11"]
     async fn a_keycloak_token_works_and_creates_our_user_on_first_use() {
         let world = World::start().await;
         let token = alice(&world).await;
@@ -103,7 +103,6 @@ mod m11 {
 
     /// Java: `KeycloakEndToEndTest.theRestOfLedgerlyWorksUnchangedWithKeycloakIdentities`.
     #[tokio::test]
-    #[ignore = "M11"]
     async fn the_rest_of_ledgerly_works_unchanged_with_keycloak_identities() {
         let world = World::start().await;
         let token = alice(&world).await;
@@ -148,7 +147,6 @@ mod m11 {
 
     /// Java: `KeycloakEndToEndTest.anUnverifiedEmailStaysUnverifiedAndCannotAcceptInvitations`.
     #[tokio::test]
-    #[ignore = "M11"]
     async fn an_unverified_email_stays_unverified_and_cannot_accept_invitations() {
         let world = World::start().await;
         let alice = alice(&world).await;
@@ -190,7 +188,6 @@ mod m11 {
 
     /// Java: `KeycloakEndToEndTest.aTokenForAnotherApplicationOfTheSameRealmIsRefused`.
     #[tokio::test]
-    #[ignore = "M11"]
     async fn a_token_for_another_application_of_the_same_realm_is_refused() {
         let world = World::start().await;
 
@@ -211,7 +208,6 @@ mod m11 {
 
     /// Java: `KeycloakEndToEndTest.tamperedAndGarbageTokensAreRefused`.
     #[tokio::test]
-    #[ignore = "M11"]
     async fn tampered_and_garbage_tokens_are_refused() {
         let world = World::start().await;
         let tampered = jwt::with_another_subject(&alice(&world).await);
@@ -224,7 +220,6 @@ mod m11 {
 
     /// Java: `KeycloakEndToEndTest.anExistingLocalAccountWithTheSameVerifiedEmailIsLinkedNotDuplicated`.
     #[tokio::test]
-    #[ignore = "M11"]
     async fn an_existing_local_account_with_the_same_verified_email_is_linked_not_duplicated() {
         let world = World::start().await;
         // A person who registered with Ledgerly's own login before the switch.
@@ -250,7 +245,6 @@ mod m11 {
     /// Java: `KeycloakEndToEndTest.theApplicationNoLongerIssuesOrAcceptsItsOwnLogins` and
     /// `ExternalIdentityTest.ourOwnLoginRegistrationAndKeyEndpointsAreGone`.
     #[tokio::test]
-    #[ignore = "M11"]
     async fn the_application_no_longer_issues_or_accepts_its_own_logins() {
         let world = World::start().await;
         let credentials = json!({"email": "alice@example.com", "password": "alice-password"});
