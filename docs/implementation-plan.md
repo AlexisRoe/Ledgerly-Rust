@@ -545,7 +545,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
 - [x] **M11.6 Dependency-upgrade drill**
   - Do: the counterpart of Java's Boot 4.2 upgrade. Run `cargo update`, take one major-version bump of a core crate (whichever Renovate proposes first), and record what broke in the learning log.
 
-- [ ] **M11.7 Full parity**
+- [x] **M11.7 Full parity**
   - Do: un-ignore everything that's left. `NOT_PARITY.md` lists only rows covered by in-process tests, each linked to its test.
   - Accept: `just parity` reports 0 ignored and 0 failed, and `just api-test` passes the whole Bruno collection.
 

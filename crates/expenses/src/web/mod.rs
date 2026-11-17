@@ -8,6 +8,8 @@
 mod csv;
 mod dto;
 #[cfg(test)]
+mod export_tests;
+#[cfg(test)]
 mod list_tests;
 pub(crate) mod problem;
 #[cfg(test)]
@@ -262,15 +264,34 @@ async fn export(
     Ok(response)
 }
 
+/// Where the rows of an export come from, one page at a time; an empty page is the end. The database's
+/// [`ExportPages`] in the app, pages in memory in the tests (Java: the `Supplier` given to `LazyCsvInputStream`).
+trait PageSource: Send + 'static {
+    fn next_page(
+        &mut self,
+    ) -> impl Future<Output = Result<Vec<Versioned<Expense>>, crate::application::UseCaseError>> + Send;
+}
+
+impl PageSource for ExportPages {
+    fn next_page(
+        &mut self,
+    ) -> impl Future<Output = Result<Vec<Versioned<Expense>>, crate::application::UseCaseError>> + Send {
+        self.next()
+    }
+}
+
 /// The header, then one chunk per page until the pages run out. A page that cannot be read ends the body with
-/// an error, which breaks off the download, as an exception in Java's stream does.
-fn csv_stream(pages: ExportPages) -> impl futures_util::Stream<Item = Result<String, std::io::Error>> + Send + 'static {
+/// an error, which breaks off the download, as an exception in Java's stream does. Java:
+/// `LazyCsvInputStream`: nothing is fetched before the header has been sent, and an empty page ends it.
+fn csv_stream(
+    pages: impl PageSource,
+) -> impl futures_util::Stream<Item = Result<String, std::io::Error>> + Send + 'static {
     futures_util::stream::unfold((false, Some(pages)), |(started, pages)| async move {
         if !started {
             return Some((Ok(csv::HEADER.to_owned()), (true, pages)));
         }
         let mut pages = pages?;
-        match pages.next().await {
+        match pages.next_page().await {
             Ok(rows) if rows.is_empty() => None,
             Ok(rows) => Some((Ok(csv::rows(&rows)), (true, Some(pages)))),
             Err(error) => {
