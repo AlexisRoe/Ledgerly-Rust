@@ -3,7 +3,7 @@
 //! Run one exercise's tests with `cargo test exNN`, e.g. `cargo test ex16`.
 
 // Exercises start with unfinished functions; these warnings would only be noise.
-#![allow(dead_code, unused_variables, unused_mut, unused_imports)]
+#![allow(dead_code, unused_variables, unused_mut, unused_imports, unreachable_code)]
 pub mod ex09_expressions;
 pub mod ex12_paths;
 pub mod ex16_numbers;
@@ -16,3 +16,7 @@ pub mod ex23_enum_data;
 pub mod ex24_option;
 pub mod ex25_result;
 pub mod ex26_newtypes;
+pub mod ex30_loops;
+pub mod ex31_match;
+pub mod ex33_if_let;
+pub mod ex34_question_mark;

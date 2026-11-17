@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: control flow</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Control flow: TypeScript ↔ Rust</h1>
+  <p class="lede">Section 4 on one page.</p>
+
+  <h2>Conditions</h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td><code>c ? a : b</code></td><td><code>if c { a } else { b }</code> (same type both sides)</td></tr>
+      <tr><td><code>if (list.length)</code></td><td><code>if !list.is_empty()</code> (only <code>bool</code>)</td></tr>
+      <tr><td><code>if (x) { use(x) }</code> (narrowing)</td><td><code>if let Some(x) = x { use(x) }</code></td></tr>
+      <tr><td><code>if (!x) return err;</code></td><td><code>let Some(x) = x else { return Err(e); };</code></td></tr>
+      <tr><td><code>a === "A" || a === "B"</code></td><td><code>matches!(a, Kind::A | Kind::B)</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Loops</h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td><code>for (const x of xs)</code></td><td><code>for x in &amp;xs</code> (borrow) / <code>for x in xs</code> (consume)</td></tr>
+      <tr><td><code>for (let i = 0; i &lt; n; i++)</code></td><td><code>for i in 0..n</code></td></tr>
+      <tr><td><code>i &lt;= n</code></td><td><code>0..=n</code></td></tr>
+      <tr><td><code>xs.forEach((x, i) =&gt; …)</code></td><td><code>for (i, x) in xs.iter().enumerate()</code></td></tr>
+      <tr><td><code>while (true)</code></td><td><code>loop { … }</code>, <code>let v = loop { break 42; };</code></td></tr>
+      <tr><td><code>while (cond)</code></td><td><code>while cond</code></td></tr>
+      <tr><td><code>while ((x = s.pop()) !== undefined)</code></td><td><code>while let Some(x) = s.pop()</code></td></tr>
+      <tr><td><code>outer: for … continue outer</code></td><td><code>'outer: for … continue 'outer</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2><code>match</code></h2>
+  <script type="text/x-code" data-lang="rust">
+    let label = match value {
+        Kind::A => "a",                              // variant
+        Kind::B | Kind::C => "b or c",               // alternatives
+        Kind::D(inner) => inner.name(),              // bind data (tuple-like)
+        Kind::E { field, .. } => field,              // bind some fields, ignore rest
+        Kind::F(n) if n > 100 => "big",              // guard
+        status @ (Kind::G | Kind::H) => status.as_str(), // bind the whole matched value
+        Kind::F(_) => "small",                       // `_`: ignore one value
+    };                                               // exhaustive: missing variant = E0004
+    match code { 200..=299 => …, 404 => …, _ => … }  // ranges; `_` catches the rest
+  </script>
+  <p>Arms are tried in order, first match wins, no fall-through. Avoid <code>_</code> on enums you may extend.</p>
+
+  <h2>Destructuring</h2>
+  <script type="text/x-code" data-lang="rust">
+    let (merchant, note) = pair;                    // tuple
+    let StoredExpense { id, status, .. } = stored;  // struct, rest ignored
+    let StoredExpense { id, team_id, /* every field */ } = stored; // all fields: new field = compile error
+    |(index, byte)| …                               // closure parameter pattern
+    for &amount in amounts { … }                    // dereference while binding
+  </script>
+
+  <h2>Early exit</h2>
+  <table>
+    <thead><tr><th>Form</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>return value;</code></td><td>leave now (idiomatic only for early exits)</td></tr>
+      <tr><td><code>result?</code></td><td><code>Ok(v)</code> → <code>v</code>; <code>Err(e)</code> → <code>return Err(From::from(e))</code></td></tr>
+      <tr><td><code>option?</code></td><td><code>Some(v)</code> → <code>v</code>; <code>None</code> → <code>return None</code></td></tr>
+      <tr><td><code>.await?</code></td><td>wait for the future, then <code>?</code> on its result</td></tr>
+      <tr><td><code>opt.ok_or(E)?</code></td><td>absence becomes an error, then leave</td></tr>
+      <tr><td><code>break</code> / <code>continue</code> [<code>'label</code>]</td><td>leave / skip a loop</td></tr>
+    </tbody>
+  </table>
+  <p><code>?</code> only compiles in functions returning <code>Result</code> or <code>Option</code>.</p>
+
+  <p>Lessons: <a data-lesson="29"></a> · <a data-lesson="30"></a> · <a data-lesson="31"></a> · <a data-lesson="32"></a> ·
+    <a data-lesson="33"></a> · <a data-lesson="34"></a></p>
+</main>
+</body>
+</html>

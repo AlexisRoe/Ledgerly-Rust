@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: control flow</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Control flow · Review</p>
+  <h1>Review: control flow</h1>
+  <p class="lede">Mixed practice on lessons 29–34, with questions from data types mixed in. Then you trace every
+    exit of a real use case.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>From memory first. After this section you have all the syntax needed to read most of Ledgerly's domain
+      code. What's left is <em>why</em> it's shaped the way it is: ownership, next.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>Write TS's <code>x ? a : b</code> in Rust, and the rule both branches follow.</summary>
+      <div><code>if x { a } else { b }</code>. Both branches must have the same type. (29)</div></details>
+    <details><summary>How do you iterate 0 to 10 inclusive?</summary>
+      <div><code>for i in 0..=10</code>. (30)</div></details>
+    <details><summary>Spell out what <code>value?</code> does on <code>Err(e)</code>.</summary>
+      <div><code>return Err(From::from(e))</code>: convert the error and leave the function. (34)</div></details>
+    <details><summary>Which shortcut binds a value for the rest of the function or bails out?</summary>
+      <div><code>let Pattern = expr else { return …; };</code> (33)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">When is a <code>_ =&gt;</code> arm a bad idea in Ledgerly?</p>
+    <ul class="options">
+      <li>Whenever the matched value is a plain number</li>
+      <li data-correct>When matching an enum that might gain variants later</li>
+      <li>Whenever the match is used as an expression</li>
+      <li>When the match has more than three arms</li>
+    </ul>
+    <div class="explain">A wildcard silently absorbs new variants. Listing them keeps the compiler's exhaustiveness
+      check on. On numbers (<code>parse_canonical</code>), <code>_</code> is fine. (31)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>Expense::restore</code> gain by destructuring <code>StoredExpense</code> without
+      <code>..</code>?</p>
+    <ul class="options">
+      <li>It runs faster than reading each field directly</li>
+      <li data-correct>A new field breaks the build until handled</li>
+      <li>It moves the fields without needing any clones</li>
+      <li>It validates every field again while it restores</li>
+    </ul>
+    <div class="explain">A struct pattern that names fields without <code>..</code> must name all of them. (32)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which form fits "keep retrying while it fails"?</p>
+    <ul class="options" data-fixed>
+      <li><code>if let Err(e) = try_it() { … }</code></li>
+      <li data-correct><code>while let Err(e) = try_it() { … }</code></li>
+      <li><code>let Err(e) = try_it() else { … };</code></li>
+      <li><code>matches!(try_it(), Err(_))</code></li>
+    </ul>
+    <div class="explain">Ledgerly's bucket check at startup does exactly this. (33)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Data types) A function returns <code>Result&lt;Option&lt;Team&gt;, DbError&gt;</code>. What does
+      <code>find(id)?</code> give you on success?</p>
+    <ul class="options" data-fixed>
+      <li><code>Team</code></li>
+      <li data-correct><code>Option&lt;Team&gt;</code></li>
+      <li><code>Result&lt;Team, DbError&gt;</code></li>
+      <li><code>Option&lt;Result&lt;Team&gt;&gt;</code></li>
+    </ul>
+    <div class="explain"><code>?</code> peels the outer <code>Result</code> only. You still decide what
+      <code>None</code> means, often with <code>.ok_or(NotFound)?</code>. (25, 34)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Data types) Why is <code>let label = if n == 1 { "item" } else { "items" };</code> fine but
+      <code>if n == 1 { "item" } else { 2 }</code> not?</p>
+    <ul class="options">
+      <li>Strings can't appear inside an if expression</li>
+      <li data-correct>The branches of the second have different types</li>
+      <li>The second is missing a semicolon after it</li>
+      <li>Integers need an explicit type suffix there</li>
+    </ul>
+    <div class="explain"><code>&amp;str</code> vs integer: E0308. (17, 29)</div>
+  </div>
+
+  <h2>Trace a use case</h2>
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code (10 minutes)</span>
+    <p>Open <a class="src" data-src="crates/identity/src/application/login.rs" data-line="71"></a>, the login use
+      case. List every way <code>execute</code> can end (each <code>return</code>, each <code>?</code>, the final
+      value), and for each say which HTTP answer a client probably gets.</p>
+    <details class="reveal"><summary>What to look for</summary>
+      <div>An early <code>return Err(Unauthenticated)</code> when the rate limit is exhausted. <code>?</code> after
+        acquiring a connection and after the user lookup (database errors → 500). The <code>let Some(user) = … else
+        { … return Err(Unauthenticated) }</code> for unknown email or wrong password (401). <code>map_err(…)?</code>
+        and <code>ok_or(…)?</code> for crypto/time problems (500). And the final <code>Ok(…)</code> with the session.
+        Notice that unknown email and wrong password take the <em>same</em> path, deliberately, so attackers can't
+        tell which one was wrong.</div></details>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>Keep the <a href="../reference/control-flow.html">control flow cheat sheet</a> close. Optional extra practice:
+      the <code>if</code>, <code>quiz2</code> and <code>options</code> exercises in
+      <a href="https://rustlings.rust-lang.org/">Rustlings</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

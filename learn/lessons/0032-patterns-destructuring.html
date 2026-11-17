@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Patterns and destructuring</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Control flow</p>
+  <h1>Patterns and destructuring</h1>
+  <p class="lede">JS destructuring (<code>const { a, b } = obj</code>, <code>const [x, y] = arr</code>) is one use
+    of a bigger idea. In Rust, every <code>let</code>, every function parameter and every <code>match</code> arm is a
+    pattern.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read destructuring of tuples, structs and enum variants in <code>let</code>, <code>match</code> and
+      closure parameters, including <code>..</code>, <code>_</code> and <code>name @ pattern</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why does <code>target_from</code> list impossible actions instead of writing
+      <code>_ =&gt; None</code>?</summary>
+      <div>So a new variant makes every <code>match</code> non-exhaustive and someone must decide its pairs.
+        (31)</div></details>
+    <details><summary>What's a match guard?</summary>
+      <div>An extra <code>if</code> condition on an arm: <code>Some(n) if n &gt; 20 =&gt; …</code>. (31)</div></details>
+  </div>
+
+  <h2>Destructuring you already know</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const [merchant, note] = checked(newExpense);
+      const { id, teamId, ...rest } = stored;
+      items.forEach(([index, byte]) => { … });
+      function f({ amount, currency }: Money) { … }
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      let (merchant, note) = new.checked(clock)?;
+      let StoredExpense { id, team_id, .. } = stored;   // `..` = ignore the rest
+      bytes.iter().enumerate().all(|(index, byte)| …);
+      fn f(Point { x, y }: Point) { … }                 // parameters are patterns too
+    </script>
+  </div>
+  <p>The difference: Rust's <code>..</code> <em>ignores</em> the remaining fields. It doesn't collect them into a
+    <code>rest</code> object, because there's no anonymous object type to put them in.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: taking a struct apart field by field</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="161">
+      pub(crate) fn restore(stored: StoredExpense) -> Self {
+          let StoredExpense {
+              id,
+              team_id,
+              claimant_id,
+              money,
+              category,
+              incurred_on,
+              merchant,
+              note,
+              status,
+              rejections,
+          } = stored;
+          Self {
+              id,
+              team_id,
+              // … the same ten names …
+          }
+      }
+    </script>
+    <p>Why not just <code>Self { id: stored.id, … }</code>? Because this pattern lists every field <em>without</em>
+      <code>..</code>. If someone adds a field to <code>StoredExpense</code>, this line stops compiling ("pattern
+      does not mention field"), so a new column can't be forgotten when an expense is loaded. It's the
+      exhaustiveness trick from <code>match</code>, applied to structs.</p>
+  </div>
+
+  <h2>Patterns inside <code>match</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="426">
+    match self.status {
+        ExpenseStatus::Draft => Ok(()),
+        status @ (ExpenseStatus::Submitted
+        | ExpenseStatus::Approved
+        | ExpenseStatus::Rejected
+        | ExpenseStatus::Reimbursed) => Err(ExpenseError::NotDraft { status }),
+    }
+  </script>
+  <p><code>status @ (…)</code> means "match any of these, and also bind the matched value to <code>status</code>",
+    which then goes straight into the error. Nested patterns go as deep as the data:</p>
+  <script type="text/x-code" data-lang="rust">
+    match result {
+        Ok(Some(expense)) => …,                                     // two layers at once
+        Ok(None) => …,
+        Err(ExpenseError::InvalidTransition { from, action }) => …, // bind fields of a variant
+        Err(ExpenseError::Forbidden(_)) => …,                       // `_`: don't care about the inner value
+        Err(_) => …,
+    }
+  </script>
+
+  <h3>Refutable vs irrefutable</h3>
+  <p>A <code>let</code> pattern must <strong>always</strong> match: <code>let (a, b) = pair;</code> is fine, but
+    <code>let Some(x) = maybe;</code> is an error, because <code>maybe</code> could be <code>None</code>. For patterns
+    that might not match there's <code>if let</code> and <code>let … else</code>, coming next
+    (<a href="https://doc.rust-lang.org/book/ch19-02-refutability.html">Book 19.2</a>).</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>JS destructuring of a missing property quietly gives <code>undefined</code>. Rust patterns are checked:
+      a field that doesn't exist is a compile error, and a pattern that might not match is only allowed where
+      there's a plan for the "no" case. JS has no <code>@</code> bindings, no range patterns and no exhaustive struct
+      patterns.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What does <code>let StoredExpense { id, status, .. } = stored;</code> do with the other fields?</p>
+    <ul class="options">
+      <li>Collects them into a variable named rest</li>
+      <li data-correct>Ignores them; only id and status are bound</li>
+      <li>Fails to compile until all fields are listed</li>
+      <li>Sets them all to their default values instead</li>
+    </ul>
+    <div class="explain"><code>..</code> means "and the rest, which I don't need". Leave out <code>..</code> and you
+      must list every field, which is what <code>restore</code> does on purpose.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why doesn't <code>let Some(note) = expense.note();</code> compile?</p>
+    <ul class="options">
+      <li>Option can't be used inside a let binding</li>
+      <li data-correct>The value might be None: a refutable pattern</li>
+      <li>note is a keyword and can't be bound</li>
+      <li>Some must be imported before being used here</li>
+    </ul>
+    <div class="explain"><code>let</code> needs a pattern that always matches. Use <code>if let</code>,
+      <code>let … else</code> or <code>match</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In <code>status @ (Submitted | Approved) =&gt; Err(NotDraft { status })</code>, what's
+      <code>status</code>?</p>
+    <ul class="options">
+      <li>A boolean that says whether the pattern matched</li>
+      <li data-correct>The matched value itself, either Submitted or Approved</li>
+      <li>The position of the arm inside the match</li>
+      <li>A string holding the name of the status</li>
+    </ul>
+    <div class="explain"><code>@</code> binds the whole value that matched the sub-pattern, so the error can say
+      which status it was.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch19-03-pattern-syntax.html">19.3 "Pattern Syntax"</a>.
+      Skim it as a catalogue; the sections "Destructuring to Break Apart Values", "Ignoring Values in a Pattern" and
+      "@ Bindings" are the ones Ledgerly uses.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

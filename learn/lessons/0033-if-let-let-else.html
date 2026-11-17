@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>if let, let … else, while let, matches!</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Control flow</p>
+  <h1><code>if let</code>, <code>let … else</code>, <code>while let</code>, <code>matches!</code></h1>
+  <p class="lede">Four shortcuts for when a full <code>match</code> is too much, because you only care about one
+    pattern.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read and write each of the four forms, and translate TS narrowing (<code>if (x) {…}</code>, early
+      <code>return</code> on <code>undefined</code>) into the right one.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why is <code>let Some(x) = opt;</code> rejected?</summary>
+      <div>The pattern is refutable: <code>opt</code> might be <code>None</code>, and plain <code>let</code> needs a
+        pattern that always matches. (32)</div></details>
+    <details><summary>What does <code>..</code> mean in <code>let Point { x, .. } = p;</code>?</summary>
+      <div>Ignore the remaining fields. (32)</div></details>
+  </div>
+
+  <h2>The four forms</h2>
+  <table>
+    <thead><tr><th>Rust</th><th>Means</th><th>TS you'd write</th></tr></thead>
+    <tbody>
+      <tr><td class="wrap"><code>if let Some(x) = opt { … } else { … }</code></td><td>run a block only if the pattern matches</td><td><code>if (x !== undefined) { … }</code></td></tr>
+      <tr><td class="wrap"><code>let Some(x) = opt else { return …; };</code></td><td>bind or bail out; <code>x</code> lives on <em>after</em> the statement</td><td><code>if (x === undefined) return …;</code></td></tr>
+      <tr><td class="wrap"><code>while let Some(x) = stack.pop() { … }</code></td><td>loop as long as the pattern matches</td><td><code>while ((x = stack.pop()) !== undefined)</code></td></tr>
+      <tr><td class="wrap"><code>matches!(value, Pattern)</code></td><td>a <code>bool</code>: does it match?</td><td><code>x.kind === "A" || x.kind === "B"</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2><code>if let</code>: one case, maybe an <code>else</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/app/src/main.rs" data-line="17">
+    if let Err(error) = logging::init(config.profiles) {
+        return failed_to_start(&error);
+    }
+  </script>
+  <p>"If initialising logging failed, stop the program." The <code>Ok</code> case needs no code, so a full
+    <code>match</code> would only add noise. <code>if let</code> works with any pattern: <code>Some(x)</code>,
+    <code>Err(e)</code>, <code>Action::Reject</code>, a tuple…
+    (<a href="https://doc.rust-lang.org/book/ch06-03-if-let.html">Book 6.3</a>).</p>
+
+  <h2><code>let … else</code>: the guard clause for patterns</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/identity/src/application/login.rs" data-line="83">
+    let Some(user) = user.filter(|_| matched) else {
+        let _ = self.limiter.try_consume(LIMIT_SCOPE, &email, self.failures);
+        return Err(UseCaseError::Unauthenticated);
+    };
+    self.limiter.reset(LIMIT_SCOPE, &email, self.failures);
+  </script>
+  <p>From the login use case: if there's no user, or the password didn't match, count a failed attempt (for rate
+    limiting) and answer 401. Otherwise <code>user</code> is bound <strong>for the rest of the function</strong>,
+    with no extra nesting. The <code>else</code> block must leave: <code>return</code>, <code>break</code>,
+    <code>continue</code> or a panic. That's the "happy path on the left" style you'd write in TS with early returns
+    (<a href="https://doc.rust-lang.org/rust-by-example/flow_control/let_else.html">Rust by Example: let-else</a>).</p>
+
+  <h2><code>while let</code>: loop until the pattern fails</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/app/src/lib.rs" data-line="161">
+    let mut warned = false;
+    while let Err(error) = storage.ensure_bucket().await {
+        if !warned {
+            tracing::warn!("Object store not reachable at start-up ({error}); receipts cannot be stored yet");
+            warned = true;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+  </script>
+  <p>At startup: keep trying to create the receipts bucket every two seconds while it fails, warning only once.</p>
+
+  <h2><code>matches!</code>: a pattern test as a <code>bool</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/text.rs" data-line="15">
+    pub const fn is_java_whitespace(c: char) -> bool {
+        matches!(
+            c,
+            '\u{0009}'..='\u{000D}'
+                | '\u{001C}'..='\u{001F}'
+                | '\u{0020}'
+                // …
+        )
+    }
+  </script>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS narrows by control flow: after <code>if (!user) return;</code>, the compiler knows <code>user</code> is
+      defined. Rust doesn't narrow an existing variable. You bind a <em>new</em> one through a pattern
+      (<code>let Some(user) = … else</code>), and the shadowing is often deliberate, as with <code>user</code>
+      above, an <code>Option&lt;User&gt;</code> that becomes a <code>User</code>.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex33_if_let.rs</code>: one function for each of the four forms. Run
+      <code>cargo test ex33</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">After <code>let Some(user) = maybe else { return Err(E) };</code>, what's the type of
+      <code>user</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>Option&lt;User&gt;</code></li>
+      <li data-correct><code>User</code></li>
+      <li><code>Result&lt;User, E&gt;</code></li>
+      <li><code>bool</code></li>
+    </ul>
+    <div class="explain">The pattern unwraps <code>Some</code>. If it didn't match, the <code>else</code> returned,
+      so afterwards <code>user</code> is a plain <code>User</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What must the <code>else</code> block of a <code>let … else</code> do?</p>
+    <ul class="options">
+      <li>Provide a default value for the binding</li>
+      <li data-correct>Leave the scope: return, break, continue or panic</li>
+      <li>Log the failure and then continue normally</li>
+      <li>Nothing; an empty else block is perfectly fine</li>
+    </ul>
+    <div class="explain">Its type is <code>!</code> ("never returns"). Otherwise the binding would be undefined
+      afterwards. For a default, use <code>unwrap_or</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which is the idiomatic Rust for TS <code>const isFinal = s === "APPROVED" || s === "REIMBURSED";</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>let is_final = s in [Approved, Reimbursed];</code></li>
+      <li data-correct><code>let is_final = matches!(s, Approved | Reimbursed);</code></li>
+      <li><code>let is_final = if let Approved | Reimbursed = s;</code></li>
+      <li><code>let is_final = s.is(Approved | Reimbursed);</code></li>
+    </ul>
+    <div class="explain"><code>matches!</code> turns a pattern into a <code>bool</code> (with
+      <code>ExpenseStatus::</code> prefixes in real code).</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch06-03-if-let.html">6.3 "Concise Control Flow with if let
+      and let…else"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
