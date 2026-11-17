@@ -610,3 +610,52 @@ One section per milestone, written by the implementing agent when the milestone 
   5. *Decided: enough as it is.* **`framework` forward headers and forwarded host and port.** `native` follows Tomcat's `RemoteIpValve` closely. `framework` (Spring's `ForwardedHeaderFilter`) and the forwarded host and port used for the same-origin check are simplified: the first `Forwarded: for=` or the first `X-Forwarded-For` entry; `X-Forwarded-Proto`, `-Host` and `-Port`, but not `Forwarded`'s `proto`/`host`. Ledgerly's deployments use `native` or nothing. Is that enough?
 
 ## M11 · Ship it
+
+`J/` and `JT/` as in M8. Commits: `742a7d4` (M11.1), `8495334` (M11.2), `bc76d73` (M11.3), `55950e4` (M11.4),
+`27bec89` (M11.5), `0918eb0` (M11.6), `ed609f1` (M11.7); besides `8091823` (the chrono advisory) and `cd88466`
+(`just flush`).
+
+- **Java → Rust:**
+  - Paketo buildpacks (no Dockerfile in Java) → the multi-stage `Dockerfile` of ADR 0012, finished: a release profile with fat LTO, one codegen unit and stripped symbols (`Cargo.toml`), and `distroless/base-nossl-debian12` with `libgcc_s` copied from the builder together with its dpkg record, so Trivy and the SBOM still see the package. The binary went from 36.1 MB to 16.2 MB, the image from 50.5 MB to 41.9 MB. `panic` stays `unwind`, because `CatchPanic` (M3.2) turns a handler's panic into a 500 by catching the unwind.
+  - The `image` CI job Java documented but never had → `.github/workflows/ci.yml` (`image`), with `scripts/image-check.sh` (USER not root, Trivy pinned by digest as a container, failing on fixable high/critical) and `just sbom` (cargo-cyclonedx, CycloneDX 1.6, uploaded as an artifact).
+  - `KeycloakResourceServerConfig` (`J/identity/internal/infrastructure/`: a `SupplierJwtDecoder` around `JwtDecoders.fromIssuerLocation`, timestamp + issuer + audience validators, an unreachable IdP turned into `BadJwtException`) → `crates/identity/src/keycloak/`: `issuer.rs` (the only identity file that calls out: discovery in Spring's three locations, the JWK set cached and fetched again for an unknown `kid`), `jwk.rs` (key selection as Nimbus' `JWKMatcher`, signatures with `ring`), `mod.rs` (the checks in Nimbus' and Spring's order). `ExternalSubjectJwtConverter` → `person()` in the same file: the provider's `sub` never leaves identity, the rest of the app sees Ledgerly's user id exactly as with its own tokens.
+  - `ExternalIdentityProvisioner` (`J/identity/internal/application/`) → `Provision` (`crates/identity/src/application/provision.rs`). Java catches `DataIntegrityViolationException` and looks again; Rust inserts with `on conflict do nothing` and links with `… where external_subject is null`, and a 0-row result means "a first request of the same person won": look again, once.
+  - Spring Security's `AuthenticationManager` (synchronous, a thread per request) → `TokenVerifier::verify` returning a boxed future and a three-way `TokenCheck` (`crates/shared/src/web/authentication.rs`). `Failed` is the 500 Java gives when the converter's database call throws something that is not an `AuthenticationException`.
+  - pgjdbc's `sslmode`/`sslrootcert` → sqlx with `tls-rustls-ring-native-roots` and a mapping in `crates/shared/src/database/mod.rs` (see Decisions for `verify-ca`).
+  - `ProductionEnvironmentCheckTest` → one generated test per required variable (`macro_rules!` in `crates/app/src/config.rs`): 11 in `prod`, 9 plus the issuer with `keycloak`.
+  - `LazyCsvInputStream`'s `Supplier<List<ExpenseView>>` → the `PageSource` trait (`crates/expenses/src/web/mod.rs`), so `LazyCsvInputStreamTest` could finally be ported (`web/export_tests.rs`); M8 had left it unported.
+- **Rust features that carried the weight:**
+  - `impl Future + Send` in trait methods (return-position `impl Trait`): `PageSource::next_page`; the implementations write `async fn`.
+  - `Pin<Box<dyn Future + Send + 'a>>` where the trait must stay object-safe: `TokenVerifier` is used as `Arc<dyn TokenVerifier>`.
+  - `tokio::sync::Mutex` held across `.await` for the issuer's discovery state: one discovery at a time, as Spring's `SupplierJwtDecoder` builds its decoder once.
+  - `macro_rules!` generating a test per variable, so a failure names the variable in the test's name.
+  - Cargo profiles: `[profile.release]` changes only the image build; tests and clippy use the dev profile.
+- **Surprises and dead ends:**
+  - reqwest's TLS feature (`rustls-no-provider`) pulls `rustls-platform-verifier` and with it `webpki-root-certs`, licensed CDLA-Permissive-2.0, which `cargo deny` refuses. The provider adapter uses `hyper-util` + `hyper-rustls` instead, which aws-smithy already brought in: no new crate in `Cargo.lock` for M11.3. The plan's "webpki roots" for Postgres would have hit the same licence.
+  - sqlx always loads a root set and adds `sslrootcert` to it; there is no "only this CA" mode without patching sqlx. Hence the `verify-ca` decision.
+  - The issuer in the parity suite: the app reaches Keycloak as `keycloak:8080`, the tests as `127.0.0.1:8180`, and Keycloak in dev mode writes `iss` from the request's `Host`. The tests ask for tokens with `Host: keycloak:8080` (`PARITY_KEYCLOAK_ISSUER_HOST`), so both see one issuer without changing the vendored realm or the Keycloak service.
+  - The Keycloak test with the unverified bob failed locally only: the dev database still held the `local` demo data, whose bob is a local verified account, and an unverified provider email must never link to it (the takeover rule). Java's test runs on a fresh database. This led to `just flush` (asked by the reviewer): a passing `just parity` empties Postgres and the object store.
+  - The PR's first `cargo deny` after a new advisory: RUSTSEC-2026-0543 (chrono unmaintained) appeared during the milestone, unrelated to any change.
+  - tower-http 0.7 (the major-version drill) compiled without a change: the breaking changes are in compression, follow-redirect, fs and trace, none in `catch-panic`.
+  - The keycloak unit tests build an `sqlx::PgPool` with `connect_lazy`, which needs a Tokio runtime even though nothing connects: the tests are `#[tokio::test]`.
+- **Parity traps:**
+  - With `keycloak`, `/api/v1/auth/**` and `/.well-known/jwks.json` stay public in Spring's chain, so they answer 404 without a token (no route), not 401.
+  - An unreachable provider is a 401 `UNAUTHENTICATED` with one `warn` line ("Cannot verify a token: the identity provider is not reachable (…)"), also for a garbage token: Java's lazy decoder is built before the token is parsed.
+  - A blank `sub` is refused before the database is asked; a new person without `email` is a 401; `email_verified` only ever moves towards verified, and publishes `UserVerified` when it does.
+  - pgjdbc's `require` checks no certificate, and neither does Rust's; pgjdbc's default `sslrootcert` is `~/.postgresql/root.crt`.
+- **Decisions:**
+  - Image base `distroless/base-nossl-debian12` plus `libgcc_s` (reviewer, after M11.1; ADR 0012 amended). Trivy then found nothing high or critical with a fix (it had found CVE-2026-84782 in libssl3, a library the binary never loads).
+  - Trivy runs as a container pinned by digest in `scripts/image-check.sh`, not through a GitHub action.
+  - `TokenVerifier` became async in `shared`, against M11.3's "nothing outside identity and app changed" (reviewer).
+  - The provider adapter times out (5 s connect, 10 s in all), reads at most 1 MiB and follows no redirects; Java's `RestTemplate` has none of these limits. A failed refetch keeps the known keys.
+  - Signature algorithms: RS256/384/512, PS256/384/512, ES256, ES384; Nimbus also accepts ES256K and ES512, which `ring` does not implement.
+  - `verify-ca` is checked like `verify-full`, with the host name (reviewer, after M11.4): with the system CAs in the trust set, a check without the host name would accept any publicly trusted certificate, which is weaker than pgjdbc.
+  - RUSTSEC-2026-0543 is ignored in `deny.toml` for now (reviewer).
+  - The upgrade drill followed Renovate's rules by hand (Renovate has not opened anything here): only versions at least three days old, and the one major version of a core crate available, tower-http 0.7.1.
+- **Parity tests:** M11: 8 passed, 0 ignored, 0 failed (`keycloak.rs` ×7, `keycloak_unreachable.rs`). The suite: 269 passed, 0 ignored, 0 failed. `just verify`: 754 tests passed (before M11.6/M11.7, which added 7). Bruno: 47 of 47 requests, 14 tests, 74 assertions. Image: 41.9 MB, USER 65532:65532, Trivy clean, runs with `read_only`, `cap_drop: ALL` and `no-new-privileges`.
+- **Open questions:**
+  1. **chrono is unmaintained** (RUSTSEC-2026-0543, ignored for now). Move to `time` or `jiff`? Every crate and the byte-exact timestamp formats are affected; a separate milestone-sized step.
+  2. **The Keycloak profile's issuer default in `prod`.** As in Java, `application-keycloak.yaml`'s default (`http://localhost:8180/realms/ledgerly`) applies when `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI` is unset, so `prod,keycloak` starts without an issuer and refuses every token. Only a blank value is "missing". Should Java (and then Rust) require it in `prod`?
+  3. **A failed JWK refetch in Java is a 500.** With cached keys, Nimbus' `RemoteKeySourceException` becomes a plain `JwtException`, which Spring Security 6 rethrows as `AuthenticationServiceException`. Rust answers 401 instead. No Java test covers it; confirm against a running Java?
+  4. **`verify-ca`/`verify-full` without `sslrootcert` and without `~/.postgresql/root.crt`.** pgjdbc refuses to connect; Rust connects if the server's certificate chains to a system CA. Keep, or refuse like pgjdbc?
+  5. **The multipart 413 for a declared length over 11 MiB** still does not swallow the body (from M10; no test hits it).
