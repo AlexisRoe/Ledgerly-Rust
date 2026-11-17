@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dyn compatibility and async in traits</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits in depth</p>
+  <h1><code>dyn</code> compatibility and async in traits</h1>
+  <p class="lede">Not every trait can be used as <code>dyn Trait</code>. Knowing why explains a pattern you've seen in
+    Ledgerly's ports: methods returning <code>BoxFuture</code> instead of being <code>async fn</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can predict whether a trait is dyn-compatible, fix it with <code>where Self: Sized</code>, and read and
+      write a boxed-future port like <code>MembershipLookup</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Static vs dynamic dispatch?</summary>
+      <div>Generics: one copy per type, chosen at compile time. <code>dyn</code>: one copy, a vtable lookup at run
+        time, behind a pointer. (53)</div></details>
+    <details><summary>When is an impl blocked by the orphan rule?</summary>
+      <div>When both the trait and the type are foreign. (91)</div></details>
+  </div>
+
+  <h2>What a <code>dyn Trait</code> is</h2>
+  <p>A <code>&amp;dyn Store</code> is two pointers: one to the data, one to a <strong>vtable</strong>, a table with
+    one function pointer per method. So every method must be callable through that table without knowing the
+    concrete type. That rules out (<a href="https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility">Reference:
+    dyn compatibility</a>):</p>
+  <ul>
+    <li><strong>generic methods</strong>, <code>fn put_all&lt;I: IntoIterator&gt;(…)</code>: one entry per possible
+      <code>I</code> would be infinitely many;</li>
+    <li>methods returning <strong><code>Self</code></strong> or taking it by value (its size is unknown), such as
+      <code>fn new() -&gt; Self</code> or <code>Clone</code>;</li>
+    <li><strong><code>async fn</code></strong> and <strong><code>-&gt; impl Trait</code></strong> methods: each impl returns
+      a different, unnamed type, so there's no single signature to put in the table.</li>
+  </ul>
+  <p>Add <code>where Self: Sized</code> to such a method and it's excluded from the vtable: the trait becomes
+    dyn-compatible, and the method is just unavailable on <code>dyn Store</code>. Otherwise: E0038.</p>
+
+  <h2>Async methods behind <code>dyn</code></h2>
+  <p>Rust supports <code>async fn</code> in traits, but such traits can't be used as <code>dyn</code>. Ledgerly's
+    ports must be (they're passed as <code>Arc&lt;dyn …&gt;</code> so tests can swap them), so they return one
+    nameable type instead: a boxed future.</p>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/membership.rs" data-line="15">
+      pub(crate) type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/membership.rs" data-line="34">
+      impl MembershipLookup for TeamsMembershipLookup {
+          fn role_of<'a>(
+              &'a self,
+              connection: &'a mut PgConnection,
+              team: TeamId,
+              user: UserId,
+          ) -> BoxFuture<'a, Result<Option<Role>, sqlx::Error>> {
+              Box::pin(self.0.role_of(connection, team, user))
+          }
+      }
+    </script>
+    <p>Read the alias inside out: a future (<code>dyn Future&lt;Output = T&gt;</code>) that may move between threads
+      (<code>Send</code>), may borrow for <code>'a</code>, stored on the heap (<code>Box</code>) and pinned there
+      (<code>Pin</code>, lesson 102). The impl calls an <code>async fn</code> and boxes its future with
+      <code>Box::pin</code>. The cost is one allocation per call, which is nothing next to a database round trip.
+      The <code>futures</code> crate has the same alias, as <code>futures::future::BoxFuture</code>.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TS, <code>interface Lookup { roleOf(...): Promise&lt;Role | undefined&gt; }</code> just works: every async
+      function returns the same <code>Promise</code> type. In Rust each <code>async fn</code> returns its own
+      anonymous future type, sized to hold exactly its local state. That's what makes Rust's futures allocation-free,
+      and it's also why erasing them behind <code>dyn</code> needs a <code>Box</code>.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex92_dyn_compatibility.rs</code>: a <code>Store</code> trait with a
+      <code>where Self: Sized</code> method, a function over <code>&amp;dyn Store</code>, and an async lookup returning
+      a <code>BoxFuture</code>. Then delete <code>where Self: Sized</code> and read E0038. Run
+      <code>cargo test ex92</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Which method makes a trait unusable as <code>dyn</code> unless marked <code>where Self: Sized</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>fn get(&amp;self, key: &amp;str) -&gt; Option&lt;String&gt;</code></li>
+      <li><code>fn len(&amp;self) -&gt; usize</code></li>
+      <li data-correct><code>fn merge&lt;T: Store&gt;(&amp;mut self, other: T)</code></li>
+      <li><code>fn clear(&amp;mut self)</code></li>
+    </ul>
+    <div class="explain">A generic method would need one vtable entry per <code>T</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why don't Ledgerly's ports use <code>async fn role_of(…)</code> directly?</p>
+    <ul class="options">
+      <li>async fn is not allowed inside traits at all</li>
+      <li data-correct>Traits with async fn can't be used as dyn</li>
+      <li>Boxed futures run faster than async fn futures</li>
+      <li>async fn cannot take a database connection argument</li>
+    </ul>
+    <div class="explain">They're used as <code>Arc&lt;dyn MembershipLookup&gt;</code>, so they need one nameable
+      return type.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>Box::pin(fut)</code> do in the impl?</p>
+    <ul class="options">
+      <li>Runs the future right away on a new task</li>
+      <li data-correct>Moves the future to the heap, pinned there</li>
+      <li>Copies the future so it can be awaited twice</li>
+      <li>Converts the future into a plain blocking function</li>
+    </ul>
+    <div class="explain">It turns a concrete future into a <code>Pin&lt;Box&lt;dyn Future…&gt;&gt;</code>; still lazy.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Reference on <a href="https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility">dyn
+      compatibility</a> (formerly "object safety"), and the Rust blog's
+      <a href="https://blog.rust-lang.org/2023/12/21/async-fn-rpit-in-traits/">announcement of async fn in traits</a>,
+      which explains the <code>dyn</code> limitation.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -140,6 +140,18 @@
         [86, "drop-raii-take", "Drop, RAII and mem::take"],
         [87, "review-ownership-deep", "Review: ownership and lifetimes in depth"],
       ] },
+    { title: "Traits in depth", blurb: "Associated types, writing iterators, blanket impls, coherence, dyn compatibility, conversions, operators, typestate.",
+      ref: "traits-deep.html", lessons: [
+        [88, "associated-types", "Associated types vs generic parameters"],
+        [89, "iterators-by-hand", "Implementing Iterator yourself"],
+        [90, "default-blanket-extension", "Default methods, blanket impls, extension traits"],
+        [91, "orphan-rule", "Coherence: the orphan rule"],
+        [92, "dyn-compatibility", "dyn compatibility and async in traits"],
+        [93, "asref-borrow-deref", "AsRef, Borrow, Deref and flexible parameters"],
+        [94, "comparison-and-operators", "Comparison and operator traits"],
+        [95, "typestate", "Typestate: states as types"],
+        [96, "review-traits-deep", "Review: traits in depth"],
+      ] },
   ];
 
   const REFERENCES = [
@@ -159,6 +171,7 @@
     ["ledgerly-map.html", "Ledgerly map"],
     ["change-loop.html", "The change loop"],
     ["ownership-deep.html", "Ownership and lifetimes in depth"],
+    ["traits-deep.html", "Traits in depth"],
   ];
 
   const LESSONS = [];

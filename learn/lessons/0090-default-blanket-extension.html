@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Default methods, blanket impls, extension traits</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits in depth</p>
+  <h1>Default methods, blanket impls, extension traits</h1>
+  <p class="lede">Three ways to add behaviour to many types at once: write it once in the trait, implement the trait
+    for every type that meets a bound, or attach new methods to a type you don't own.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>impl&lt;T: Display&gt; ToString for T</code>, write a default method and an extension trait,
+      and recognise a decorator written as a generic impl.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>for x in &amp;ledger</code> call?</summary>
+      <div><code>IntoIterator::into_iter(&amp;ledger)</code>. (89)</div></details>
+    <details><summary>Required vs default method?</summary>
+      <div>A required one has no body in the trait; a default one does, and implementors may override it. (49)</div></details>
+  </div>
+
+  <h2>1. Default methods</h2>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/clock.rs" data-line="19">
+      pub trait Clock: fmt::Debug + Send + Sync {
+          /// The current instant.
+          fn now(&self) -> DateTime<Utc>;
+
+          /// The current date in UTC: Java's `LocalDate.now(clock)`.
+          fn today(&self) -> NaiveDate {
+              self.now().date_naive()
+          }
+      }
+    </script>
+    <p>Each clock writes <code>now</code>; <code>today</code> is derived from it once, for all clocks. It's like a
+      method on an abstract base class, without inheritance: there are no fields, only other trait methods to
+      build on.</p>
+  </div>
+
+  <h2>2. Blanket impls</h2>
+  <p>An <code>impl</code> can be generic over the implementing type itself:</p>
+  <script type="text/x-code" data-lang="rust">
+    // In std (simplified): everything printable with {} gets .to_string().
+    impl<T: fmt::Display + ?Sized> ToString for T {
+        fn to_string(&self) -> String { … }
+    }
+  </script>
+  <p>That's why <code>42.to_string()</code>, <code>expense_id.to_string()</code> and <code>status.to_string()</code>
+    all work, although nobody wrote <code>ToString</code> for those types. Other blanket impls you use daily:
+    <code>impl&lt;T, U: From&lt;T&gt;&gt; Into&lt;U&gt; for T</code> (why implementing <code>From</code> gives you
+    <code>.into()</code>) and <code>impl&lt;I: Iterator&gt; IntoIterator for I</code> (why every iterator works in
+    <code>for</code>). <code>?Sized</code> lifts the default "size known at compile time" bound, so the impl also
+    covers <code>str</code> and <code>dyn Trait</code>.</p>
+
+  <h2>3. Extension traits</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      // TS: patch the prototype (global!) or write a helper.
+      declare global { interface String { initials(): string } }
+      String.prototype.initials = function () { … };
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      // Rust: a trait in YOUR crate, implemented for a foreign type.
+      pub trait StrExt { fn initials(&self) -> String; }
+      impl StrExt for str { fn initials(&self) -> String { … } }
+
+      use crate::StrExt;   // only visible where imported
+      "sam de vries".initials();
+    </script>
+  </div>
+  <p>Unlike prototype patching, it's scoped: the method only exists where the trait is imported. That's also why you
+    sometimes need <code>use std::fmt::Write as _;</code> or <code>use tower::ServiceExt;</code> before a method
+    "appears" (lesson 49). Crates name them <code>…Ext</code> by convention: <code>FutureExt</code>,
+    <code>ServiceExt</code>, <code>SinkExt</code>.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a decorator as a generic impl</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/app/src/metrics.rs" data-line="66">
+      struct MicrometerNames<R>(R);
+
+      impl<R: Recorder> Recorder for MicrometerNames<R> {
+          fn describe_counter(&self, key: KeyName, unit: Option<Unit>, description: SharedString) {
+              self.0.describe_counter(total(key.as_str()).into(), unit, description);
+          }
+    </script>
+    <p>It wraps <em>any</em> metrics recorder and is itself a recorder, renaming counters on the way through:
+      the decorator pattern, with the wrapped type known at compile time.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>A blanket impl is a promise for all types, including future ones, so it blocks other impls that could
+      overlap. Once std has <code>impl&lt;T: Display&gt; ToString for T</code>, no one can write a separate
+      <code>ToString</code> for a type that's also <code>Display</code>. Coherence (next lesson) is the set of rules
+      that keeps such overlaps impossible.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex90_blanket_impls.rs</code>: a default method, a <code>StrExt</code> extension
+      trait, and a blanket <code>Shout</code> for every <code>Display</code> type. Run <code>cargo test ex90</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why does <code>status.to_string()</code> work on <code>ExpenseStatus</code>?</p>
+    <ul class="options">
+      <li>Every enum gets to_string from its derive list</li>
+      <li data-correct>It implements Display, and a blanket impl adds ToString</li>
+      <li>The compiler generates to_string for all public types</li>
+      <li>ExpenseStatus has a hand-written to_string method in it</li>
+    </ul>
+    <div class="explain"><code>impl&lt;T: Display + ?Sized&gt; ToString for T</code> in std.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">An extension method isn't found (E0599), though the trait is implemented. Likely cause?</p>
+    <ul class="options">
+      <li>Extension traits only work on types from std</li>
+      <li data-correct>The trait isn't imported with use in this file</li>
+      <li>The method must be marked pub(crate) as well</li>
+      <li>Extension traits need a derive on the type</li>
+    </ul>
+    <div class="explain">Trait methods are only callable where the trait is in scope.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>?Sized</code> in <code>impl&lt;T: Display + ?Sized&gt;</code> allow?</p>
+    <ul class="options">
+      <li>T may be a type that has no Display impl</li>
+      <li data-correct>T may be unsized, like str or dyn Trait</li>
+      <li>T may be any size, but only behind Box</li>
+      <li>T may be optional, so the impl can skip it</li>
+    </ul>
+    <div class="explain">Generic parameters are <code>Sized</code> by default; <code>?Sized</code> relaxes that.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch10-02-traits.html">10.2 "Traits"</a>, sections "Default
+      Implementations" and "Using Trait Bounds to Conditionally Implement Methods" (blanket implementations).</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

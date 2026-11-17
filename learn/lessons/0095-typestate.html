@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Typestate: states as types</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits in depth</p>
+  <h1>Typestate: states as types</h1>
+  <p class="lede">Ledgerly checks expense transitions at run time with an enum and a table. A different design moves
+    the states into the type system, so <code>approve</code> on a draft doesn't compile. Knowing both helps you
+    choose.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can build a typestate API with marker types and <code>PhantomData</code>, and say when it fits better than
+      an enum.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why does <code>Money</code> have no <code>Ord</code>?</summary>
+      <div><code>Ord</code> is total, but two currencies have no order; <code>cmp</code> returns a <code>Result</code>
+        instead. (94)</div></details>
+    <details><summary>What does a method taking <code>self</code> (not <code>&amp;self</code>) do to the value?</summary>
+      <div>Consumes it: the caller's variable is moved and can't be used afterwards. (37, 44)</div></details>
+  </div>
+
+  <h2>The run-time design (Ledgerly)</h2>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/status.rs" data-line="4">
+      /// Where an expense stands in the workflow.
+      ///
+      /// Draft → Submitted → Approved → Reimbursed, or Submitted → Rejected → Draft (reopen).
+    </script>
+    <p>One <code>Expense</code> type with a <code>status</code> field. <code>approve</code> exists on every expense
+      and returns an error if the status is wrong. That's the right choice here: the status comes from the
+      <strong>database</strong> at run time, the API must answer "you can't approve a draft" with a
+      <code>409</code>, and the parity suite checks exactly that response.</p>
+  </div>
+
+  <h2>The compile-time design</h2>
+  <script type="text/x-code" data-lang="rust">
+    pub struct Draft;  pub struct Submitted;  pub struct Approved;   // zero-sized markers
+
+    pub struct Claim<S> { amount: u64, state: PhantomData<S> }
+
+    impl Claim<Draft>     { pub fn submit(self) -> Claim<Submitted> { … } }
+    impl Claim<Submitted> { pub fn approve(self, by: &str) -> Claim<Approved> { … }
+                            pub fn reject(self) -> Claim<Draft> { … } }
+
+    Claim::new(10).approve("sam");   // E0599: no method `approve` for `Claim<Draft>`
+  </script>
+  <ul>
+    <li>Each state is a type; methods exist only on the states where they're legal.</li>
+    <li>Transitions take <code>self</code> by value, so the old state is consumed: you can't keep using the
+      draft after submitting it.</li>
+    <li><code>PhantomData&lt;S&gt;</code> tells the compiler the struct is "about" an <code>S</code> without storing
+      one. It has size zero; so do the marker structs. All of it disappears after compiling.</li>
+  </ul>
+  <p>TS can approximate it with branded types or a discriminant generic
+    (<code>Claim&lt;"draft"&gt;</code>), but nothing stops code from keeping the old object around and calling methods
+    on it. Rust's moves make the old state unusable.</p>
+
+  <h2>When to use which</h2>
+  <table>
+    <thead><tr><th>Typestate</th><th>Enum + run-time check</th></tr></thead>
+    <tbody>
+      <tr><td>the state is known where the code is written: builders, connection setup, protocol handshakes</td><td>the state comes from outside: a database row, a request</td></tr>
+      <tr><td>misuse is a programmer error</td><td>misuse is a user error that needs a response (409)</td></tr>
+      <tr><td>few states, linear flow</td><td>many states, stored in one collection (<code>Vec&lt;Expense&gt;</code> of mixed statuses)</td></tr>
+    </tbody>
+  </table>
+  <p>You can't put a <code>Claim&lt;Draft&gt;</code> and a <code>Claim&lt;Approved&gt;</code> in one
+    <code>Vec</code>: they're different types. That alone rules typestate out for Ledgerly's expenses.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TS, a "state machine in types" is usually a discriminated union, which is Ledgerly's design (an enum),
+      not typestate. Typestate relies on moves and on methods existing per concrete generic instantiation
+      (<code>impl Claim&lt;Draft&gt;</code>), which TS's structural types can't express cleanly.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex95_typestate.rs</code>: write <code>submit</code>, <code>approve</code> and
+      <code>reject</code>, then uncomment the test that approves a draft and read E0599. Run <code>cargo test ex95</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why do the transition methods take <code>self</code> by value?</p>
+    <ul class="options">
+      <li>Because &amp;self methods can't return a new value</li>
+      <li data-correct>So the old state is consumed, never reused</li>
+      <li>Because PhantomData values can't be borrowed at all</li>
+      <li>To copy the claim into the new state</li>
+    </ul>
+    <div class="explain">After <code>let s = draft.submit();</code>, <code>draft</code> is moved: E0382 if you touch it.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>size_of::&lt;Claim&lt;Approved&gt;&gt;()</code> include for the state?</p>
+    <ul class="options">
+      <li>One byte for the state's discriminant</li>
+      <li data-correct>Nothing; PhantomData and the markers are zero-sized</li>
+      <li>A pointer to the state's marker type</li>
+      <li>A copy of each previous state's data</li>
+    </ul>
+    <div class="explain">Typestate is free at run time.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why doesn't Ledgerly use typestate for expenses?</p>
+    <ul class="options">
+      <li>Typestate needs unsafe code, which Ledgerly's lints forbid</li>
+      <li data-correct>The status comes from the database at runtime</li>
+      <li>Typestate doesn't work with async functions or methods</li>
+      <li>Java has no typestate, so parity would fail</li>
+    </ul>
+    <div class="explain">A loaded row could be in any state, and wrong transitions must become 409 responses.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>Cliff Biffle's <a href="https://cliffle.com/blog/rust-typestate/">"The Typestate Pattern in Rust"</a>, the
+      standard write-up, and the std docs for <a href="https://doc.rust-lang.org/std/marker/struct.PhantomData.html">PhantomData</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

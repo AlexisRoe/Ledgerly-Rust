@@ -86,6 +86,14 @@
       <tr><td><strong>trait object</strong></td><td><code>dyn Trait</code> behind a pointer: an implementation chosen at runtime.</td></tr>
       <tr><td><strong>derive</strong></td><td>Generating a trait implementation with <code>#[derive(…)]</code>.</td></tr>
       <tr><td><strong><code>Send</code> / <code>Sync</code></strong></td><td>Safe to move to / share between threads.</td></tr>
+      <tr><td><strong>associated type</strong></td><td>A type an impl fixes once, like <code>Iterator::Item</code>.</td></tr>
+      <tr><td><strong>blanket impl</strong></td><td>An impl for every type meeting a bound: <code>impl&lt;T: Display&gt; ToString for T</code>.</td></tr>
+      <tr><td><strong>extension trait</strong></td><td>A local trait adding methods to a foreign type; works where imported.</td></tr>
+      <tr><td><strong>orphan rule / coherence</strong></td><td>An impl needs a local trait or a local type, so each (trait, type) has one impl.</td></tr>
+      <tr><td><strong>dyn compatible</strong></td><td>A trait usable as <code>dyn Trait</code>: no generic methods, no <code>Self</code> by value, no <code>async fn</code>.</td></tr>
+      <tr><td><strong>vtable</strong></td><td>The table of method pointers behind a <code>dyn Trait</code>.</td></tr>
+      <tr><td><strong>typestate</strong></td><td>States as types, so illegal transitions don't compile.</td></tr>
+      <tr><td><strong><code>PhantomData</code></strong></td><td>A zero-sized field marking a type parameter as used.</td></tr>
       <tr><td><strong>closure</strong></td><td>An anonymous function capturing its environment: <code>|x| x + 1</code>. (arrow function)</td></tr>
       <tr><td><strong>iterator</strong></td><td>A lazy sequence with adapters (<code>map</code>, <code>filter</code>) and consumers (<code>collect</code>).</td></tr>
     </tbody>
