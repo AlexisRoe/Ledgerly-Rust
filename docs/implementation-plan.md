@@ -542,7 +542,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: re-check the `prod` startup refusal against Java's list of required variables, including the `keycloak` combination.
   - Accept: one test per required variable.
 
-- [ ] **M11.6 Dependency-upgrade drill**
+- [x] **M11.6 Dependency-upgrade drill**
   - Do: the counterpart of Java's Boot 4.2 upgrade. Run `cargo update`, take one major-version bump of a core crate (whichever Renovate proposes first), and record what broke in the learning log.
 
 - [ ] **M11.7 Full parity**
