@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ledgerly's test layers</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Testing</p>
+  <h1>Ledgerly's test layers</h1>
+  <p class="lede">Five layers, from pure functions to a black-box suite that talks HTTP to the real container image.
+    When you change something, this map tells you which tests will notice and which command runs them.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>For any change you might make, you can predict which layer of tests covers it, run that layer, and read a
+      parity test.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Unit vs integration test in Rust: where, and what can each see?</summary>
+      <div>Unit: <code>mod tests</code> in <code>src/</code>, sees private items. Integration: <code>tests/*.rs</code>,
+        its own crate, only <code>pub</code>. (65, 66)</div></details>
+    <details><summary>What does <code>TestDatabase::new()</code> give a test?</summary>
+      <div>Its own freshly migrated Postgres database, copied from a template in a shared Docker container. (66)</div></details>
+  </div>
+
+  <h2>The layers</h2>
+  <table>
+    <thead><tr><th>Layer</th><th>Where</th><th>Talks to</th><th>Run with</th></tr></thead>
+    <tbody>
+      <tr><td>1. Domain unit tests</td><td><code>crates/*/src/domain/**</code> <code>mod tests</code></td><td>nothing: pure functions, <code>FixedClock</code></td><td><code>cargo test -p ledgerly-expenses domain</code></td></tr>
+      <tr><td>2. Application tests</td><td><code>crates/*/src/application/tests.rs</code></td><td>Postgres (<code>TestDatabase</code>) + test doubles for other modules</td><td><code>cargo test -p …</code> (Docker)</td></tr>
+      <tr><td>3. Web tests</td><td><code>crates/*/src/web/tests.rs</code></td><td>the router in-process (axum <code>oneshot</code>) + Postgres</td><td><code>cargo test -p …</code> (Docker)</td></tr>
+      <tr><td>4. App and shared integration tests</td><td><code>crates/app/tests/</code>, <code>crates/shared/tests/</code></td><td>the real binary (startup, probes, SIGTERM), the crate graph, Postgres</td><td><code>just test</code></td></tr>
+      <tr><td>5. Parity suite</td><td><code>crates/parity-tests/tests/</code></td><td>HTTP + SQL against the built container image</td><td><code>just parity</code> (<code>just verify</code>)</td></tr>
+    </tbody>
+  </table>
+  <p>In TS terms: layers 1–2 are your Vitest unit tests, layer 3 is Supertest against an Express app, and layer 5 is
+    a Playwright/Postman API suite against a deployed container.</p>
+
+  <h2>The parity suite</h2>
+  <p>Ledgerly-Rust must behave exactly like Ledgerly-Java. The parity suite proves it from the outside: it only sends
+    HTTP requests and writes SQL fixtures, so it could run against either implementation
+    (<a href="../../docs/adr/0011-black-box-parity-suite.md">ADR 0011</a>).</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/parity-tests/tests/expenses.rs" data-line="65">
+    mod m3 {
+        use super::*;
+
+        /// Java: `ExpensesApiTest.unknownPathIsAProblemToo`, with a token as in Java: without one, any unknown path
+        /// is 401 (authentication comes before routing, M5).
+        #[tokio::test]
+        async fn unknown_path_is_a_problem_too() {
+            let world = World::start().await;
+            let user = world.user().await;
+
+            let response = world.as_user(&user).get(&format!("{V1}/nope")).send_unchecked().await;
+
+            assert_eq!(response.status, 404);
+            assert_eq!(response.problem_code().as_deref(), Some("REQUEST_REJECTED"));
+        }
+    }
+  </script>
+  <ul>
+    <li><code>mod m3</code>: tests are grouped by the milestone that introduced them, and the runner reports
+      passed/failed per milestone.</li>
+    <li>Every test names the Java test it ports in its doc comment. <code>tests/inventory.rs</code> checks that every
+      Java test is either ported or listed in <code>NOT_PARITY.md</code> with a reason.</li>
+    <li><code>World</code> is the fixture: a running app, a database to seed, helpers to log in.</li>
+  </ul>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Most TS projects mock the database. Ledgerly almost never does: layers 2–5 use real Postgres in Docker, because
+      the SQL is part of what's being tested (sqlx checks it compiles, the tests check it does the right thing). The
+      price is that <code>just test</code> needs Docker. Only the domain layer is fully pure, which is exactly why the
+      domain is kept free of I/O.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Try it</span>
+    <ol>
+      <li>Run the pure tests only: <code>cargo test -p ledgerly-expenses domain</code> (no Docker needed).</li>
+      <li>With Docker running: <code>cargo nextest run -p ledgerly-expenses</code>. Watch the first test start the
+        shared Postgres container.</li>
+      <li>Open <code>crates/parity-tests/NOT_PARITY.md</code> and find one Java test that's ported in-process instead,
+        and why.</li>
+    </ol>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">You change the wording of a domain error message. Which layer fails first?</p>
+    <ul class="options">
+      <li>The parity suite, the next time it runs</li>
+      <li data-correct>Domain or web tests that compare the message</li>
+      <li>The app's startup test, which prints all messages</li>
+      <li>None; messages are never checked by any tests</li>
+    </ul>
+    <div class="explain">Messages are part of the contract with Java, so tests in <code>web/problem.rs</code> and the
+      domain compare them, and the parity suite would catch it later too.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does the parity suite <em>not</em> do?</p>
+    <ul class="options">
+      <li>Send HTTP requests to a running container image</li>
+      <li>Write SQL fixtures straight into the shared schema</li>
+      <li data-correct>Call Rust functions inside the app's own process</li>
+      <li>Validate the responses against the OpenAPI contract file</li>
+    </ul>
+    <div class="explain">It's black-box: HTTP and SQL only, so the same tests could be pointed at Ledgerly-Java.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which tests can run without Docker?</p>
+    <ul class="options">
+      <li>All of them; Docker only builds the image</li>
+      <li data-correct>Pure unit tests, such as the domain's tests</li>
+      <li>The web tests, since they run in-process</li>
+      <li>The parity tests, since they only speak HTTP</li>
+    </ul>
+    <div class="explain">Anything that uses <code>TestDatabase</code>, starts the binary against a database, or the
+      parity suite needs Docker.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p><a href="../../docs/adr/0011-black-box-parity-suite.md">ADR 0011</a> (the parity suite) and the header comment
+      of <a class="src" data-src="crates/shared/src/database/testing.rs"></a>, which explains how test databases are
+      shared and isolated.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

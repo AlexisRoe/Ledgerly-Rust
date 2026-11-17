@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: testing</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Testing</h1>
+  <p class="lede">Section 11 on one page.</p>
+
+  <h2>Writing tests</h2>
+  <script type="text/x-code" data-lang="rust">
+    #[cfg(test)]
+    mod tests {
+        use super::*;                              // the module under test, private items included
+
+        #[test]
+        fn a_refused_edit_changes_nothing() {     // the name is the description
+            let mut e = draft();                  // helpers = fixtures
+            e.edit(…).unwrap_err();               // assert it failed
+            assert_eq!(e.money(), money("12.50"));
+            assert!(e.note().is_some(), "note must stay: {e:?}");
+            assert!(matches!(e.status(), ExpenseStatus::Draft));
+        }
+
+        #[tokio::test]
+        async fn an_async_test() { … }
+    }
+  </script>
+  <table>
+    <thead><tr><th>Jest / Vitest</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td><code>describe</code></td><td>nested <code>mod</code></td></tr>
+      <tr><td><code>it("…")</code></td><td><code>#[test] fn snake_case_sentence()</code></td></tr>
+      <tr><td><code>expect(a).toEqual(b)</code></td><td><code>assert_eq!(a, b)</code></td></tr>
+      <tr><td><code>expect(x).toBe(true)</code></td><td><code>assert!(x)</code></td></tr>
+      <tr><td><code>expect(fn).toThrow()</code></td><td><code>result.unwrap_err()</code> / <code>assert_eq!(r, Err(…))</code></td></tr>
+      <tr><td><code>jest.mock</code></td><td>trait objects + test doubles (<code>FixedClock</code>)</td></tr>
+      <tr><td>fast-check</td><td><code>proptest! { #[test] fn p(x in strategy()) { prop_assert_eq!(…) } }</code></td></tr>
+      <tr><td>testcontainers</td><td><code>TestDatabase::new().await</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Kinds of test</h2>
+  <table>
+    <thead><tr><th>Kind</th><th>Where</th><th>Sees</th></tr></thead>
+    <tbody>
+      <tr><td>unit</td><td><code>mod tests</code> / <code>tests.rs</code> in <code>src/</code></td><td>private items</td></tr>
+      <tr><td>integration</td><td><code>tests/*.rs</code> (each its own crate)</td><td><code>pub</code> only</td></tr>
+      <tr><td>doc</td><td><code>```</code> in <code>///</code> / <code>//!</code>; <code>compile_fail</code>, <code>no_run</code>, <code>ignore</code>, <code>text</code></td><td><code>pub</code> only</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Running</h2>
+  <table>
+    <thead><tr><th>Command</th><th>Runs</th></tr></thead>
+    <tbody>
+      <tr><td><code>cargo test -p crate filter</code></td><td>tests of one crate whose path contains <code>filter</code></td></tr>
+      <tr><td><code>cargo test -- --nocapture</code></td><td>…and show <code>println!</code></td></tr>
+      <tr><td><code>cargo test --doc</code></td><td>doc tests only</td></tr>
+      <tr><td><code>cargo nextest run -p crate</code></td><td>nextest (process per test, timeouts; no doc tests)</td></tr>
+      <tr><td><code>just test</code></td><td>everything except parity (Docker)</td></tr>
+      <tr><td><code>just parity</code></td><td>black-box suite against the image (Docker)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Ledgerly's layers</h2>
+  <p>1. domain unit (pure) · 2. application (Postgres + doubles) · 3. web (router in-process + Postgres) ·
+    4. app/shared integration (binary, crate graph, outbox) · 5. parity (HTTP + SQL against the image; grouped by
+    milestone <code>mod mN</code>; inventory vs <code>NOT_PARITY.md</code>).</p>
+
+  <p>Lessons: <a data-lesson="65"></a> · <a data-lesson="66"></a> · <a data-lesson="67"></a></p>
+</main>
+</body>
+</html>
