@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inside a future: poll and Waker</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Concurrency and async internals</p>
+  <h1>Inside a future: <code>poll</code> and <code>Waker</code></h1>
+  <p class="lede">A JS Promise is pushed: it resolves and runs your callbacks. A Rust future is pulled: an executor
+    asks it "are you done yet?", and it answers <em>ready</em> or <em>not yet, I'll tell you when to ask again</em>.
+    You'll write both sides.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can implement <code>Future</code> by hand, explain the role of the <code>Waker</code>, and write a working
+      <code>block_on</code> in a dozen lines of std-only Rust.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Futures are lazy. What does that mean in practice?</summary>
+      <div>Creating one does nothing; it runs only when awaited or polled by a runtime. (62)</div></details>
+    <details><summary>Which channel would you use to send exactly one reply?</summary>
+      <div><code>oneshot</code>. (100)</div></details>
+  </div>
+
+  <h2>The trait</h2>
+  <script type="text/x-code" data-lang="rust">
+    pub trait Future {
+        type Output;
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>;
+    }
+    pub enum Poll<T> { Ready(T), Pending }
+  </script>
+  <p>The contract (<a href="https://doc.rust-lang.org/std/future/trait.Future.html">std: Future</a>):</p>
+  <ul>
+    <li><code>poll</code> must never block. It does what it can and returns <code>Ready(value)</code> or
+      <code>Pending</code>.</li>
+    <li>Before returning <code>Pending</code>, the future must arrange for <code>cx.waker()</code> to be woken when
+      progress is possible (a socket became readable, a timer fired). Typically it stores
+      <code>cx.waker().clone()</code> where the event source can find it.</li>
+    <li>When woken, the executor polls it again. A future that returns <code>Pending</code> and arranges no wake-up
+      is never polled again: it hangs forever.</li>
+  </ul>
+
+  <h2>The other side: an executor</h2>
+  <script type="text/x-code" data-lang="rust">
+    struct ThreadWaker(Thread);
+    impl Wake for ThreadWaker { fn wake(self: Arc<Self>) { self.0.unpark(); } }
+
+    fn block_on<F: Future>(future: F) -> F::Output {
+        let mut future = pin!(future);
+        let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
+        let mut cx = Context::from_waker(&waker);
+        loop {
+            match future.as_mut().poll(&mut cx) {
+                Poll::Ready(value) => return value,
+                Poll::Pending => thread::park(),   // sleep until wake() unparks us
+            }
+        }
+    }
+  </script>
+  <p>That's a real, if minimal, executor. Tokio is the same loop at industrial scale: many tasks, a queue of woken
+    ones, worker threads, and a reactor that turns OS events (epoll/kqueue) into <code>wake()</code> calls.</p>
+
+  <h2>What <code>async fn</code> compiles to</h2>
+  <p>The compiler turns each <code>async fn</code> into a state machine: an enum with one variant per
+    <code>.await</code> point, holding the locals alive there, and a <code>poll</code> that resumes from the current
+    state. <code>.await</code> means "poll the inner future; if <code>Pending</code>, return <code>Pending</code>
+    myself". That's why futures need no heap allocation per call, and why they're lazy: nothing happens until the
+    first <code>poll</code>.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>A <code>Promise</code> starts work when created and pushes its result to callbacks via the microtask queue.
+      A future does nothing until polled, has no built-in result storage, and can be dropped mid-way, which
+      cancels it (lesson 103). Same <code>async</code>/<code>await</code> syntax, inverted control flow.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex101_futures_by_hand.rs</code>: a future that yields a few times, the
+      <code>block_on</code> loop, and a timer future woken from another thread. No Tokio in this exercise. Run
+      <code>cargo test ex101</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">A hand-written future returns <code>Pending</code> without storing or calling the waker. What happens?</p>
+    <ul class="options">
+      <li>The executor polls it again in a busy loop</li>
+      <li data-correct>It may never be polled again, so it hangs</li>
+      <li>The runtime panics with a missing waker error</li>
+      <li>It is retried automatically after about one second</li>
+    </ul>
+    <div class="explain">Executors poll only woken tasks. No wake, no progress.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>x.await</code> do inside an <code>async fn</code>'s generated <code>poll</code>?</p>
+    <ul class="options">
+      <li>Blocks the whole thread until x has finished</li>
+      <li data-correct>Polls x; if Pending, returns Pending as well</li>
+      <li>Spawns x as a separate runtime task</li>
+      <li>Registers a callback, the way Promise.then would</li>
+    </ul>
+    <div class="explain">Pending propagates outward to the task; the waker brings the poll back in.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why must <code>poll</code> never block?</p>
+    <ul class="options">
+      <li>Because blocking inside poll is a compile error</li>
+      <li data-correct>It stalls every task sharing that executor thread</li>
+      <li>Because the Waker cannot be cloned while blocking</li>
+      <li>Because futures must always return Ready at first</li>
+    </ul>
+    <div class="explain">Cooperative scheduling: tasks give the thread back by returning. Lesson 104 shows the fix.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Tokio tutorial's <a href="https://tokio.rs/tokio/tutorial/async">"Async in depth"</a>, which builds a
+      mini Tokio, and the <a href="https://doc.rust-lang.org/std/task/trait.Wake.html">std::task::Wake</a> docs,
+      whose example is the <code>block_on</code> above.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

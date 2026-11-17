@@ -152,6 +152,18 @@
         [95, "typestate", "Typestate: states as types"],
         [96, "review-traits-deep", "Review: traits in depth"],
       ] },
+    { title: "Concurrency and async internals", blurb: "Threads, Send and Sync, locks and atomics, channels, how futures and Pin work, cancellation, blocking.",
+      ref: "concurrency.html", lessons: [
+        [97, "threads", "Threads and scoped threads"],
+        [98, "send-and-sync", "Send and Sync, really"],
+        [99, "shared-state", "Shared mutable state"],
+        [100, "channels-and-actors", "Channels and the actor pattern"],
+        [101, "inside-a-future", "Inside a future: poll and Waker"],
+        [102, "pin", "Pin, just enough"],
+        [103, "cancellation", "Cancellation and structured concurrency"],
+        [104, "blocking-in-async", "Blocking inside async"],
+        [105, "review-concurrency", "Review: concurrency and async internals"],
+      ] },
   ];
 
   const REFERENCES = [
@@ -172,6 +184,7 @@
     ["change-loop.html", "The change loop"],
     ["ownership-deep.html", "Ownership and lifetimes in depth"],
     ["traits-deep.html", "Traits in depth"],
+    ["concurrency.html", "Concurrency and async internals"],
   ];
 
   const LESSONS = [];

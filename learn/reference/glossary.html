@@ -117,6 +117,13 @@
       <tr><td><strong>future</strong></td><td>A lazy async computation; does nothing until awaited. (a Promise that doesn't start itself)</td></tr>
       <tr><td><strong>runtime</strong></td><td>The library that polls futures and schedules tasks: Tokio. (Node's event loop)</td></tr>
       <tr><td><strong>task</strong></td><td>A future spawned onto the runtime with <code>tokio::spawn</code>, possibly on another thread.</td></tr>
+      <tr><td><strong>waker</strong></td><td>The handle a future leaves behind so the executor knows when to poll it again.</td></tr>
+      <tr><td><strong>executor</strong></td><td>The loop that polls woken futures (Tokio's scheduler; a toy <code>block_on</code>).</td></tr>
+      <tr><td><strong><code>Pin</code></strong></td><td>A pointer whose target won't move again; needed for self-referential futures.</td></tr>
+      <tr><td><strong>cancel safety</strong></td><td>Whether dropping a future mid-way loses work; matters in <code>select!</code> loops.</td></tr>
+      <tr><td><strong>blocking</strong></td><td>Long work between two <code>.await</code>s; belongs in <code>spawn_blocking</code>.</td></tr>
+      <tr><td><strong>actor</strong></td><td>A task that owns some state and is driven by messages on a channel.</td></tr>
+      <tr><td><strong>atomic</strong></td><td>A lock-free, thread-safe integer or flag (<code>AtomicUsize</code>).</td></tr>
       <tr><td><strong>extractor</strong></td><td>An axum handler parameter type that pulls its value out of the request.</td></tr>
     </tbody>
   </table>

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shared mutable state</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Concurrency and async internals</p>
+  <h1>Shared mutable state</h1>
+  <p class="lede">When several threads or tasks must change the same data, wrap it: <code>Arc</code> for shared
+    ownership, and a lock or an atomic for safe mutation. Choosing the right one, and keeping locks short, is most of
+    the skill.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can use <code>Arc&lt;Mutex&lt;T&gt;&gt;</code>, <code>RwLock</code> and atomics correctly, handle poisoning,
+      and choose between <code>std::sync::Mutex</code> and <code>tokio::sync::Mutex</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why is <code>Rc</code> not <code>Send</code>?</summary>
+      <div>Its reference count isn't atomic; concurrent clones would corrupt it. (98)</div></details>
+    <details><summary>What does <code>unwrap_or_else(PoisonError::into_inner)</code> do on <code>lock()</code>?</summary>
+      <div>Takes the guard even if another thread panicked while holding the lock. (84)</div></details>
+  </div>
+
+  <h2>The building blocks</h2>
+  <script type="text/x-code" data-lang="rust">
+    let totals = Arc::new(Mutex::new(HashMap::new()));   // shared + lockable
+    let for_task = Arc::clone(&totals);
+    std::thread::spawn(move || {
+        let mut map = for_task.lock().unwrap_or_else(PoisonError::into_inner);  // MutexGuard
+        *map.entry("taxi").or_insert(0) += 1;
+    });                                                   // guard dropped → unlocked
+  </script>
+  <ul>
+    <li><code>lock()</code> returns a <strong>guard</strong>; the data is reachable only through it, and dropping it
+      unlocks (RAII, lesson 86). You can't forget to unlock, and you can't touch the data without locking.</li>
+    <li><strong>Poisoning:</strong> if a thread panics while holding the lock, later <code>lock()</code>s return
+      <code>Err</code>, because the data may be half-updated. Ledgerly decides case by case; its test clock ignores
+      poisoning, since a timestamp can't be half-written.</li>
+    <li><strong><code>RwLock</code></strong> allows many readers at once; worth it for read-mostly data.</li>
+    <li><strong>Atomics</strong> (<code>AtomicUsize</code>, <code>AtomicBool</code>) for single counters and flags,
+      no lock at all. <code>Ordering::Relaxed</code> is enough for a counter; <code>SeqCst</code> is the safe default
+      when unsure.</li>
+  </ul>
+
+  <h2>std or Tokio mutex?</h2>
+  <table>
+    <thead><tr><th><code>std::sync::Mutex</code></th><th><code>tokio::sync::Mutex</code></th></tr></thead>
+    <tbody>
+      <tr><td>blocks the thread while waiting</td><td>waiting is an <code>.await</code>: the task yields</td></tr>
+      <tr><td>guard must <strong>not</strong> live across an <code>.await</code></td><td>guard <strong>may</strong> live across an <code>.await</code></td></tr>
+      <tr><td>faster; the default, even in async code, for short critical sections</td><td>for when you must hold the lock while awaiting I/O</td></tr>
+    </tbody>
+  </table>
+  <p>Tokio's own docs recommend the std mutex unless you need to hold it across an await
+    (<a href="https://docs.rs/tokio/latest/tokio/sync/struct.Mutex.html#which-kind-of-mutex-should-you-use">tokio::sync::Mutex</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: an async lock, held across a fetch</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/identity/src/keycloak/issuer.rs" data-line="83">
+      pub(crate) struct Issuer {
+          issuer: String,
+          client: Client<HttpsConnector<HttpConnector>, Empty<Bytes>>,
+          state: Mutex<Option<Discovered>>,
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/identity/src/keycloak/issuer.rs" data-line="116">
+      pub(crate) async fn keys(&self) -> Result<Keys, Unreachable> {
+          let mut state = self.state.lock().await;
+    </script>
+    <p>This <code>Mutex</code> is <code>tokio::sync::Mutex</code> (imported at the top). With Keycloak login, the
+      first request discovers the identity provider and fetches its signing keys over HTTP <em>while holding the
+      lock</em>. Concurrent requests wait for that one fetch instead of all fetching at once. That's a valid reason
+      to hold a lock across <code>.await</code>, so it must be Tokio's.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In Node, <code>counter++</code> in two async callbacks never races, because only one runs at a time; the only
+      danger is interleaving at <code>await</code> points. In Rust's multi-threaded runtime, two tasks really do run
+      at the same instant. The compiler forces a lock or an atomic on shared mutable data; it can't force you to keep
+      the critical section short. Lock, change, unlock; compute outside.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex99_shared_state.rs</code>: an atomic counter, a read-mostly <code>RwLock</code>
+      table, a <code>Mutex</code> with a short critical section, and a Tokio mutex held across an await. Run
+      <code>cargo test ex99</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">How is a <code>Mutex</code> unlocked in Rust?</p>
+    <ul class="options">
+      <li>By calling unlock() on the mutex itself</li>
+      <li data-correct>By dropping the guard that lock() returned</li>
+      <li>Automatically, at the end of every function</li>
+      <li>By the garbage collector, some time later</li>
+    </ul>
+    <div class="explain">RAII: the guard's <code>Drop</code> unlocks.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A handler updates an in-memory counter map, with no <code>.await</code> while locked. Which mutex?</p>
+    <ul class="options" data-fixed>
+      <li data-correct><code>std::sync::Mutex</code></li>
+      <li><code>tokio::sync::Mutex</code></li>
+      <li><code>std::cell::RefCell</code></li>
+      <li><code>std::rc::Rc</code></li>
+    </ul>
+    <div class="explain">Short, synchronous critical section: the std mutex is faster and recommended.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does a poisoned mutex tell you?</p>
+    <ul class="options">
+      <li>Two threads tried to lock it at once</li>
+      <li data-correct>A thread panicked while it held the lock</li>
+      <li>The data inside was dropped by another thread</li>
+      <li>The lock was held across an await point</li>
+    </ul>
+    <div class="explain">The data might be half-updated; you decide whether that matters.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch16-03-shared-state.html">16.3 "Shared-State
+      Concurrency"</a>; for depth, chapters 1–3 of <a href="https://marabos.nl/atomics/">Rust Atomics and Locks</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

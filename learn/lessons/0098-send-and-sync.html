@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Send and Sync, really</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Concurrency and async internals</p>
+  <h1><code>Send</code> and <code>Sync</code>, really</h1>
+  <p class="lede">Two marker traits with no methods decide what may cross a thread boundary. The compiler derives them
+    for you, which is why you rarely write them and often read them in errors.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can define both traits precisely, predict which std types have them, and fix a "cannot be sent between
+      threads safely" or "future is not Send" error.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does <code>thread::scope</code> allow that <code>thread::spawn</code> doesn't?</summary>
+      <div>Borrowing local data, because the scope waits for its threads. (97)</div></details>
+    <details><summary>Which interior-mutability types are single-threaded?</summary>
+      <div><code>Cell</code> and <code>RefCell</code>. (84)</div></details>
+  </div>
+
+  <h2>The definitions</h2>
+  <table>
+    <tbody>
+      <tr><td><code>T: Send</code></td><td>a value of type <code>T</code> may be <strong>moved</strong> to another thread</td></tr>
+      <tr><td><code>T: Sync</code></td><td>a <code>&amp;T</code> may be <strong>shared</strong> with other threads. Precisely: <code>T: Sync</code> exactly when <code>&amp;T: Send</code></td></tr>
+    </tbody>
+  </table>
+  <p>Both are <strong>auto traits</strong>: a struct is <code>Send</code> if all its fields are, and so on. You never
+    write <code>impl Send</code> in safe code (doing so is <code>unsafe</code>). Almost everything is both; the
+    exceptions are the interesting part
+    (<a href="https://doc.rust-lang.org/nomicon/send-and-sync.html">Nomicon: Send and Sync</a>).</p>
+
+  <table>
+    <thead><tr><th>Type</th><th>Send</th><th>Sync</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><code>Rc&lt;T&gt;</code></td><td>no</td><td>no</td><td>its reference count isn't atomic: two threads cloning at once would corrupt it</td></tr>
+      <tr><td><code>Arc&lt;T&gt;</code></td><td>if <code>T: Send + Sync</code></td><td>same</td><td>atomic count; the <code>T</code> inside is shared</td></tr>
+      <tr><td><code>Cell</code>, <code>RefCell</code></td><td>yes</td><td>no</td><td>may move to another thread, but unsynchronised mutation through <code>&amp;</code> can't be shared</td></tr>
+      <tr><td><code>Mutex&lt;T&gt;</code></td><td>if <code>T: Send</code></td><td>if <code>T: Send</code></td><td>the lock makes sharing safe</td></tr>
+      <tr><td><code>MutexGuard</code></td><td>no</td><td>yes</td><td>must be unlocked on the thread that locked it</td></tr>
+    </tbody>
+  </table>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: requiring it on a trait</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/clock.rs" data-line="17">
+      ///
+      /// `Send + Sync` so that one clock can be shared by every request as an `Arc<dyn Clock>`.
+      pub trait Clock: fmt::Debug + Send + Sync {
+    </script>
+    <p>For a concrete type the compiler works out <code>Send</code>/<code>Sync</code> itself. For
+      <code>dyn Clock</code> it can't (any type might be behind it), so the trait demands them as supertraits. Every
+      port in Ledgerly (<code>MalwareScanner</code>, <code>MembershipLookup</code>, <code>Publisher</code>) does the
+      same, because axum shares handler state across Tokio's worker threads.</p>
+  </div>
+
+  <h2>"future cannot be sent between threads safely"</h2>
+  <p>An <code>async fn</code>'s future stores every local that's alive across an <code>.await</code>. If one of them
+    isn't <code>Send</code>, the future isn't either, and <code>tokio::spawn</code> or an axum handler rejects it:</p>
+  <script type="text/x-code" data-lang="rust">
+    async fn handler(state: State) {
+        let guard = state.cache.lock().unwrap();   // std MutexGuard: not Send
+        save(&guard).await;                        // guard is alive across .await → future not Send
+    }
+  </script>
+  <p>Fixes: end the non-<code>Send</code> value before the <code>.await</code> (a block <code>{ … }</code> or
+    <code>drop(guard)</code>), copy what you need out of it, or use a type designed to live across awaits
+    (<code>tokio::sync::Mutex</code>, lesson 99). The compiler's note points at the exact variable and the
+    <code>.await</code>.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>Nothing in TS describes "safe to use from another thread", because JS objects are never shared between threads.
+      In Rust, thread safety is a property of types, checked like any other. That's what "fearless concurrency"
+      means: not that concurrency is easy, but that data races don't compile.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">You replace <code>Arc&lt;Config&gt;</code> with <code>Rc&lt;Config&gt;</code> in axum state. What happens?</p>
+    <ul class="options">
+      <li>It works, and runs slightly faster than with Arc</li>
+      <li data-correct>A compile error: Rc is neither Send nor Sync</li>
+      <li>It compiles, then crashes under heavy concurrent load</li>
+      <li>It works, but only on a single worker thread</li>
+    </ul>
+    <div class="explain">The check happens at compile time; there's nothing to crash.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>T: Sync</code> mean?</p>
+    <ul class="options">
+      <li>T's methods are synchronised with a lock</li>
+      <li data-correct>&amp;T may be shared with other threads</li>
+      <li>T can only be used on one thread</li>
+      <li>T is copied whenever another thread reads</li>
+    </ul>
+    <div class="explain"><code>T: Sync</code> ⇔ <code>&amp;T: Send</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">An axum handler holds a std <code>MutexGuard</code> across an <code>.await</code>. Simplest fix?</p>
+    <ul class="options">
+      <li>Mark the handler function as unsafe</li>
+      <li data-correct>Drop the guard before the await</li>
+      <li>Wrap the guard itself in an Arc</li>
+      <li>Implement Send for the guard type</li>
+    </ul>
+    <div class="explain">Scope the lock to the synchronous part; never hold a std lock across an await.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch16-04-extensible-concurrency-sync-and-send.html">16.4
+      "Extensible Concurrency with Send and Sync"</a>, then the Rustonomicon's
+      <a href="https://doc.rust-lang.org/nomicon/send-and-sync.html">Send and Sync</a> page.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
