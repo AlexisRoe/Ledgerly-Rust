@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Capstone 6: review your own code</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Capstone: a service from scratch</p>
+  <h1>Capstone 6: review your own code</h1>
+  <p class="lede">The service works. Now review it like a pull request, with the tools first and then a checklist that
+    pulls together all of Part II. Then decide what to build next.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>Your project passes <code>fmt</code>, <code>clippy</code> (including a pedantic pass) and its tests, and you've compared
+      it with the reference solution point by point.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What closes the visit channel at shutdown?</summary>
+      <div>Dropping the router, which holds the last sender. (127)</div></details>
+    <details><summary>Why is an invalid slug in <code>GET /{slug}</code> a 404?</summary>
+      <div>From the client's view, that link doesn't exist. (126)</div></details>
+  </div>
+
+  <h2>1. Let the tools review first</h2>
+  <script type="text/x-code" data-lang="bash">
+    cargo fmt --check
+    cargo clippy --all-targets -- -D warnings
+    cargo clippy --all-targets -- -W clippy::pedantic   # stricter; read, don't obey blindly
+    cargo test
+    cargo doc --open                                     # does your crate's front page explain it?
+  </script>
+  <p>Pedantic lints are opinions (<code>must_use_candidate</code>, <code>missing_errors_doc</code>, casts). Fix the ones you
+    agree with; for the rest, an <code>#[expect(clippy::…, reason = "…")]</code> documents the decision, as Ledgerly does
+    with <code>Money::cmp</code>.</p>
+
+  <h2>2. The checklist</h2>
+  <table>
+    <thead><tr><th>Ask</th><th>Lessons</th></tr></thead>
+    <tbody>
+      <tr><td>Can any invalid <code>Slug</code> or <code>Target</code> exist? Is every constructor checked?</td><td>112, 124</td></tr>
+      <tr><td>Are errors enums where someone matches, with one status mapping?</td><td>111, 126</td></tr>
+      <tr><td>Any <code>unwrap</code>, <code>expect</code>, indexing that could panic outside tests?</td><td>57, 123</td></tr>
+      <tr><td>Is shared state <code>Send + Sync</code> by design, and is every lock held briefly, never across <code>.await</code>?</td><td>98, 99, 125</td></tr>
+      <tr><td>Any race between a check and an update?</td><td>125</td></tr>
+      <tr><td>Can anything block a worker thread? Is every background task owned, and does it end?</td><td>103, 104, 127</td></tr>
+      <tr><td>Names: <code>as_</code>/<code>to_</code>/<code>into_</code>, no <code>get_</code>; <code>#[must_use]</code> where results matter?</td><td>114</td></tr>
+      <tr><td>Clones or allocations in a hot path (the redirect)?</td><td>107</td></tr>
+      <tr><td>Docs: crate front page, <code># Errors</code> sections, decisions written down?</td><td>116</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. Compare with the reference</h2>
+  <p>Open <a class="src" data-src="learn/capstone/src/web.rs" data-line="110"></a> and the rest of
+    <code>learn/capstone/</code>. Differences aren't automatically mistakes: for each, decide which version you'd defend in a
+    review, and why. Then run its tests: <code>cd learn/capstone &amp;&amp; cargo test</code>.</p>
+
+  <h2>4. Where to take it next</h2>
+  <ul>
+    <li><strong>Persistence:</strong> a <code>PgLinkStore</code> with sqlx, its methods returning <code>BoxFuture</code>s (92,
+      69). The handlers shouldn't change.</li>
+    <li><strong>Expiry:</strong> links with an optional <code>expires_at</code>, and a test clock behind a trait (Ledgerly's
+      <code>Clock</code>, 49).</li>
+    <li><strong>Rate limiting</strong> per client address, as an actor or with an atomic counter per window (99, 100).</li>
+    <li><strong>A real Ledgerly change</strong>, paired with the agent: lesson <a data-lesson="79"></a>'s last section.</li>
+  </ul>
+
+  <div class="breaks">
+    <span class="box-label">Where you are now</span>
+    <p>You started this course reading TypeScript into Rust. You've now designed and built a concurrent service in Rust
+      from an empty directory, with the same rules as a production codebase. What's left is practice: the more Rust you
+      write and review, the more these decisions become instinct. Keep asking the agent "why" when something surprises you.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Clippy pedantic flags a cast you know is safe. What's the Ledgerly-style response?</p>
+    <ul class="options">
+      <li>Add allow(clippy::pedantic) to the whole crate root</li>
+      <li data-correct>An expect attribute with a written reason</li>
+      <li>Ignore it, since pedantic lints are optional</li>
+      <li>Rewrite the code until clippy stops complaining entirely</li>
+    </ul>
+    <div class="explain"><code>#[expect]</code> also warns if the lint stops firing, so stale exceptions don't pile up.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You add a <code>PgLinkStore</code>. What should change in <code>web.rs</code>?</p>
+    <ul class="options">
+      <li>Every handler, to call the database directly</li>
+      <li data-correct>Only awaits, if the port's methods become async</li>
+      <li>Nothing at all, not even the method calls</li>
+      <li>The router, which needs one route per store</li>
+    </ul>
+    <div class="explain">The port isolates the adapter; only the port's shape (sync vs async) leaks into callers.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="https://rust-lang.github.io/rust-clippy/master/index.html">Clippy lint list</a> (search any lint name for
+      its reasoning) and the <a href="../reference/capstone.html">capstone checklist</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

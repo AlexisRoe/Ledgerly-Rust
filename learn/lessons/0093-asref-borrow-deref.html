@@ -73,7 +73,7 @@
     <p>It's tempting to implement <code>Deref</code> on a newtype so it "inherits" the inner type's methods, like
       <code>class Merchant extends String</code>. Don't: every method of the inner type leaks through, including
       ones that break your invariants, and method resolution gets confusing. The API guidelines say
-      <code>Deref</code> is <a href="https://rust-lang.github.io/api-guidelines/predictability.html#only-smart-pointers-implement-deref-c-deref">only
+      <code>Deref</code> is <a href="https://rust-lang.github.io/api-guidelines/predictability.html#c-deref">only
       for smart pointers</a>. Ledgerly's <code>Merchant</code> has an explicit <code>as_str()</code> instead.</p>
   </div>
 

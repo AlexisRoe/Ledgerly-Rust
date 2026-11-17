@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: building a service from scratch</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Building a service from scratch</h1>
+  <p class="lede">Section 22 as a checklist for your next Rust service. Reference solution: <code>learn/capstone/</code>.</p>
+
+  <h2>Set up</h2>
+  <script type="text/x-code" data-lang="bash">
+    cargo new name && cd name            # binary; add src/lib.rs for the logic
+    cargo add axum serde serde_json thiserror tokio tracing tracing-subscriber
+    cargo add --dev tower http-body-util
+  </script>
+  <script type="text/x-code" data-lang="toml">
+    [lints.rust]
+    unsafe_code = "forbid"
+    [lints.clippy]
+    unwrap_used = "deny"     # + expect_used, panic, todo; clippy.toml: allow-unwrap-in-tests = true
+  </script>
+
+  <h2>Layers, inside out</h2>
+  <table>
+    <tbody>
+      <tr><td><code>domain</code></td><td>newtypes with private fields and <code>parse</code> constructors; a <code>thiserror</code> enum; no I/O, no async</td></tr>
+      <tr><td><code>store</code></td><td>port: <code>trait Store: Debug + Send + Sync</code> (<code>BoxFuture</code> methods if async); adapter with <code>RwLock</code>; check-and-insert under one lock</td></tr>
+      <tr><td><code>web</code></td><td><code>#[derive(Clone)] AppState</code> of <code>Arc</code>s; handlers return <code>Result&lt;_, ApiError&gt;</code>; one exhaustive <code>IntoResponse</code></td></tr>
+      <tr><td>workers</td><td>own their state; fed by <code>mpsc</code>; <code>select!</code> over <code>recv()</code> and a tick; end on <code>None</code></td></tr>
+      <tr><td><code>main</code></td><td>config, tracing, bind (no unwrap), spawn workers, <code>serve(…).with_graceful_shutdown(ctrl_c)</code>, await workers</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Testing</h2>
+  <script type="text/x-code" data-lang="rust">
+    let response = router.clone().oneshot(request).await.unwrap();         // tower::ServiceExt
+    let bytes = response.into_body().collect().await.unwrap().to_bytes(); // http_body_util::BodyExt
+  </script>
+  <p>Unit tests per layer; HTTP tests in-process; a test that shares the store across threads; worker tests that drop the
+    sender and await the task.</p>
+
+  <h2>Review</h2>
+  <p><code>cargo fmt --check</code> · <code>cargo clippy --all-targets -- -D warnings</code> · pedantic pass with
+    <code>#[expect(…, reason)]</code> · <code>cargo test</code> · <code>cargo doc --open</code> · the checklist in
+    <a data-lesson="128"></a>.</p>
+
+  <p>Lessons: <a data-lesson="123"></a> · <a data-lesson="124"></a> · <a data-lesson="125"></a> · <a data-lesson="126"></a> ·
+    <a data-lesson="127"></a> · <a data-lesson="128"></a></p>
+</main>
+</body>
+</html>

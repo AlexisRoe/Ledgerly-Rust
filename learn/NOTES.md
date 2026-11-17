@@ -4,7 +4,8 @@
 - The workspace lives in `learn/`, because the repo root already has the project's own `MISSION.md` and the domain `GLOSSARY.md`.
 - Wants grouped sections, starting with the basics: setup and tools, syntax (comments, file structure, imports, folder structure), data types, control flow. More sections are welcome.
 - Explain each Rust concept against its TypeScript counterpart first, then say where the analogy breaks. **TypeScript only, no Java comparisons** (decided 2026-11-17).
-- Curriculum agreed on 2026-11-17 (`CURRICULUM.md`): ~79 short lessons, browser quizzes **plus** playground exercises, one commit per section on the `building-learning` branch (never pushed).
+- Curriculum agreed on 2026-11-17 (`CURRICULUM.md`): ~79 short lessons, browser quizzes **plus** playground exercises, one commit per section on the `building-learning` branch. The learner allowed pushing this branch and updating PR #2.
+- Part II (sections 15–22, lessons 80–128) requested the same day: "more in-depth knowledge in Rust itself"; approved as proposed and built in one go.
 - Asked for all lessons to be built in one go, without waiting between lessons.
 
 ## Environment
@@ -22,8 +23,16 @@
 - Playground exercise modules are `learn/playground/src/exNN_slug.rs` (NN = lesson number), with solutions in `learn/playground/solutions/` and checked by `verify-solutions.sh`.
 - Real Ledgerly snippets must be copied verbatim (an elided part is marked `// …`), with the correct line numbers.
 
+## Authoring helpers (in `.scratch/`, gitignored)
+- `mk.sh`: `source` it, then `mk N slug "Title" <<'EOF' … EOF` wraps a `<main>` body in the standard head.
+- `ex.py NAME < template`: writes `playground/src/NAME.rs` and `solutions/NAME.rs` from one template (`//<<`…`//>>` = solution
+  body, replaced by `todo!()`; `//<<;` for `todo!();`; `//S` solution-only line; `//T` exercise-only line) and registers the module.
+- `addsec.py < json`: appends a section (and optionally its cheat sheet) to the manifest in `assets/course.js`.
+- `quizlens.py LO HI`, `sub.py FILE <<< 'old|||new'`, `urls.sh URL…`.
+
 ## Status (2026-11-17)
-- All 79 lessons, 15 reference pages and the playground (28 exercises, solutions checked by `verify-solutions.sh`) are built.
+- Part I: 79 lessons, 15 reference pages. Part II: 49 lessons (80–128), 7 more reference pages, 30 more playground exercises, the capstone reference solution in `capstone/` (15 tests, clippy clean). Playground: 58 exercises; `verify-solutions.sh` runs 170 unit tests and 2 doc tests with solutions.
 - Lessons were written before the learner took any of them, so they can't adapt to quiz results. Once the learner reports progress or confusion, write learning records and adjust (add remedial lessons rather than rewriting).
 - Author tools: `python3 learn/check-lessons.py` checks manifest, snippet line numbers, quiz option lengths and sources.
+- Part II performance numbers in lessons 108–109 come from `playground/src/bin/bench.rs` on the author machine (2026-11-17), release vs debug.
 - Exercises 76–78 were simulated against the real code (compiler errors and failing tests quoted are real output from 2026-11-17). Re-run them if the expenses domain changes.

@@ -18,6 +18,40 @@ All links were checked on 2026-11-17.
 - [rustc error index](https://doc.rust-lang.org/error_codes/)
   Use for: reading an error such as E0382 with a minimal example and its fix.
 
+### Part II: Rust in depth
+- [Common Rust Lifetime Misconceptions (pretzelhammer)](https://github.com/pretzelhammer/rust-blog/blob/master/posts/common-rust-lifetime-misconceptions.md)
+  Widely recommended essay. Use for: `'static` vs `T: 'static`, elision, lessons 80–87.
+- [The Rustonomicon](https://doc.rust-lang.org/nomicon/)
+  The official guide to unsafe Rust. Use for: splitting borrows, `Send`/`Sync`, what `unsafe` must uphold (lessons 83, 98, 121).
+- [Rust Atomics and Locks, Mara Bos (free online)](https://marabos.nl/atomics/)
+  By a Rust library team member. Use for: threads, scoped threads, mutexes, atomics (lessons 97–99).
+- [Tokio tutorial](https://tokio.rs/tokio/tutorial) and [topics: graceful shutdown](https://tokio.rs/tokio/topics/shutdown)
+  Use for: channels, select, "Async in depth" (a mini executor), shutdown (lessons 100–103, 127).
+- [Alice Ryhl: Actors with Tokio](https://ryhl.io/blog/actors-with-tokio/) and [Async: What is blocking?](https://ryhl.io/blog/async-what-is-blocking/)
+  By a Tokio maintainer. Use for: lessons 100 and 104.
+- [Asynchronous Programming in Rust (the Async Book)](https://rust-lang.github.io/async-book/)
+  Use for: futures, pinning (lesson 102).
+- [The Rust Performance Book, Nicholas Nethercote](https://nnethercote.github.io/perf-book/)
+  Use for: type sizes, heap allocations, build configuration, profiling (lessons 106–110).
+- [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
+  The official checklist for library APIs. Use for: naming, common traits, `Deref` (lessons 93, 114).
+- [Effective Rust, David Drysdale](https://www.lurklurk.org/effective-rust/)
+  Free online; items on types, traits, errors and dependencies. Use for: reviews 96, 117.
+- [Rust Design Patterns](https://rust-unofficial.github.io/patterns/)
+  Use for: builders, `Default` (lesson 113).
+- ["Parse, don't validate", Alexis King](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/)
+  The essay behind the pattern. Use for: lesson 112.
+- [The Typestate Pattern in Rust, Cliff Biffle](https://cliffle.com/blog/rust-typestate/)
+  Use for: lesson 95.
+- [The Little Book of Rust Macros](https://veykril.github.io/tlborm/)
+  Use for: `macro_rules!` patterns, hygiene (lessons 118–119).
+- [anyhow](https://docs.rs/anyhow) and [thiserror](https://docs.rs/thiserror) docs
+  Use for: error design (lesson 111).
+- [The rustdoc book](https://doc.rust-lang.org/rustdoc/)
+  Use for: doc comments and doc tests (lesson 116).
+- [criterion](https://bheisler.github.io/criterion.rs/book/), [samply](https://github.com/mstange/samply), [cargo-expand](https://github.com/dtolnay/cargo-expand), [Miri](https://github.com/rust-lang/miri), [RustSec](https://rustsec.org/)
+  Tools mentioned in sections 18, 20 and 21.
+
 ### Tooling
 - [The rustup book](https://rust-lang.github.io/rustup/): toolchains, `rust-toolchain.toml` overrides.
 - [The Cargo book](https://doc.rust-lang.org/cargo/): manifest, workspaces, features, profiles, build scripts, `Cargo.lock`.

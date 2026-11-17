@@ -1,0 +1,33 @@
+[package]
+name = "shortlinks"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "The capstone of the course in learn/: a small link shortener, built from cargo new."
+
+# Not part of Ledgerly's workspace: this empty table makes the package a workspace of its own.
+[workspace]
+
+# The same versions and features as Ledgerly's root Cargo.toml, so cargo reuses what is already downloaded.
+[dependencies]
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "fmt", "std"] }
+
+[dev-dependencies]
+http-body-util = "0.1.5"
+tower = { version = "0.5.3", default-features = false, features = ["util"] }
+
+# Ledgerly's rules, in miniature: no unsafe, and no unwrap/expect/panic/todo outside tests (see clippy.toml).
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Capstone 1: plan and set up</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Capstone: a service from scratch</p>
+  <h1>Capstone 1: plan and set up</h1>
+  <p class="lede">Over six lessons you build a small link-shortener service from an empty <code>cargo new</code>: domain
+    types, a storage port, an HTTP API, a background worker, graceful shutdown. You write the code; the lessons give
+    the decisions, tests to start from, and a reference solution to compare against afterwards.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You have a new crate set up the way Ledgerly sets up its own (lints, formatting, dependencies), a module layout,
+      and a list of requirements turned into types.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What do <code>[lints]</code> and <code>clippy.toml</code> do in Ledgerly?</summary>
+      <div>Deny <code>unwrap</code>/<code>expect</code>/<code>panic</code>/<code>todo</code>, forbid <code>unsafe</code>;
+        clippy.toml tunes lints, such as allowing unwrap in tests. (5, 57)</div></details>
+    <details><summary>Why are a crate's modules listed in <code>lib.rs</code>?</summary>
+      <div>The module tree is declared with <code>mod</code>, not discovered from files. (11)</div></details>
+  </div>
+
+  <h2>What you'll build</h2>
+  <table>
+    <thead><tr><th>Request</th><th>Response</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST /links {"target": "https://…", "slug": "rust"}</code></td><td>201 with the link; slug optional (generated: <code>0000</code>, <code>0001</code>…); 400 if invalid; 409 if taken</td></tr>
+      <tr><td><code>GET /{slug}</code></td><td>307 redirect to the target, and the visit is counted (in the background)</td></tr>
+      <tr><td><code>GET /links/{slug}</code></td><td>200 with <code>{"slug", "target", "visits"}</code>; 404 if unknown</td></tr>
+    </tbody>
+  </table>
+  <p>Errors are <code>application/problem+json</code>, like Ledgerly's. Storage is in memory, behind a trait, so a
+    database could replace it.</p>
+
+  <h2>Set up</h2>
+  <div class="steps">
+    <ol>
+      <li>Outside the Ledgerly repository: <code>cargo new shortlinks</code>, then <code>cd shortlinks</code>. It's a binary
+        crate (<code>src/main.rs</code>). Add <code>src/lib.rs</code> too: the logic goes in the library, so tests and
+        <code>main</code> both use it.</li>
+      <li>Dependencies: <code>cargo add axum serde serde_json thiserror tokio tracing tracing-subscriber</code>, then
+        <code>cargo add --dev tower http-body-util</code>. Set features as in the solution's <code>Cargo.toml</code> below
+        (<code>serde</code> needs <code>derive</code>, <code>tokio</code> needs <code>macros</code>, <code>rt-multi-thread</code>,
+        <code>net</code>, <code>signal</code>, <code>sync</code>, <code>time</code>).</li>
+      <li>Copy Ledgerly's rules: a <code>[lints]</code> table, a <code>clippy.toml</code> allowing unwrap in tests, and a
+        <code>rustfmt.toml</code> with <code>max_width = 120</code>.</li>
+      <li>Create empty modules <code>domain</code>, <code>store</code>, <code>web</code> and <code>visits</code>, declared in
+        <code>lib.rs</code>. <code>cargo check</code> should pass.</li>
+    </ol>
+  </div>
+  <div class="ledgerly">
+    <span class="box-label">Reference solution</span>
+    <script type="text/x-code" data-lang="toml" data-src="learn/capstone/Cargo.toml" data-line="25">
+      # Ledgerly's rules, in miniature: no unsafe, and no unwrap/expect/panic/todo outside tests (see clippy.toml).
+      [lints.rust]
+      unsafe_code = "forbid"
+
+      [lints.clippy]
+      unwrap_used = "deny"
+      expect_used = "deny"
+      panic = "deny"
+      todo = "deny"
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="learn/capstone/src/lib.rs" data-line="1">
+      //! A link shortener: `POST /links` stores a target URL under a short slug, `GET /{slug}` redirects to it, and
+      //! `GET /links/{slug}` shows the link with its visit count.
+      //!
+      //! Layers, inside out, the way Ledgerly's crates are built:
+      //! - [`domain`]: the types, which can only hold valid values;
+      //! - [`store`]: the port ([`store::LinkStore`]) and an in-memory adapter;
+      //! - [`web`]: axum handlers, and errors turned into responses;
+      //! - [`visits`]: a background task that counts visits in batches.
+
+      pub mod domain;
+      pub mod store;
+      pub mod visits;
+      pub mod web;
+    </script>
+  </div>
+
+  <h2>Requirements to types</h2>
+  <p>Before code, list the nouns and their rules. That list becomes your domain module (next lesson):</p>
+  <ul>
+    <li><strong>Slug</strong>: 3–32 characters of <code>a-z</code>, <code>0-9</code>, <code>-</code>; never <code>links</code> (it
+      would shadow <code>GET /links/…</code>); generated ones come from a counter.</li>
+    <li><strong>Target</strong>: an <code>http</code>/<code>https</code> URL, trimmed, no spaces, at most 2048 bytes.</li>
+    <li><strong>Link</strong>: a slug, a target, a visit count.</li>
+    <li><strong>Errors</strong>: invalid input (400), slug taken (409), not found (404).</li>
+  </ul>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>An Express project starts with <code>npm init</code>, then a choice of linter, formatter, test runner and TS
+      config. A Rust project gets the compiler, formatter, linter, test runner and docs from <code>cargo new</code>;
+      the setup work is choosing lint levels and dependencies' features.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why put the logic in <code>lib.rs</code> modules rather than in <code>main.rs</code>?</p>
+    <ul class="options">
+      <li>Binaries cannot contain more than one module</li>
+      <li data-correct>Tests and main can both use the library</li>
+      <li>Libraries compile faster than binary crates do</li>
+      <li>Cargo requires every package to have a lib</li>
+    </ul>
+    <div class="explain"><code>main.rs</code> stays a thin wiring layer, like Ledgerly's <code>app</code> crate.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why is <code>links</code> a reserved slug?</p>
+    <ul class="options">
+      <li>Because slugs must never contain the letter s</li>
+      <li data-correct><code>GET /links</code> would otherwise match the slug route</li>
+      <li>Because axum forbids that word in any path</li>
+      <li>Because short words are reserved for admins</li>
+    </ul>
+    <div class="explain">A route and a slug sharing a namespace is a design decision to make early, in the type.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="https://doc.rust-lang.org/cargo/reference/manifest.html">Cargo manifest reference</a> (keep it open while
+      editing <code>Cargo.toml</code>) and axum's <a href="https://docs.rs/axum/latest/axum/">crate docs</a>. The solution's
+      <a href="../capstone/README.md">README</a> lists which file belongs to which lesson.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

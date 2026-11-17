@@ -193,6 +193,15 @@
         [121, "what-unsafe-allows", "What unsafe allows"],
         [122, "unsafe-in-dependencies", "Reading unsafe in dependencies"],
       ] },
+    { title: "Capstone: a service from scratch", blurb: "Build a link shortener from cargo new: domain, storage port, axum, a background worker, graceful shutdown.",
+      ref: "capstone.html", lessons: [
+        [123, "capstone-setup", "Capstone 1: plan and set up"],
+        [124, "capstone-domain", "Capstone 2: the domain, types first"],
+        [125, "capstone-store", "Capstone 3: storage behind a trait"],
+        [126, "capstone-http", "Capstone 4: HTTP with axum"],
+        [127, "capstone-background", "Capstone 5: background work and shutdown"],
+        [128, "capstone-review", "Capstone 6: review your own code"],
+      ] },
   ];
 
   const REFERENCES = [
@@ -217,6 +226,7 @@
     ["performance.html", "Memory and performance"],
     ["design.html", "Designing Rust code"],
     ["macros-unsafe.html", "Writing macros, and unsafe"],
+    ["capstone.html", "Building a service from scratch"],
   ];
 
   const LESSONS = [];
