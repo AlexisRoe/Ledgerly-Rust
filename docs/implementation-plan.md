@@ -538,7 +538,7 @@ Two reference maps save reading time. They're extracts; where they disagree with
   - Do: build sqlx with `tls-rustls` (ring, webpki roots) and accept `sslmode=require`, `verify-ca` and `verify-full` in `SPRING_DATASOURCE_URL`, plus `sslrootcert`, with pgjdbc's meanings. Until then these modes stop the start with a clear message (decided after M2).
   - Accept: the app connects to a TLS-only Postgres with `verify-full`, and refuses one whose certificate doesn't match the host.
 
-- [ ] **M11.5 Production fail-fast review**
+- [x] **M11.5 Production fail-fast review**
   - Do: re-check the `prod` startup refusal against Java's list of required variables, including the `keycloak` combination.
   - Accept: one test per required variable.
 

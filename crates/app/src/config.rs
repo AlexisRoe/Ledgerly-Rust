@@ -619,6 +619,108 @@ mod tests {
 
     // --- Java: ProductionEnvironmentCheckTest ---
 
+    /// `prod` with every setting but `variable`: exactly `property` is missing, and the message names the
+    /// variable that sets it (plan M11.5: one test per required variable).
+    fn only_this_is_missing(env: Env, variable: &str, property: &str) {
+        let mut env = env;
+        env.remove(variable);
+
+        let error = load(&env).unwrap_err();
+
+        assert_eq!(error.missing(), [property]);
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("{property} (environment variable {variable})")),
+            "{error}"
+        );
+    }
+
+    /// Everything `prod,keycloak` needs: no signing keys, but the issuer.
+    fn everything_with_keycloak() -> Env {
+        let mut env = with(
+            everything(),
+            &[
+                ("SPRING_PROFILES_ACTIVE", "prod,keycloak"),
+                (
+                    "SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI",
+                    "https://sso.example.com/realms/ledgerly",
+                ),
+            ],
+        );
+        env.remove("LEDGERLY_AUTH_JWT_PRIVATE_KEY");
+        env.remove("LEDGERLY_AUTH_JWT_PUBLIC_KEY");
+        env
+    }
+
+    macro_rules! required_in_prod {
+        ($($name:ident: $variable:literal => $property:literal,)*) => {
+            $(
+                #[test]
+                fn $name() {
+                    only_this_is_missing(everything(), $variable, $property);
+                }
+            )*
+        };
+    }
+
+    macro_rules! required_with_keycloak {
+        ($($name:ident: $variable:literal => $property:literal,)*) => {
+            $(
+                #[test]
+                fn $name() {
+                    only_this_is_missing(everything_with_keycloak(), $variable, $property);
+                }
+            )*
+        };
+    }
+
+    required_in_prod! {
+        prod_needs_the_database_url: "SPRING_DATASOURCE_URL" => "spring.datasource.url",
+        prod_needs_the_database_username: "SPRING_DATASOURCE_USERNAME" => "spring.datasource.username",
+        prod_needs_the_database_password: "SPRING_DATASOURCE_PASSWORD" => "spring.datasource.password",
+        prod_needs_the_private_key: "LEDGERLY_AUTH_JWT_PRIVATE_KEY" => "ledgerly.auth.jwt-private-key",
+        prod_needs_the_public_key: "LEDGERLY_AUTH_JWT_PUBLIC_KEY" => "ledgerly.auth.jwt-public-key",
+        prod_needs_the_s3_endpoint: "LEDGERLY_STORAGE_S3_ENDPOINT" => "ledgerly.storage.s3.endpoint",
+        prod_needs_the_s3_bucket: "LEDGERLY_STORAGE_S3_BUCKET" => "ledgerly.storage.s3.bucket",
+        prod_needs_the_s3_access_key: "LEDGERLY_STORAGE_S3_ACCESS_KEY" => "ledgerly.storage.s3.access-key",
+        prod_needs_the_s3_secret_key: "LEDGERLY_STORAGE_S3_SECRET_KEY" => "ledgerly.storage.s3.secret-key",
+        prod_needs_the_clamav_host: "LEDGERLY_RECEIPTS_CLAMAV_HOST" => "ledgerly.receipts.clamav.host",
+        prod_needs_the_clamav_port: "LEDGERLY_RECEIPTS_CLAMAV_PORT" => "ledgerly.receipts.clamav.port",
+    }
+
+    required_with_keycloak! {
+        keycloak_needs_the_database_url: "SPRING_DATASOURCE_URL" => "spring.datasource.url",
+        keycloak_needs_the_database_username: "SPRING_DATASOURCE_USERNAME" => "spring.datasource.username",
+        keycloak_needs_the_database_password: "SPRING_DATASOURCE_PASSWORD" => "spring.datasource.password",
+        keycloak_needs_the_s3_endpoint: "LEDGERLY_STORAGE_S3_ENDPOINT" => "ledgerly.storage.s3.endpoint",
+        keycloak_needs_the_s3_bucket: "LEDGERLY_STORAGE_S3_BUCKET" => "ledgerly.storage.s3.bucket",
+        keycloak_needs_the_s3_access_key: "LEDGERLY_STORAGE_S3_ACCESS_KEY" => "ledgerly.storage.s3.access-key",
+        keycloak_needs_the_s3_secret_key: "LEDGERLY_STORAGE_S3_SECRET_KEY" => "ledgerly.storage.s3.secret-key",
+        keycloak_needs_the_clamav_host: "LEDGERLY_RECEIPTS_CLAMAV_HOST" => "ledgerly.receipts.clamav.host",
+        keycloak_needs_the_clamav_port: "LEDGERLY_RECEIPTS_CLAMAV_PORT" => "ledgerly.receipts.clamav.port",
+    }
+
+    /// With `keycloak` the issuer is required instead of the keys. Unset, it falls back to
+    /// `application-keycloak.yaml`'s default, as in Java (see below); set but blank, it is missing.
+    #[test]
+    fn keycloak_needs_an_issuer_that_is_not_blank() {
+        let env = with(
+            everything_with_keycloak(),
+            &[("SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI", "")],
+        );
+
+        assert_eq!(
+            load(&env).unwrap_err().missing(),
+            ["spring.security.oauth2.resourceserver.jwt.issuer-uri"]
+        );
+    }
+
+    #[test]
+    fn keycloak_needs_no_signing_keys() {
+        assert!(load(&everything_with_keycloak()).is_ok());
+    }
+
     #[test]
     fn prod_with_nothing_set_reports_every_missing_setting_at_once() {
         let error = load(&HashMap::from([("SPRING_PROFILES_ACTIVE", "prod")])).unwrap_err();
