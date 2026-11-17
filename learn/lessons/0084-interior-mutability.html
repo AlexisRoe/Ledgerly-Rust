@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interior mutability</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and lifetimes in depth</p>
+  <h1>Interior mutability</h1>
+  <p class="lede">Sometimes you must change something through a shared <code>&amp;</code>: a cache, a counter, a test
+    clock that every request shares. Rust allows it, through types that move the "one writer" check from compile time
+    to run time.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can pick the right cell for a job: <code>Cell</code>, <code>RefCell</code>, <code>Mutex</code>,
+      <code>RwLock</code>, an atomic, or <code>OnceLock</code>/<code>LazyLock</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Why can't you call <code>self.label()</code> while mutating <code>self.log</code>?</summary>
+      <div>A method call borrows all of <code>self</code>; the compiler tracks fields only within one function. (83)</div></details>
+    <details><summary>What's <code>Arc</code> for?</summary>
+      <div>Shared ownership across threads: several owners, freed when the last one goes. (42)</div></details>
+  </div>
+
+  <h2>Better names for <code>&amp;</code> and <code>&amp;mut</code></h2>
+  <p>Think of <code>&amp;T</code> as a <strong>shared</strong> reference and <code>&amp;mut T</code> as an
+    <strong>exclusive</strong> one. The real rule is "no mutation through a shared reference <em>unless the type
+    allows it safely</em>". Interior-mutability types allow it, each with its own way of keeping it safe.</p>
+
+  <table>
+    <thead><tr><th>Type</th><th>Threads?</th><th>How it stays safe</th><th>Use for</th></tr></thead>
+    <tbody>
+      <tr><td><code>Cell&lt;T&gt;</code></td><td>one</td><td>only copies values in and out; never hands out a reference</td><td>counters, flags</td></tr>
+      <tr><td><code>RefCell&lt;T&gt;</code></td><td>one</td><td>counts borrows at run time; a conflicting <code>borrow_mut()</code> <strong>panics</strong></td><td>single-threaded caches, test doubles</td></tr>
+      <tr><td><code>Mutex&lt;T&gt;</code></td><td>many</td><td><code>lock()</code> blocks until you're the only one</td><td>shared state (lesson 99)</td></tr>
+      <tr><td><code>RwLock&lt;T&gt;</code></td><td>many</td><td>many readers or one writer, at run time</td><td>read-mostly shared state</td></tr>
+      <tr><td><code>AtomicU64</code>, …</td><td>many</td><td>CPU atomic instructions; no lock</td><td>counters, flags across threads</td></tr>
+      <tr><td><code>OnceLock</code> / <code>LazyLock</code></td><td>many</td><td>written exactly once, then read-only</td><td>globals built on first use</td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://doc.rust-lang.org/std/cell/index.html">std::cell</a>,
+    <a href="https://doc.rust-lang.org/std/sync/index.html">std::sync</a>.) The single-threaded ones aren't
+    <code>Sync</code>, so the compiler won't let you share them between threads by mistake.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a clock that tests can move</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/clock.rs" data-line="44">
+      pub struct FixedClock {
+          now: Mutex<DateTime<Utc>>,
+      }
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/clock.rs" data-line="71">
+      fn lock(&self) -> MutexGuard<'_, DateTime<Utc>> {
+          self.now.lock().unwrap_or_else(PoisonError::into_inner)
+      }
+    </script>
+    <p>The <code>Clock</code> trait's methods take <code>&amp;self</code>, and the clock is shared as
+      <code>Arc&lt;dyn Clock&gt;</code> by every request, so a test can only move it through a shared reference.
+      It must be <code>Send + Sync</code>, which rules out <code>RefCell</code>; hence a <code>Mutex</code>.</p>
+  </div>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: a global computed once</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/identity/src/password.rs" data-line="133">
+      static DUMMY: LazyLock<Option<PasswordHash>> = LazyLock::new(|| hash(&SecretString::from(DUMMY_PASSWORD)).ok());
+    </script>
+    <p>Hashing takes tens of milliseconds, so it happens once, on first use, and every login for an unknown email
+      reuses it. It's TS's module-level <code>let cached; function get() { return cached ??= compute(); }</code>,
+      but thread-safe.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS's <code>readonly</code> is shallow and compile-time only; anything can mutate anything at run time. In Rust,
+      mutation through <code>&amp;</code> is the exception, visible in the type. When you see <code>Cell</code>,
+      <code>RefCell</code> or <code>Mutex</code> in a struct, you know exactly where shared mutation can happen.
+      Treat <code>RefCell</code> as a tool, not a way out: a borrow conflict becomes a panic at run time.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex84_interior_mutability.rs</code>: a call counter with <code>Cell</code>, a memo
+      cache with <code>RefCell</code>, a log shared by four threads with <code>Mutex</code>, and a global with
+      <code>OnceLock</code>. Run <code>cargo test ex84</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What happens if you call <code>borrow_mut()</code> on a <code>RefCell</code> that's already borrowed?</p>
+    <ul class="options">
+      <li>A compile error at the second call's line</li>
+      <li data-correct>A panic at run time with BorrowMutError</li>
+      <li>It waits until the other borrow ends</li>
+      <li>It silently returns a copy of the value</li>
+    </ul>
+    <div class="explain"><code>RefCell</code> moves the check to run time. Use <code>try_borrow_mut</code> to get a
+      <code>Result</code> instead.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does <code>FixedClock</code> use <code>Mutex</code> rather than <code>RefCell</code>?</p>
+    <ul class="options">
+      <li>A Mutex is faster for a single value</li>
+      <li data-correct>The shared clock must be Sync across threads</li>
+      <li>RefCell cannot hold a chrono DateTime value</li>
+      <li>Clippy forbids RefCell anywhere in Ledgerly's code</li>
+    </ul>
+    <div class="explain"><code>Clock: Send + Sync</code>, and <code>RefCell</code> isn't <code>Sync</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A request counter is incremented by every request, on many threads. What's the leanest choice?</p>
+    <ul class="options" data-fixed>
+      <li><code>Cell&lt;u64&gt;</code></li>
+      <li><code>RefCell&lt;u64&gt;</code></li>
+      <li data-correct><code>AtomicU64</code></li>
+      <li><code>Mutex&lt;Vec&lt;u64&gt;&gt;</code></li>
+    </ul>
+    <div class="explain">An atomic counter needs no lock. The <code>Cell</code>s aren't <code>Sync</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch15-05-interior-mutability.html">15.5 "RefCell and the
+      Interior Mutability Pattern"</a>, then the module docs of
+      <a href="https://doc.rust-lang.org/std/cell/index.html">std::cell</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

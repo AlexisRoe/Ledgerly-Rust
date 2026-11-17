@@ -69,6 +69,10 @@
       <tr><td><strong>borrow / reference</strong></td><td>Temporary access without ownership: <code>&amp;T</code> (shared, read) or <code>&amp;mut T</code> (exclusive, write).</td></tr>
       <tr><td><strong>borrow checker</strong></td><td>The compiler pass enforcing "many readers or one writer, never outliving the value".</td></tr>
       <tr><td><strong>lifetime</strong></td><td>A name (<code>'a</code>) for how long a borrow is valid; <code>'static</code> = the whole program.</td></tr>
+      <tr><td><strong>lifetime elision</strong></td><td>The three rules that fill in lifetimes you don't write.</td></tr>
+      <tr><td><strong>interior mutability</strong></td><td>Changing data through a shared <code>&amp;</code>, made safe by a type (<code>Cell</code>, <code>RefCell</code>, <code>Mutex</code>).</td></tr>
+      <tr><td><strong>RAII</strong></td><td>A resource released by its owner's <code>Drop</code> at scope end. (<code>try/finally</code>, <code>using</code>)</td></tr>
+      <tr><td><strong><code>Cow</code></strong></td><td>"Clone on write": borrowed or owned data behind one type.</td></tr>
       <tr><td><strong>smart pointer</strong></td><td>A pointer type that owns its target: <code>Box</code> (one owner), <code>Rc</code>/<code>Arc</code> (shared).</td></tr>
     </tbody>
   </table>

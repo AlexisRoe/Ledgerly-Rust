@@ -8,7 +8,7 @@
   "use strict";
 
   const SECTIONS = [
-    { title: "Setting up and the toolbox", blurb: "How a Rust project is built, and what every tool in this repo is for.",
+    { part: "Part I · Reading and changing Ledgerly", title: "Setting up and the toolbox", blurb: "How a Rust project is built, and what every tool in this repo is for.",
       ref: "tools.html", lessons: [
         [1, "rust-vs-typescript", "Rust vs TypeScript: the big picture"],
         [2, "rustup-and-toolchains", "rustup and toolchains"],
@@ -129,6 +129,17 @@
         [78, "exercise-test-and-helper", "Exercise: add a test, then a helper"],
         [79, "where-next", "Where to go next"],
       ] },
+    { part: "Part II · Rust in depth", title: "Ownership and lifetimes in depth", blurb: "Writing lifetimes, borrowing structs, 'static, interior mutability, Cow and Drop.",
+      ref: "ownership-deep.html", lessons: [
+        [80, "writing-lifetimes", "Writing lifetime annotations"],
+        [81, "structs-that-borrow", "Structs that borrow"],
+        [82, "static-lifetimes", "'static and T: 'static"],
+        [83, "borrowing-in-practice", "Borrowing in practice"],
+        [84, "interior-mutability", "Interior mutability"],
+        [85, "cow", "Cow: borrow when you can"],
+        [86, "drop-raii-take", "Drop, RAII and mem::take"],
+        [87, "review-ownership-deep", "Review: ownership and lifetimes in depth"],
+      ] },
   ];
 
   const REFERENCES = [
@@ -147,6 +158,7 @@
     ["libraries.html", "Libraries"],
     ["ledgerly-map.html", "Ledgerly map"],
     ["change-loop.html", "The change loop"],
+    ["ownership-deep.html", "Ownership and lifetimes in depth"],
   ];
 
   const LESSONS = [];
@@ -242,6 +254,7 @@
           el("a", { href: "lessons/" + l.file }, l.title),
           el("span", { class: "tick" }, isDone(n) ? "✓" : "")));
       });
+      if (section.part) toc.append(el("h2", { class: "toc-part" }, section.part));
       toc.append(el("section", { class: "toc-section" },
         el("h2", {}, (si + 1) + " · " + section.title),
         el("p", { class: "blurb" }, section.blurb, " ",

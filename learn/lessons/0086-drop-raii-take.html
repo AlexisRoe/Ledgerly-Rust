@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drop, RAII and mem::take</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and lifetimes in depth</p>
+  <h1>Drop, RAII and <code>mem::take</code></h1>
+  <p class="lede">In Rust, the end of a scope is an event you can hook into: whatever a value owns is released
+    right there, in a known order. And when you hold only <code>&amp;mut</code>, <code>mem::take</code> and
+    <code>mem::replace</code> let you move a value out anyway, by leaving another in its place.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can write an <code>impl Drop</code> guard, predict drop order, avoid the <code>let _ =</code> trap, and
+      move out of a <code>&amp;mut</code> with <code>take</code> / <code>replace</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>When does a <code>Cow</code> allocate?</summary>
+      <div>Only when it has to build new data (<code>Owned</code>), or on <code>into_owned()</code> of a borrowed
+        one. (85)</div></details>
+    <details><summary>What happens to an sqlx transaction you never commit?</summary>
+      <div>It rolls back when it's dropped. (69)</div></details>
+  </div>
+
+  <h2>RAII: resources tied to scopes</h2>
+  <p>"Resource acquisition is initialisation": a value that holds a resource (memory, a file, a lock, a
+    transaction, a timer) releases it in its <code>Drop</code> implementation, and the compiler inserts that call
+    where the owner goes out of scope. That happens on every exit path: normal end, <code>return</code>,
+    <code>?</code>, and panics.</p>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const span = tracer.startSpan("query");
+      try {
+        return await run();
+      } finally {
+        span.end();            // easy to forget
+      }
+      // or, newer: `using span = …` (explicit resource management)
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      struct Span { name: &'static str }
+      impl Drop for Span {
+          fn drop(&mut self) { println!("end {}", self.name); }
+      }
+
+      let _span = Span { name: "query" };
+      run()?;                  // dropped here on error…
+      Ok(())                   // …or here on success
+    </script>
+  </div>
+
+  <h2>Drop order</h2>
+  <ul>
+    <li>Locals drop in <strong>reverse</strong> order of declaration (last created, first released, like nested
+      <code>finally</code>s).</li>
+    <li>A struct's fields drop <strong>in declaration order</strong>, after the struct's own <code>drop</code>.</li>
+    <li><code>drop(value)</code> ends it early: it's just a function that takes ownership and does nothing.</li>
+    <li><strong>The trap:</strong> <code>let _ = guard();</code> drops <em>immediately</em>; <code>_</code> isn't
+      a variable. <code>let _guard = guard();</code> keeps it to the end of the scope.</li>
+  </ul>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: cleanup in Drop</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/observation.rs" data-line="192">
+      impl Drop for Observation {
+          fn drop(&mut self) {
+              if let Some((series, id)) = self.task.take()
+                  && let Some(tasks) = registry().active.get_mut(&series)
+              {
+                  tasks.remove(&id);
+              }
+          }
+      }
+    </script>
+    <p>An <code>Observation</code> measures one operation (Micrometer's observation, in Java). While it's alive it
+      counts as an "active task" in the metrics; when it's dropped, however the operation ended, it removes itself.
+      No code path can forget. Also see <a class="src" data-src="crates/app/src/main.rs" data-line="38"></a>:
+      <code>drop(runtime)</code> stops the Tokio runtime at a chosen moment, before telemetry shuts down.</p>
+  </div>
+
+  <h2>Moving out of a <code>&amp;mut</code></h2>
+  <p>You can't move a field out of something you only borrow: the owner would be left with a hole. The
+    <code>std::mem</code> functions swap a value in at the same time:</p>
+  <table>
+    <tbody>
+      <tr><td><code>mem::take(&amp;mut x)</code></td><td>returns <code>x</code>, leaves <code>Default::default()</code> (empty <code>Vec</code>, <code>""</code>, <code>None</code>…)</td></tr>
+      <tr><td><code>mem::replace(&amp;mut x, new)</code></td><td>returns <code>x</code>, leaves <code>new</code></td></tr>
+      <tr><td><code>option.take()</code></td><td>the <code>Option</code> shortcut for <code>mem::take</code>, as in <code>self.task.take()</code> above</td></tr>
+    </tbody>
+  </table>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/database/migrations.rs" data-line="55">
+      None => Some(std::mem::take(&mut rest)),
+    </script>
+    <p>In <code>java_lines</code>, <code>rest</code> is the text still to split. With no line break left, the whole
+      rest is the last line: take it, and leave <code>""</code> so the next call ends the iterator.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>A GC'd language can't promise <em>when</em> an object goes away, so cleanup has to be explicit
+      (<code>finally</code>, <code>using</code>, <code>close()</code>). Rust's drop is deterministic, which is why
+      Rust APIs rarely have <code>close()</code> methods: you drop the value. The exceptions are async cleanup
+      (<code>drop</code> can't <code>.await</code>) and cleanup that can fail, which need an explicit method such
+      as <code>transaction.commit().await?</code>.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex86_drop_and_take.rs</code>: a scope guard that logs enter/exit on every exit path,
+      a batch flushed with <code>mem::take</code>, and a connection closed with <code>mem::replace</code>. Run
+      <code>cargo test ex86</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q"><code>let _ = Scope::enter(&amp;log, "x");</code> When is the guard dropped?</p>
+    <ul class="options">
+      <li>At the end of the enclosing block</li>
+      <li data-correct>Immediately, because _ binds no variable</li>
+      <li>When the function returns its result</li>
+      <li>Never; the guard leaks into the log</li>
+    </ul>
+    <div class="explain">Use <code>let _guard = …</code> to keep it to the end of the scope.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Locals <code>a</code>, then <code>b</code>, then <code>c</code> all implement <code>Drop</code>. In
+      which order are they dropped at the end of the block?</p>
+    <ul class="options" data-fixed>
+      <li>a, b, c</li>
+      <li data-correct>c, b, a</li>
+      <li>in an unspecified order</li>
+      <li>whenever the allocator decides</li>
+    </ul>
+    <div class="explain">Reverse order of declaration, so later values can safely refer to earlier ones.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">In <code>fn flush(&amp;mut self) -&gt; Vec&lt;String&gt;</code>, why doesn't
+      <code>self.items</code> (without <code>take</code>) compile as the return value?</p>
+    <ul class="options">
+      <li>A Vec can never be returned from a method</li>
+      <li data-correct>It moves out of borrowed self, leaving a hole</li>
+      <li>The Vec must be cloned before it can move</li>
+      <li>Methods that take &amp;mut self must return unit</li>
+    </ul>
+    <div class="explain">E0507 "cannot move out of borrowed content". <code>mem::take</code> fills the hole.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch15-03-drop.html">15.3 "Running Code on Cleanup with the
+      Drop Trait"</a>, and the <a href="https://doc.rust-lang.org/std/mem/fn.take.html">std::mem::take</a> docs.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

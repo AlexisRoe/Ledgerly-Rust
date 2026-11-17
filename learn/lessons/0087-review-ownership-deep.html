@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: ownership and lifetimes in depth</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and lifetimes in depth · Review</p>
+  <h1>Review: ownership and lifetimes in depth</h1>
+  <p class="lede">Mixed practice on lessons 80–86, with Part I interleaved, then a hunt for lifetimes in Ledgerly's
+    own code.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>Answer the recall questions out loud before opening them. Then the quizzes, then the VS Code exercise. Keep
+      the <a href="../reference/ownership-deep.html">cheat sheet</a> closed until the end.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>The three lifetime elision rules?</summary>
+      <div>Each input reference gets its own lifetime; with exactly one input lifetime, outputs get it; with
+        <code>&amp;self</code>/<code>&amp;mut self</code>, outputs get self's. (80)</div></details>
+    <details><summary><code>&amp;'static str</code> vs <code>T: 'static</code>?</summary>
+      <div>A reference valid for the whole program vs a type that holds no non-static borrows (every owned type).
+        (82)</div></details>
+    <details><summary>Cell, RefCell, Mutex: which are <code>Sync</code>?</summary>
+      <div>Only <code>Mutex</code> (and <code>RwLock</code>, atomics, <code>OnceLock</code>). (84)</div></details>
+    <details><summary>What does <code>mem::replace(&amp;mut x, y)</code> return?</summary>
+      <div>The old value of <code>x</code>; <code>x</code> now holds <code>y</code>. (86)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q"><code>fn pick(a: &amp;str, b: &amp;str) -&gt; &amp;str</code> fails to compile. Which error do you get?</p>
+    <ul class="options" data-fixed>
+      <li>E0382 use of moved value</li>
+      <li data-correct>E0106 missing lifetime specifier</li>
+      <li>E0499 two mutable borrows</li>
+      <li>E0308 mismatched types</li>
+    </ul>
+    <div class="explain">Two inputs, no <code>self</code>: elision can't choose. (80)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A struct you keep in axum's shared state holds a <code>&amp;'a PgPool</code>. Is that a good design?</p>
+    <ul class="options">
+      <li>Yes, borrowing is always cheaper than owning data</li>
+      <li data-correct>No, long-lived state should own it, as a clone</li>
+      <li>Yes, as long as 'a is written out explicitly</li>
+      <li>No, because PgPool values can never be borrowed</li>
+    </ul>
+    <div class="explain">Router state must be <code>'static</code>; <code>PgPool</code> is a cheap <code>Arc</code>
+      clone. (81, 82)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Async, Part I) Why does Ledgerly clone <code>self.storage</code> before
+      <code>tokio::spawn(async move { … })</code>?</p>
+    <ul class="options">
+      <li>Because storage must be copied for thread safety</li>
+      <li data-correct>The task must own what it uses: 'static</li>
+      <li>Because async blocks cannot read struct fields</li>
+      <li>To make the background task start sooner</li>
+    </ul>
+    <div class="explain">A spawned task may outlive <code>self</code>. (63, 82)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">You count words into a <code>HashMap&lt;String, usize&gt;</code>. Which line is idiomatic?</p>
+    <ul class="options" data-fixed>
+      <li><code>m.insert(w, m.get(&amp;w).unwrap() + 1);</code></li>
+      <li data-correct><code>*m.entry(w).or_insert(0) += 1;</code></li>
+      <li><code>m[&amp;w] += 1;</code></li>
+      <li><code>m.get_mut(&amp;w).map(|c| c + 1);</code></li>
+    </ul>
+    <div class="explain">The entry API: one lookup, works for new and existing words. <code>m[&amp;w]</code> panics on
+      a missing key and isn't assignable for <code>HashMap</code>. (83)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Errors, Part I) <code>let tx = pool.begin().await?;</code> … then a <code>?</code> returns early.
+      What happens to <code>tx</code>?</p>
+    <ul class="options">
+      <li>It stays open until the connection pool closes</li>
+      <li data-correct>It's dropped, and dropping rolls it back</li>
+      <li>It's committed, because no error happened in it</li>
+      <li>The compiler rejects the early return there</li>
+    </ul>
+    <div class="explain">RAII: the transaction's <code>Drop</code> rolls back. Only <code>commit()</code> keeps the
+      work. (69, 86)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A <code>&amp;self</code> method must update a cache, single-threaded. What fits?</p>
+    <ul class="options" data-fixed>
+      <li><code>static mut</code> cache</li>
+      <li data-correct><code>RefCell&lt;HashMap&lt;K, V&gt;&gt;</code> field</li>
+      <li>change the method to take <code>self</code></li>
+      <li><code>Cell&lt;HashMap&lt;K, V&gt;&gt;</code> field</li>
+    </ul>
+    <div class="explain"><code>Cell</code> only moves values in and out; you need references into the map.
+      <code>static mut</code> needs <code>unsafe</code>. (84)</div>
+  </div>
+
+  <h2>Find lifetimes in Ledgerly</h2>
+  <div class="exercise">
+    <span class="box-label">Do this in VS Code</span>
+    <ol>
+      <li>Search the workspace for <code>&lt;'a</code> (about 80 hits). Most are in test doubles and in ports that
+        return <code>BoxFuture&lt;'a, …&gt;</code>. Open <a class="src" data-src="crates/expenses/src/application/membership.rs" data-line="22"></a>:
+        which arguments does the returned future borrow?</li>
+      <li>Search for <code>'static str</code>. Pick three hits and say why each is a literal (error code, event
+        type, metric name…).</li>
+      <li>Search for <code>impl Drop</code>. Most hits are in tests: what do the test guards clean up?</li>
+    </ol>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="../reference/ownership-deep.html">ownership in depth cheat sheet</a>. Deeper reading:
+      <a href="https://github.com/pretzelhammer/rust-blog/blob/master/posts/common-rust-lifetime-misconceptions.md">Common
+      Rust Lifetime Misconceptions</a>, all of it.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

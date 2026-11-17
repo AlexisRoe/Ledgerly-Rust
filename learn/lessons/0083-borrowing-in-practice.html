@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Borrowing in practice</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Ownership and lifetimes in depth</p>
+  <h1>Borrowing in practice</h1>
+  <p class="lede">The borrow checker is smarter than its rule of thumb suggests. Knowing exactly what it tracks
+    (fields, last use, map entries) turns most "fights" into a pattern you already know.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can fix the four most common borrow errors in real code: borrowing <code>self</code> in a loop over one
+      of its fields, "get or insert" on a map, two <code>&amp;mut</code> into one slice, and a borrow held too long.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What do E0499 and E0502 say?</summary>
+      <div>E0499: two <code>&amp;mut</code> borrows at once. E0502: a <code>&amp;</code> and a <code>&amp;mut</code>
+        at once. (40)</div></details>
+    <details><summary>When is a <code>T: 'static</code> bound met?</summary>
+      <div>When <code>T</code> holds no non-<code>'static</code> borrows, like any owned type. (82)</div></details>
+  </div>
+
+  <h2>1. Borrows end at their last use</h2>
+  <p>A borrow lasts until the last time it's used, not until the end of the block ("non-lexical lifetimes"). So
+    this compiles:</p>
+  <script type="text/x-code" data-lang="rust">
+    let first = &items[0];
+    println!("{first}");      // last use of `first`: the shared borrow ends here
+    items.push(String::new()); // fine
+  </script>
+  <p>Swap the last two lines and it fails: <code>push</code> may reallocate the vector and leave
+    <code>first</code> dangling. In JS, the equivalent bug (mutating an array while iterating it) silently skips or
+    repeats elements; Rust refuses to compile it.</p>
+
+  <h2>2. Fields are tracked separately; methods borrow everything</h2>
+  <script type="text/x-code" data-lang="rust">
+    for member in &self.members {
+        self.log.push(self.label(member));  // E0502: label(&self) borrows ALL of self
+    }
+
+    let name = &self.name;                   // borrow just this field…
+    for member in &self.members {            // …and this one…
+        self.log.push(format!("{name}: {member}")); // …and mutate a third: fine
+    }
+  </script>
+  <p>Inside one function the compiler sees <code>self.members</code>, <code>self.name</code> and
+    <code>self.log</code> as separate places. A method's signature only says <code>&amp;self</code>, so calling it
+    borrows the whole struct. Fixes: borrow the fields you need, make the helper a free function taking just those
+    fields, or split the struct.</p>
+
+  <h2>3. Maps: the entry API</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      counts.set(word, (counts.get(word) ?? 0) + 1);
+
+      if (!lists.has(key)) lists.set(key, []);
+      lists.get(key)!.push(x);
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      *counts.entry(word).or_insert(0) += 1;
+
+      lists.entry(key).or_default().push(x);
+      // one lookup, and a &mut to the value in the map
+    </script>
+  </div>
+  <p>The "if missing, insert, then get" dance is awkward with borrows and does extra lookups. <code>entry</code>
+    returns a handle to the slot (occupied or vacant) and gives you a <code>&amp;mut</code> to the value
+    (<a href="https://doc.rust-lang.org/std/collections/hash_map/enum.Entry.html">std: Entry</a>).</p>
+
+  <h2>4. Two <code>&amp;mut</code> into one collection</h2>
+  <p><code>let a = &amp;mut v[i]; let b = &amp;mut v[j];</code> fails even if <code>i != j</code>: indexing is a
+    method call, and the compiler can't prove the indexes differ. Ask the slice to check it for you:
+    <code>v.get_disjoint_mut([i, j])</code> returns both or an error, and <code>v.split_at_mut(mid)</code> splits
+    a slice into two non-overlapping halves (<a href="https://doc.rust-lang.org/nomicon/borrow-splitting.html">Nomicon:
+    splitting borrows</a>). Or use <code>v.swap(i, j)</code> if that's all you need.</p>
+
+  <h2>5. When all else fails: copy the value out</h2>
+  <p>If you only need a small value from a borrow, copy or clone it into a local and let the borrow end:
+    <code>let id = expense.id;</code> (it's <code>Copy</code>). Cloning a short <code>String</code> to escape a
+    borrow is acceptable in application code; reach for it after the patterns above.</p>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex83_borrowing_practice.rs</code>: one function per pattern. In
+      <code>log_members</code>, try the method-call version first and read the error. Run <code>cargo test ex83</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why does calling <code>self.label(m)</code> inside <code>for m in &amp;self.members</code> while
+      pushing to <code>self.log</code> fail?</p>
+    <ul class="options">
+      <li>Methods can never be called inside for loops</li>
+      <li data-correct>Pushing needs &amp;mut while label borrows all self</li>
+      <li>label returns a String, which can't be pushed</li>
+      <li>The for loop moved self.members out of self</li>
+    </ul>
+    <div class="explain">Pushing mutably borrows <code>self.log</code>, and calling <code>label</code> borrows all of
+      <code>self</code> at the same time, which includes <code>log</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Best way to append to a list in a <code>HashMap&lt;String, Vec&lt;u32&gt;&gt;</code>, creating it if needed?</p>
+    <ul class="options" data-fixed>
+      <li><code>if !m.contains_key(k) { m.insert(…) }</code>, then <code>get_mut</code></li>
+      <li data-correct><code>m.entry(k).or_default().push(x)</code></li>
+      <li><code>m.get(k).unwrap().push(x)</code></li>
+      <li><code>m.insert(k, vec![x])</code></li>
+    </ul>
+    <div class="explain">One lookup, no unwrap, works whether the key exists or not.</div>
+  </div>
+  <div class="quiz">
+    <p class="q"><code>let a = &amp;items[0]; items.push(x); println!("{a}");</code> Why is this rejected?</p>
+    <ul class="options">
+      <li>Indexing with zero is never allowed in Rust</li>
+      <li data-correct>push may reallocate while a is still used</li>
+      <li>println cannot print a borrowed String value</li>
+      <li>items must be declared static to be indexed</li>
+    </ul>
+    <div class="explain">The shared borrow is still alive at the <code>println!</code>. Move the print up, and it compiles.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Rustonomicon's <a href="https://doc.rust-lang.org/nomicon/borrow-splitting.html">"Splitting Borrows"</a>
+      (read only the first half; the rest is about <code>unsafe</code>), and the
+      <a href="https://doc.rust-lang.org/std/collections/hash_map/enum.Entry.html">Entry</a> docs.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
