@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update event_publication set status = 'FAILED' where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "37db22b26c6d79d140e035a75dee8b2d0e7578e7d970ffad784e6ec5a67cc54f"
+}

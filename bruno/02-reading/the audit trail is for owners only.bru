@@ -1,0 +1,19 @@
+meta {
+  name: the audit trail is for owners only
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{host}}/teams/{{teamId}}/audit-events
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+assert {
+  res.status: eq 403
+}

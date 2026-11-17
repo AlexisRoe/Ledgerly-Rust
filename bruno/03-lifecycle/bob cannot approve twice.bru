@@ -1,0 +1,20 @@
+meta {
+  name: bob cannot approve twice
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/expenses/{{flowId}}:approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bobToken}}
+}
+
+assert {
+  res.status: eq 409
+  res.body.code: eq EXPENSE_INVALID_TRANSITION
+}

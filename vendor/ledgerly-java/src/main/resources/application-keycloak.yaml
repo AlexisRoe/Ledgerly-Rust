@@ -1,0 +1,15 @@
+# Ledgerly stops issuing its own tokens and trusts Keycloak instead. Active together with `local` or `prod`.
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # The realm's issuer. Tokens from any other issuer are refused. In prod set it from the environment
+          # (SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI).
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/ledgerly}
+
+ledgerly:
+  auth:
+    keycloak:
+      # Only tokens meant for this API are accepted (the realm adds this audience with a mapper).
+      audience: ledgerly-api

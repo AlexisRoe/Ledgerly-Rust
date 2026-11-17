@@ -1,0 +1,19 @@
+meta {
+  name: a member cannot approve
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/expenses/{{flowId}}:approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+assert {
+  res.status: eq 403
+}

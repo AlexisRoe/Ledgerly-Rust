@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into expenses (id, team_id, claimant_id, amount, currency, category, incurred_on, merchant, note,\n                               status, version, created_at, updated_at)\n         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Numeric",
+        "Bpchar",
+        "Varchar",
+        "Date",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "28274631ce18188af7cc1faccea9e608138b62724e9ac75a0aa63b1861790cae"
+}

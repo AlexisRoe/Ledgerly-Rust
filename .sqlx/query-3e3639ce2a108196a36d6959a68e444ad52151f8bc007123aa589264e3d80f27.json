@@ -1,0 +1,125 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select id, team_id, user_id, status, original_name, storage_key, total_rows, imported_rows, created_at from import_jobs where team_id = $1 and id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "import_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "team_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "import_jobs",
+            "name": "team_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "import_jobs",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "import_jobs",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "original_name",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "import_jobs",
+            "name": "original_name"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "storage_key",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "import_jobs",
+            "name": "storage_key"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "total_rows",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "import_jobs",
+            "name": "total_rows"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "imported_rows",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "import_jobs",
+            "name": "imported_rows"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "import_jobs",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3e3639ce2a108196a36d6959a68e444ad52151f8bc007123aa589264e3d80f27"
+}

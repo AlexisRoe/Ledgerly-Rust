@@ -1,0 +1,58 @@
+### Teams, invitations and roles. Paste access tokens from http/auth.http.
+
+@host = http://localhost:8080/api/v1
+@ownerToken = paste-access-token-of-the-team-owner
+@inviteeToken = paste-access-token-of-the-invited-user
+
+### Create a team (the caller becomes its OWNER)
+# @name team
+POST {{host}}/teams
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{ "name": "Acme" }
+
+###
+@team = {{team.response.body.id}}
+
+### Invite an address (same answer whether or not it is registered)
+# @name invitation
+POST {{host}}/teams/{{team}}/invitations
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{ "email": "ann@example.com", "role": "APPROVER" }
+
+###
+@invitationId = {{invitation.response.body.id}}
+
+### The invitee sees it in /me (only with a verified email)
+GET {{host}}/me
+Authorization: Bearer {{inviteeToken}}
+
+### The invitee accepts
+POST {{host}}/invitations/{{invitationId}}:accept
+Authorization: Bearer {{inviteeToken}}
+
+### Or declines
+POST {{host}}/invitations/{{invitationId}}:decline
+Authorization: Bearer {{inviteeToken}}
+
+### Owner revokes a pending invitation
+DELETE {{host}}/teams/{{team}}/invitations/{{invitationId}}
+Authorization: Bearer {{ownerToken}}
+
+### Change a teammate's role (the last OWNER can never be demoted)
+PATCH {{host}}/teams/{{team}}/members/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{ "role": "OWNER" }
+
+### Remove a teammate
+DELETE {{host}}/teams/{{team}}/members/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{ownerToken}}
+
+### Leave the team
+POST {{host}}/teams/{{team}}:leave
+Authorization: Bearer {{inviteeToken}}

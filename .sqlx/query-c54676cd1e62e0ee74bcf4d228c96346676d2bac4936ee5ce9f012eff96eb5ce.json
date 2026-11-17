@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update import_jobs set status = 'RUNNING', started_at = coalesce(started_at, $3), finished_at = null where team_id = $1 and id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c54676cd1e62e0ee74bcf4d228c96346676d2bac4936ee5ce9f012eff96eb5ce"
+}

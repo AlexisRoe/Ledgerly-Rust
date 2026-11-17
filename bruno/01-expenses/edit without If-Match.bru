@@ -1,0 +1,26 @@
+meta {
+  name: edit without If-Match
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{host}}/teams/{{teamId}}/expenses/{{draftId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+body:json {
+  {
+    "merchant": "Bakery"
+  }
+}
+
+assert {
+  res.status: eq 428
+  res.body.code: eq PRECONDITION_REQUIRED
+}

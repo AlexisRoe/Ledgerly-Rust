@@ -1,0 +1,31 @@
+[package]
+name = "ledgerly-imports"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+metrics.workspace = true
+ledgerly-shared.workspace = true
+ledgerly-expenses.workspace = true
+ledgerly-teams.workspace = true
+axum.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx = { workspace = true, features = ["macros"] }
+tempfile.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "rt"] }
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+ledgerly-shared = { workspace = true, features = ["testing"] }
+tokio.workspace = true
+tower.workspace = true

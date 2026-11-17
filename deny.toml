@@ -1,0 +1,69 @@
+# cargo-deny: what may be in the dependency tree (CONCEPT §4, "Supply chain"). `just deny` runs all four checks.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+# A yanked version is refused like an advisory: the author withdrew it for a reason.
+yanked = "deny"
+# Every entry says why, and is an open question in the learning log.
+ignore = [
+    # chrono is unmaintained (informational, no patched version, published 2026-09-14). Not a vulnerability: it
+    # holds timestamps for the clock, the domain, sqlx and token checks in every crate. Moving to `time` or
+    # `jiff` touches every module and the byte-exact timestamp formats; decided after M11: ignore for now, open
+    # question in the M11 learning-log entry.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; migration to time/jiff is an open question (M11)" },
+]
+
+[licenses]
+version = 2
+# Permissive licences only. Extend this list only with a reason next to the new entry.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    # MIT without the attribution clause, so strictly more permissive than MIT. Comes in with `jsonschema`
+    # (borrow-or-share), which only the parity suite uses.
+    "MIT-0",
+]
+confidence-threshold = 0.9
+# The list is the policy (plan M1.7), not a record of what the tree happens to contain today.
+unused-allowed-license = "allow"
+
+[licenses.private]
+# Our own crates are not published.
+ignore = true
+
+[bans]
+# Two major versions of one crate are worth knowing about, but usually a dependency's choice, not ours.
+multiple-versions = "warn"
+wildcards = "deny"
+# `ledgerly-shared.workspace = true` is a path dependency without a version.
+allow-wildcard-paths = true
+# Crates nobody needs (plan M10.4, OWASP API7): other HTTP clients than the one the OTLP exporter and the tests
+# use, and OpenSSL, which rustls makes unnecessary. A new outbound path has to remove its entry here, with a
+# reason, before it can come in.
+deny = [
+    { crate = "ureq", reason = "a second HTTP client; outbound calls go through the adapters" },
+    { crate = "isahc", reason = "a second HTTP client; outbound calls go through the adapters" },
+    { crate = "surf", reason = "a second HTTP client; outbound calls go through the adapters" },
+    { crate = "attohttpc", reason = "a second HTTP client; outbound calls go through the adapters" },
+    { crate = "curl", reason = "libcurl; outbound calls go through the adapters" },
+    { crate = "curl-sys", reason = "libcurl; outbound calls go through the adapters" },
+    { crate = "openssl", reason = "TLS is rustls everywhere" },
+    { crate = "openssl-sys", reason = "TLS is rustls everywhere" },
+    { crate = "native-tls", reason = "TLS is rustls everywhere" },
+    { crate = "hyper-tls", reason = "TLS is rustls everywhere" },
+]
+
+[sources]
+# crates.io only: no other registry, no git dependency.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

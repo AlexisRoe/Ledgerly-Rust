@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update email_verifications set used_at = $2 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4cc6e16806b938d54c4dc8646e10321a3b67f5c9c4406eea115bac8c6509ad5f"
+}

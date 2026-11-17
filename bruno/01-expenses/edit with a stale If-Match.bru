@@ -1,0 +1,30 @@
+meta {
+  name: edit with a stale If-Match
+  type: http
+  seq: 8
+}
+
+patch {
+  url: {{host}}/teams/{{teamId}}/expenses/{{draftId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  If-Match: "999"
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+body:json {
+  {
+    "merchant": "Bakery"
+  }
+}
+
+assert {
+  res.status: eq 412
+  res.body.code: eq PRECONDITION_FAILED
+}

@@ -1,0 +1,23 @@
+meta {
+  name: login unknown email gives the same answer
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{host}}/auth/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "nobody@example.com",
+    "password": "definitely-not-it"
+  }
+}
+
+assert {
+  res.status: eq 401
+  res.body.code: eq UNAUTHENTICATED
+}

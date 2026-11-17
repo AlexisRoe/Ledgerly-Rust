@@ -1,0 +1,26 @@
+meta {
+  name: a member cannot invite
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/invitations
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+body:json {
+  {
+    "email": "new@example.com",
+    "role": "MEMBER"
+  }
+}
+
+assert {
+  res.status: eq 403
+}

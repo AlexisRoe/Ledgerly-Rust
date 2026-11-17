@@ -1,0 +1,32 @@
+meta {
+  name: create with a future date
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/expenses
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+body:json {
+  {
+    "money": {
+      "amount": "12.50",
+      "currency": "EUR"
+    },
+    "category": "MEALS",
+    "incurredOn": "2999-01-01",
+    "merchant": "Bruno Cafe",
+    "note": "Team lunch"
+  }
+}
+
+assert {
+  res.status: eq 400
+}

@@ -1,0 +1,19 @@
+meta {
+  name: sorting by an unknown field is refused
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{host}}/teams/{{teamId}}/expenses?sort=password,asc
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{aliceToken}}
+}
+
+assert {
+  res.status: eq 400
+}

@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select to_regclass('flyway_schema_history') is not null as \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e558b3c0494db71ef9168f2b7f31651c87882e8a9c8ea4e88633b5a0b2386fcb"
+}

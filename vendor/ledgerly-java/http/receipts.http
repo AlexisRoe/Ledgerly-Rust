@@ -1,0 +1,35 @@
+### Receipts. Run the app with SPRING_PROFILES_ACTIVE=local and `docker compose up` (SeaweedFS and ClamAV).
+### Paste a claimant's access token and the ids of one of their draft expenses.
+
+@host = http://localhost:8080/api/v1
+@token = paste-access-token-of-the-claimant
+@team = paste-team-id
+@expense = paste-draft-expense-id
+
+### Upload a PDF, JPEG or PNG (up to 10 MB). The type is detected from the bytes, not the name.
+# @name upload
+POST {{host}}/teams/{{team}}/expenses/{{expense}}/receipts
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=ledgerly
+
+--ledgerly
+Content-Disposition: form-data; name="file"; filename="lunch.pdf"
+Content-Type: application/pdf
+
+< ./sample-receipt.pdf
+--ledgerly--
+
+###
+@receipt = {{upload.response.body.id}}
+
+### Poll the scan status: PENDING_SCAN -> ACCEPTED or QUARANTINED
+GET {{host}}/teams/{{team}}/expenses/{{expense}}/receipts
+Authorization: Bearer {{token}}
+
+### A short-lived (5 minute) download link; only for ACCEPTED receipts
+GET {{host}}/teams/{{team}}/expenses/{{expense}}/receipts/{{receipt}}/download
+Authorization: Bearer {{token}}
+
+### Delete (draft expenses only)
+DELETE {{host}}/teams/{{team}}/expenses/{{expense}}/receipts/{{receipt}}
+Authorization: Bearer {{token}}

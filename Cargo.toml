@@ -1,0 +1,90 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+publish = false
+
+# Shared by every crate through `[lints] workspace = true`.
+#
+# `clippy::indexing_slicing` and `clippy::arithmetic_side_effects` are not listed here: they are denied with
+# `#![deny(...)]` at the top of each `domain` module, where untrusted values meet arithmetic (plan M0.1).
+# Test code is exempt from the clippy denies through `clippy.toml`.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[workspace.dependencies]
+ledgerly-audit = { path = "crates/audit" }
+ledgerly-expenses = { path = "crates/expenses" }
+ledgerly-identity = { path = "crates/identity" }
+ledgerly-imports = { path = "crates/imports" }
+ledgerly-receipts = { path = "crates/receipts" }
+ledgerly-shared = { path = "crates/shared" }
+ledgerly-teams = { path = "crates/teams" }
+
+argon2 = "0.6.0"
+aws-sdk-s3 = { version = "1.159.0", default-features = false, features = ["http-1x", "rt-tokio"] }
+aws-smithy-http-client = { version = "1.5.2", default-features = false, features = ["rustls-ring"] }
+base64 = "0.23.1"
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+crc = "3.4.0"
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
+getrandom = "0.4.3"
+idna = "1.1.0"
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", default-features = false, features = ["client", "http1"] }
+hyper-rustls = { version = "0.27.10", default-features = false, features = ["http1", "native-tokio", "ring", "tls12"] }
+hyper-util = { version = "0.1.21", default-features = false, features = ["client-legacy", "http1", "tokio"] }
+chrono = { version = "0.4.45", default-features = false, features = ["now", "serde", "std"] }
+multer = "3.1.0"
+metrics = "0.24.6"
+metrics-exporter-prometheus = { version = "0.18.3", default-features = false }
+jsonschema = { version = "0.61.2", default-features = false }
+opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace"] }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace"] }
+p256 = { version = "0.14.0", default-features = false, features = ["ecdsa", "std"] }
+proptest = "1.12.0"
+regex = "1.13.1"
+ring = { version = "0.17.14", default-features = false, features = ["alloc"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["form", "json", "multipart"] }
+rust_decimal = { version = "1.43.0", default-features = false, features = ["std"] }
+secrecy = "0.10.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+serde-saphyr = "2.1.1"
+sha2 = "0.11.1"
+subtle = "2.6.1"
+tempfile = "3.27.0"
+sqlx = { version = "0.9.0", default-features = false, features = ["chrono", "postgres", "runtime-tokio", "rust_decimal", "tls-rustls-ring-native-roots", "uuid"] }
+thiserror = "2.0.21"
+tower = { version = "0.5.3", default-features = false, features = ["util"] }
+tower-http = { version = "0.7.1", default-features = false, features = ["catch-panic"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "fmt", "registry", "std"] }
+tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1.29.2", features = ["serde", "v4", "v7"] }
+zeroize = "1.9.1"
+
+# The image's build (ADR 0012). One codegen unit and whole-program LTO give the smallest and fastest binary, at
+# the cost of a slower build; `strip` drops the symbol table and debug info, which the image does not need
+# (cargo-auditable's dependency list is a section of its own and stays). `panic` stays `unwind`, the default: the
+# CatchPanic layer (M3.2) turns a handler's panic into a 500 by catching the unwind, and `abort` would end the
+# process instead.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "unwind"

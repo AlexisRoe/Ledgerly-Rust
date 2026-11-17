@@ -1,0 +1,19 @@
+meta {
+  name: the owner revokes it
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{host}}/teams/{{teamId}}/invitations/{{invitationId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{aliceToken}}
+}
+
+assert {
+  res.status: eq 204
+}

@@ -1,0 +1,26 @@
+meta {
+  name: list as a member sees only their own
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{host}}/teams/{{teamId}}/expenses?size=50
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("only the caller's expenses", function () {
+    const mine = res.body.content[0].claimantId;
+    res.body.content.forEach(e => expect(e.claimantId).to.equal(mine));
+  });
+}

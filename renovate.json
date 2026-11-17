@@ -1,0 +1,73 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests", "docker:pinDigests"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "Europe/Berlin",
+  "labels": ["dependencies"],
+  "dependencyDashboard": true,
+  "prConcurrentLimit": 5,
+  "enabledManagers": ["cargo", "dockerfile", "docker-compose", "github-actions", "mise", "pre-commit", "custom.regex"],
+  "ignorePaths": ["vendor/**", "bruno/**", "api/**"],
+  "customManagers": [
+    {
+      "description": "The npm tools pinned in the justfile, the workflows and pre-commit (npx --yes name@version)",
+      "customType": "regex",
+      "managerFilePatterns": ["/^justfile$/", "/^\\.github/workflows/.+\\.ya?ml$/", "/^\\.pre-commit-config\\.yaml$/"],
+      "matchStrings": ["npx --yes (?<depName>@?[a-z0-9/-]+)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "npm"
+    },
+    {
+      "description": "The cargo sub-commands installed in the Dockerfile (cargo install name@version)",
+      "customType": "regex",
+      "managerFilePatterns": ["/^Dockerfile$/"],
+      "matchStrings": ["(?<depName>cargo-[a-z]+)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "crate"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Do not take a version published in the last 3 days: most poisoned releases are found and pulled within hours",
+      "matchPackageNames": ["*"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "The npm tools pinned in justfile, ci.yml and pre-commit move as one. Ledgerly-Java pins the same versions: update there first",
+      "matchDatasources": ["npm"],
+      "groupName": "build tooling"
+    },
+    {
+      "description": "The Rust toolchain is pinned in three places that must agree: rust-toolchain.toml, mise.toml and the Dockerfile",
+      "matchPackageNames": ["rust", "rust-lang/rust"],
+      "groupName": "rust toolchain"
+    },
+    {
+      "description": "The OpenTelemetry crates are released together and only work together",
+      "matchPackageNames": ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp"],
+      "groupName": "opentelemetry"
+    },
+    {
+      "description": "Security fixes are not held back by the weekly schedule",
+      "matchCategories": ["rust"],
+      "vulnerabilityAlerts": {
+        "schedule": ["at any time"],
+        "labels": ["security"]
+      }
+    },
+    {
+      "description": "The Compose images are Ledgerly-Java's (vendor/ledgerly-java/compose.yaml): update there first, then re-vendor",
+      "matchManagers": ["docker-compose"],
+      "groupName": "compose images",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "A major version is only taken on request",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "minimumReleaseAge": null
+  },
+  "minimumReleaseAge": "3 days"
+}

@@ -1,0 +1,30 @@
+meta {
+  name: a submitted expense can no longer be edited
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{host}}/teams/{{teamId}}/expenses/{{flowId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  If-Match: "1"
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+body:json {
+  {
+    "merchant": "Sneaky"
+  }
+}
+
+assert {
+  res.status: eq 409
+  res.body.code: eq EXPENSE_NOT_DRAFT
+}

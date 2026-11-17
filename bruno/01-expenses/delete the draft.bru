@@ -1,0 +1,23 @@
+meta {
+  name: delete the draft
+  type: http
+  seq: 12
+}
+
+delete {
+  url: {{host}}/teams/{{teamId}}/expenses/{{draftId}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  If-Match: {{draftEtag}}
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+assert {
+  res.status: eq 204
+}

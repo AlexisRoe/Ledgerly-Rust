@@ -1,0 +1,25 @@
+meta {
+  name: carol uploads a receipt
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/expenses/{{flowId}}/receipts
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+body:multipart-form {
+  file: @file(files/receipt.pdf)
+}
+
+assert {
+  res.status: eq 202
+  res.body.status: eq PENDING_SCAN
+  res.body.detectedType: eq application/pdf
+}

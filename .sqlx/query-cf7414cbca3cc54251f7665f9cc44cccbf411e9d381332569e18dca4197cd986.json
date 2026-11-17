@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update import_jobs set imported_rows = imported_rows + $3 where team_id = $1 and id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cf7414cbca3cc54251f7665f9cc44cccbf411e9d381332569e18dca4197cd986"
+}

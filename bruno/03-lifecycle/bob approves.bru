@@ -1,0 +1,20 @@
+meta {
+  name: bob approves
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/expenses/{{flowId}}:approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bobToken}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq APPROVED
+}

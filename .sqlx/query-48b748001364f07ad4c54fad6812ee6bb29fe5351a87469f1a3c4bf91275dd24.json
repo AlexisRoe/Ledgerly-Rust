@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update refresh_tokens set replaced_by = $2 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "48b748001364f07ad4c54fad6812ee6bb29fe5351a87469f1a3c4bf91275dd24"
+}

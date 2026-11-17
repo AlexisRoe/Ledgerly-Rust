@@ -1,0 +1,1308 @@
+openapi: 3.1.0
+info:
+  title: Ledgerly API
+  version: 1.0.0
+  description: Expense tracking and approval for small teams.
+  license:
+    name: See LICENSE
+    url: https://github.com/AlexisRoe/Ledgerly-Java/blob/main/LICENSE
+servers:
+  - url: /api/v1
+tags:
+  - name: auth
+    description: Account and session lifecycle.
+  - name: jwks
+    description: Public keys for verifying access tokens.
+  - name: teams
+    description: Teams, their members and invitations.
+  - name: me
+    description: The calling user.
+  - name: expenses
+    description: Create, edit and move expenses through the approval workflow.
+  - name: receipts
+    description: Receipt files attached to draft expenses.
+  - name: imports
+    description: CSV imports that create many draft expenses at once.
+  - name: audit
+    description: The append-only audit trail of a team.
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Register an account
+      description: >
+        Always answers 202 with the same body, whether the email is new or already taken, so registered
+        addresses cannot be discovered. A new account gets a verification link.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /auth/verify:
+    post:
+      tags: [auth]
+      operationId: verifyEmail
+      summary: Verify an email address with the single-use token from the verification link
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VerifyRequest" }
+      responses:
+        "204": { description: Verified }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Log in
+      description: >
+        Returns a short-lived access token in the body and sets the refresh token as an HttpOnly cookie.
+        Unknown email, wrong password and a locked account all give the same 401.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Logged in
+          headers:
+            Set-Cookie:
+              description: "`refresh_token`; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refresh
+      summary: Exchange the refresh cookie for a new access token
+      description: >
+        Rotates the refresh token. Presenting a token that was already rotated revokes the whole session
+        family. The custom `X-Requested-With` header is required (see ADR 0004).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/RequestedWith"
+        - $ref: "#/components/parameters/RefreshCookie"
+      responses:
+        "200":
+          description: Refreshed
+          headers:
+            Set-Cookie:
+              description: The rotated `refresh_token` cookie.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoke the session family and clear the cookie
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/RequestedWith"
+        - $ref: "#/components/parameters/RefreshCookie"
+      responses:
+        "204":
+          description: Logged out
+          headers:
+            Set-Cookie:
+              description: Clears the `refresh_token` cookie.
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /.well-known/jwks.json:
+    servers:
+      - url: /
+    get:
+      tags: [jwks]
+      operationId: getJwks
+      summary: Public keys that verify access tokens
+      security: []
+      responses:
+        "200":
+          description: A JSON Web Key Set
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JwkSet" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /me:
+    get:
+      tags: [me]
+      operationId: getMe
+      summary: The current user, their roles per team and pending invitations
+      description: >
+        Pending invitations are matched by the user's email, and only when the email is verified.
+      responses:
+        "200":
+          description: The current user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams:
+    post:
+      tags: [teams]
+      operationId: createTeam
+      summary: Create a team; the creator becomes its OWNER
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTeamRequest" }
+      responses:
+        "201":
+          description: Created
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}:leave:
+    post:
+      tags: [teams]
+      operationId: leaveTeam
+      summary: Leave a team
+      description: The last OWNER cannot leave.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "204": { description: Left the team }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/invitations:
+    post:
+      tags: [teams]
+      operationId: inviteMember
+      summary: Invite an email address to the team (OWNER only)
+      description: >
+        The response is the same whether or not the address belongs to a registered user. Inviting an address
+        that already has a pending invitation replaces that invitation.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InviteRequest" }
+      responses:
+        "201":
+          description: Invitation created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvitationResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/invitations/{invitationId}:
+    delete:
+      tags: [teams]
+      operationId: revokeInvitation
+      summary: Revoke a pending invitation (OWNER only)
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/InvitationId"
+      responses:
+        "204": { description: Revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/members/{userId}:
+    patch:
+      tags: [teams]
+      operationId: changeMemberRole
+      summary: Change a teammate's role (OWNER only)
+      description: The last OWNER can never be demoted.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangeRoleRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemberResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      tags: [teams]
+      operationId: removeMember
+      summary: Remove a teammate (OWNER only)
+      description: The last OWNER can never be removed.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /invitations/{invitationId}:accept:
+    post:
+      tags: [teams]
+      operationId: acceptInvitation
+      summary: Accept an invitation (the invited, verified user)
+      parameters:
+        - $ref: "#/components/parameters/InvitationId"
+      responses:
+        "200":
+          description: Joined
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MembershipResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /invitations/{invitationId}:decline:
+    post:
+      tags: [teams]
+      operationId: declineInvitation
+      summary: Decline an invitation (the invited user)
+      parameters:
+        - $ref: "#/components/parameters/InvitationId"
+      responses:
+        "204": { description: Declined }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/expenses:
+    get:
+      tags: [expenses]
+      operationId: listExpenses
+      summary: List expenses, filtered, sorted and paged
+      description: >
+        Offset paging for UI tables. `size` is capped at 100 and anything larger is rejected with 400 (it is not
+        silently clamped). `sort` is `<field>,<asc|desc>` with field from `incurredOn`, `createdAt`, `amount`;
+        sorting by `amount` needs a `currency` filter, because amounts in different currencies cannot be
+        compared. A MEMBER always sees only their own expenses, whatever `claimantId` says.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: incurredOn,desc
+            pattern: "^(incurredOn|createdAt|amount)(,(asc|desc))?$"
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/ExpenseStatus" }
+        - name: category
+          in: query
+          schema: { $ref: "#/components/schemas/Category" }
+        - name: claimantId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: currency
+          in: query
+          schema: { type: string, pattern: "^[A-Z]{3}$" }
+        - name: incurredFrom
+          in: query
+          schema: { type: string, format: date }
+        - name: incurredTo
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: One page of expenses
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpensePage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      tags: [expenses]
+      operationId: createExpense
+      summary: Create a draft expense
+      description: >
+        Creates a draft expense with the caller as claimant. Send an `Idempotency-Key` to make retries safe:
+        the same key with the same body returns the original result, the same key with a different body is
+        rejected with 422.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateExpenseRequest"
+            examples:
+              lunch:
+                value:
+                  money: { amount: "12.50", currency: EUR }
+                  category: MEALS
+                  incurredOn: "2026-11-05"
+                  merchant: Cafe Central
+                  note: Team lunch
+      responses:
+        "201":
+          description: Created
+          headers:
+            Location:
+              schema: { type: string }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpenseResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/expenses/{expenseId}:
+    parameters:
+      - $ref: "#/components/parameters/TeamId"
+      - $ref: "#/components/parameters/ExpenseId"
+    get:
+      tags: [expenses]
+      operationId: getExpense
+      summary: Read an expense
+      responses:
+        "200":
+          description: The expense
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpenseResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    patch:
+      tags: [expenses]
+      operationId: updateExpense
+      summary: Edit a draft expense
+      description: Only the claimant may edit, and only while the expense is a draft. `If-Match` is required.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateExpenseRequest"
+      responses:
+        "200":
+          description: Updated
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpenseResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      tags: [expenses]
+      operationId: deleteExpense
+      summary: Delete a draft expense
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/expenses:batch:
+    post:
+      tags: [expenses]
+      operationId: batchCreateExpenses
+      summary: Create up to 100 draft expenses in one call
+      description: >
+        Every item is checked before anything is written. By default the call has partial success: valid items
+        are created and each item gets its own entry in `results` (its index, an outcome, and either the new id
+        or a problem), with status 200. With `atomic=true` it is all-or-nothing: if any item is invalid nothing
+        is created and the answer is 422, with one entry in `errors` per problem, named `items[<index>].<field>`.
+        Every created expense is a DRAFT with the caller as claimant. More than 100 items is a 400.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - name: atomic
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchRequest" }
+      responses:
+        "200":
+          description: Per-item results (some items may have been rejected)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/expenses.csv:
+    get:
+      tags: [expenses]
+      operationId: exportExpenses
+      summary: Export the filtered expenses as CSV (up to 10,000 rows)
+      description: >
+        The same filters as the list, without paging, newest first. A MEMBER only gets their own expenses. Cells
+        that start with `=`, `+`, `-`, `@`, a tab or a carriage return are prefixed with a quote so a spreadsheet
+        cannot run them as formulas. When more than 10,000 rows match, the first 10,000 are returned and
+        `X-Truncated` is `true`; `X-Total-Count` always says how many matched.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/ExpenseStatus" }
+        - name: category
+          in: query
+          schema: { $ref: "#/components/schemas/Category" }
+        - name: claimantId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: currency
+          in: query
+          schema: { type: string, pattern: "^[A-Z]{3}$" }
+        - name: incurredFrom
+          in: query
+          schema: { type: string, format: date }
+        - name: incurredTo
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: The CSV file
+          headers:
+            X-Total-Count:
+              schema: { type: integer, format: int64 }
+            X-Truncated:
+              schema: { type: boolean }
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/audit-events:
+    get:
+      tags: [audit]
+      operationId: listAuditEvents
+      summary: The team's audit trail, newest first (OWNER only)
+      description: >
+        Cursor (keyset) paging, because the trail only ever grows: the response carries `nextCursor`; pass it back as
+        `after` to get the next page. Cursors are opaque tokens; a made-up one is a 400. Events are written
+        asynchronously from the domain events, so an action shows up here a moment after it happened.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: after
+          in: query
+          schema: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: One page of audit events
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditEventPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/imports:
+    post:
+      tags: [imports]
+      operationId: uploadImport
+      summary: Import expenses from a CSV file
+      description: >
+        Accepts a UTF-8 CSV with the header `date,merchant,amount,currency,category,note` (the `note` column is
+        optional), up to 10 MB and 10,000 data rows. Valid rows become DRAFT expenses with the caller as
+        claimant; invalid rows are skipped and reported by line number. Each user may start 5 imports per team
+        per day (a 6th is a 429 with `Retry-After`). The import runs in the background: poll the `Location`.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "202":
+          description: Queued
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429":
+          description: The daily import limit is used up.
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/imports/{importId}:
+    get:
+      tags: [imports]
+      operationId: getImport
+      summary: Progress and row errors of an import
+      description: Visible to the user who started it and to OWNERs; everyone else gets 404.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - name: importId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The import
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/expenses/{expenseId}/receipts:
+    parameters:
+      - $ref: "#/components/parameters/TeamId"
+      - $ref: "#/components/parameters/ExpenseId"
+    get:
+      tags: [receipts]
+      operationId: listReceipts
+      summary: List an expense's receipts, with their scan status
+      description: Visible to whoever can see the expense. This is the polling endpoint after an upload.
+      responses:
+        "200":
+          description: The receipts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ReceiptResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      tags: [receipts]
+      operationId: uploadReceipt
+      summary: Upload a receipt (claimant, draft expenses only)
+      description: >
+        Accepts PDF, JPEG and PNG, up to 10 MB. The type is detected from the file's own bytes; the declared
+        content type and the file name are ignored. The receipt starts as `PENDING_SCAN` and becomes `ACCEPTED`
+        or `QUARANTINED` after a malware scan, so poll the list endpoint. The same file twice on one expense is
+        a 409; the same file on another expense of the team is flagged `possibleDuplicate`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "202":
+          description: Accepted for scanning
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReceiptResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/expenses/{expenseId}/receipts/{receiptId}:
+    delete:
+      tags: [receipts]
+      operationId: deleteReceipt
+      summary: Delete a receipt (claimant, draft expenses only)
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/ExpenseId"
+        - $ref: "#/components/parameters/ReceiptId"
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/expenses/{expenseId}/receipts/{receiptId}/download:
+    get:
+      tags: [receipts]
+      operationId: downloadReceipt
+      summary: A short-lived link to download an accepted receipt
+      description: >
+        Only `ACCEPTED` receipts can be downloaded; a pending or quarantined one is a 404. The link expires after
+        at most five minutes and forces a download with a sanitised file name.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/ExpenseId"
+        - $ref: "#/components/parameters/ReceiptId"
+      responses:
+        "200":
+          description: The download link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DownloadLink" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/expenses/{expenseId}:submit:
+    post:
+      tags: [expenses]
+      operationId: submitExpense
+      summary: Submit a draft for approval (claimant)
+      description: Needs at least one accepted receipt and no receipt still being scanned.
+      parameters: &transition-params
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/ExpenseId"
+      responses: &transition-responses
+        "200":
+          description: The expense after the transition
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpenseResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/expenses/{expenseId}:withdraw:
+    post:
+      tags: [expenses]
+      operationId: withdrawExpense
+      summary: Pull a submitted expense back to draft (claimant)
+      parameters: *transition-params
+      responses: *transition-responses
+
+  /teams/{teamId}/expenses/{expenseId}:approve:
+    post:
+      tags: [expenses]
+      operationId: approveExpense
+      summary: Approve a submitted expense (APPROVER or OWNER, not the claimant)
+      parameters: *transition-params
+      responses: *transition-responses
+
+  /teams/{teamId}/expenses/{expenseId}:reject:
+    post:
+      tags: [expenses]
+      operationId: rejectExpense
+      summary: Reject a submitted expense (APPROVER or OWNER, not the claimant)
+      parameters: *transition-params
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectRequest"
+      responses:
+        "200":
+          description: The rejected expense
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpenseResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /teams/{teamId}/expenses/{expenseId}:reopen:
+    post:
+      tags: [expenses]
+      operationId: reopenExpense
+      summary: Turn a rejected expense back into a draft (claimant)
+      parameters: *transition-params
+      responses: *transition-responses
+
+  /teams/{teamId}/expenses/{expenseId}:reimburse:
+    post:
+      tags: [expenses]
+      operationId: reimburseExpense
+      summary: Record an approved expense as paid back (OWNER, not the claimant)
+      parameters: *transition-params
+      responses: *transition-responses
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ExpenseId:
+      name: expenseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReceiptId:
+      name: receiptId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: The ETag from the last read of this expense.
+      schema: { type: string, maxLength: 64 }
+    RequestedWith:
+      name: X-Requested-With
+      in: header
+      required: true
+      description: Must be `ledgerly`. A header a cross-site form cannot set (CSRF defence, ADR 0004).
+      schema: { type: string, enum: [ledgerly] }
+    RefreshCookie:
+      name: refresh_token
+      in: cookie
+      required: false
+      schema: { type: string, maxLength: 200 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, minLength: 8, maxLength: 128 }
+
+  schemas:
+    Money:
+      type: object
+      description: >
+        An amount and its currency. `amount` is a decimal string so no float ever touches it, and it must not
+        have more decimals than the currency allows.
+      required: [amount, currency]
+      additionalProperties: false
+      properties:
+        amount:
+          type: string
+          pattern: '^[0-9]{1,15}(\.[0-9]{1,4})?$'
+          examples: ["12.50"]
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          examples: [EUR]
+    Category:
+      type: string
+      enum: [TRAVEL, MEALS, OFFICE, SOFTWARE, OTHER]
+    ExpenseStatus:
+      type: string
+      enum: [DRAFT, SUBMITTED, APPROVED, REJECTED, REIMBURSED]
+    CreateExpenseRequest:
+      type: object
+      required: [money, category, incurredOn, merchant]
+      additionalProperties: false
+      properties:
+        money: { $ref: "#/components/schemas/Money" }
+        category: { $ref: "#/components/schemas/Category" }
+        incurredOn: { type: string, format: date }
+        merchant: { type: string, minLength: 1, maxLength: 200 }
+        note: { type: string, maxLength: 2000 }
+    UpdateExpenseRequest:
+      type: object
+      description: Absent fields stay unchanged. An empty `note` clears the note.
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        money: { $ref: "#/components/schemas/Money" }
+        category: { $ref: "#/components/schemas/Category" }
+        incurredOn: { type: string, format: date }
+        merchant: { type: string, minLength: 1, maxLength: 200 }
+        note: { type: string, maxLength: 2000 }
+    RejectRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    ExpenseResponse:
+      type: object
+      required: [id, teamId, claimantId, money, category, incurredOn, merchant, status, rejectionReasons]
+      properties:
+        id: { type: string, format: uuid }
+        teamId: { type: string, format: uuid }
+        claimantId: { type: string, format: uuid }
+        money: { $ref: "#/components/schemas/Money" }
+        category: { $ref: "#/components/schemas/Category" }
+        incurredOn: { type: string, format: date }
+        merchant: { type: string }
+        note: { type: string }
+        status: { $ref: "#/components/schemas/ExpenseStatus" }
+        rejectionReasons:
+          type: array
+          items: { type: string }
+    BatchItemMoney:
+      type: object
+      description: Deliberately unconstrained here; each item is checked on its own so one bad item cannot sink the rest.
+      required: [amount, currency]
+      properties:
+        amount: { type: string }
+        currency: { type: string }
+    BatchExpenseItem:
+      type: object
+      required: [money, category, incurredOn, merchant]
+      properties:
+        money: { $ref: "#/components/schemas/BatchItemMoney" }
+        category: { $ref: "#/components/schemas/Category" }
+        incurredOn: { type: string, format: date }
+        merchant: { type: string }
+        note: { type: string }
+    BatchRequest:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/BatchExpenseItem" }
+    ItemProblem:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, examples: [VALIDATION_FAILED] }
+        field: { type: string, examples: [merchant] }
+        message: { type: string }
+    BatchItemStatus:
+      type: string
+      enum: [CREATED, REJECTED]
+    BatchItemResult:
+      type: object
+      required: [index, status]
+      properties:
+        index: { type: integer }
+        status: { $ref: "#/components/schemas/BatchItemStatus" }
+        id: { type: string, format: uuid }
+        problem: { $ref: "#/components/schemas/ItemProblem" }
+    BatchResponse:
+      type: object
+      required: [created, rejected, results]
+      properties:
+        created: { type: integer }
+        rejected: { type: integer }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/BatchItemResult" }
+    ImportStatus:
+      type: string
+      enum: [QUEUED, RUNNING, COMPLETED, FAILED]
+    ImportRowError:
+      type: object
+      required: [line, code, message]
+      properties:
+        line: { type: integer, description: The line number in the uploaded file (the header is line 1). }
+        code: { type: string }
+        message: { type: string }
+    ImportResponse:
+      type: object
+      required: [id, status, totalRows, importedRows, skippedRows, errors, errorsTruncated]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/ImportStatus" }
+        totalRows: { type: integer }
+        importedRows: { type: integer }
+        skippedRows: { type: integer }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/ImportRowError" }
+        errorsTruncated: { type: boolean }
+    AuditEvent:
+      type: object
+      required: [id, eventType, occurredAt, details]
+      properties:
+        id: { type: string, format: uuid }
+        eventType: { type: string, examples: [EXPENSE_SUBMITTED] }
+        occurredAt: { type: string, format: date-time }
+        actorId: { type: string, format: uuid, description: The user who did it; absent when the system did. }
+        subjectType: { type: string, examples: [EXPENSE] }
+        subjectId: { type: string, format: uuid }
+        details:
+          type: object
+          description: Ids and field names only; never names, emails or amounts.
+          additionalProperties: true
+    AuditEventPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEvent" }
+        nextCursor: { type: string, description: Absent on the last page. }
+    ScanStatus:
+      type: string
+      enum: [PENDING_SCAN, ACCEPTED, QUARANTINED]
+    ReceiptResponse:
+      type: object
+      required: [id, expenseId, status, detectedType, sizeBytes, originalName, possibleDuplicate]
+      properties:
+        id: { type: string, format: uuid }
+        expenseId: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/ScanStatus" }
+        detectedType: { type: string, enum: [application/pdf, image/jpeg, image/png] }
+        sizeBytes: { type: integer, format: int64 }
+        originalName: { type: string, description: Metadata only; never used as a storage path. }
+        possibleDuplicate: { type: boolean }
+    DownloadLink:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url: { type: string }
+        expiresAt: { type: string, format: date-time }
+    Role:
+      type: string
+      enum: [MEMBER, APPROVER, OWNER]
+    InvitationStatus:
+      type: string
+      enum: [PENDING, ACCEPTED, DECLINED, REVOKED, EXPIRED]
+    CreateTeamRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+    TeamResponse:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    InviteRequest:
+      type: object
+      required: [email, role]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        role: { $ref: "#/components/schemas/Role" }
+    InvitationResponse:
+      type: object
+      required: [id, role, status, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        role: { $ref: "#/components/schemas/Role" }
+        status: { $ref: "#/components/schemas/InvitationStatus" }
+        expiresAt: { type: string, format: date-time }
+    ChangeRoleRequest:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        role: { $ref: "#/components/schemas/Role" }
+    MemberResponse:
+      type: object
+      required: [userId, role]
+      properties:
+        userId: { type: string, format: uuid }
+        role: { $ref: "#/components/schemas/Role" }
+    MembershipResponse:
+      type: object
+      required: [teamId, role]
+      properties:
+        teamId: { type: string, format: uuid }
+        role: { $ref: "#/components/schemas/Role" }
+    MeTeam:
+      type: object
+      required: [teamId, name, role]
+      properties:
+        teamId: { type: string, format: uuid }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+    MeInvitation:
+      type: object
+      required: [id, teamId, teamName, role, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        teamId: { type: string, format: uuid }
+        teamName: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        expiresAt: { type: string, format: date-time }
+    MeResponse:
+      type: object
+      required: [id, email, verified, teams, invitations]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        verified: { type: boolean }
+        teams:
+          type: array
+          items: { $ref: "#/components/schemas/MeTeam" }
+        invitations:
+          type: array
+          items: { $ref: "#/components/schemas/MeInvitation" }
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 12, maxLength: 128, writeOnly: true }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+    VerifyRequest:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string, minLength: 20, maxLength: 200 }
+    Accepted:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+    TokenResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn]
+      properties:
+        accessToken: { type: string }
+        tokenType: { type: string, enum: [Bearer] }
+        expiresIn: { type: integer, description: Lifetime in seconds. }
+    JwkSet:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items: { type: object, additionalProperties: true }
+    PageMetadata:
+      type: object
+      description: Same shape as Spring Data's `PagedModel` page metadata.
+      required: [size, number, totalElements, totalPages]
+      properties:
+        size: { type: integer }
+        number: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    ExpensePage:
+      type: object
+      required: [content, page]
+      properties:
+        content:
+          type: array
+          items: { $ref: "#/components/schemas/ExpenseResponse" }
+        page: { $ref: "#/components/schemas/PageMetadata" }
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field: { type: string }
+        message: { type: string }
+    Problem:
+      type: object
+      description: RFC 9457 problem details with Ledgerly extensions.
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri, examples: ["https://ledgerly.dev/problems/invalid-transition"] }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string, examples: [EXPENSE_INVALID_TRANSITION] }
+        traceId: { type: string, examples: ["4bf92f3577b34da6a3ce929d0e0e4736"] }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/FieldError" }
+
+  responses:
+    BadRequest:
+      description: Malformed or invalid request. Field problems are listed in `errors`.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: The caller's role does not allow this action.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: No such resource, or the caller may not know it exists.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: Illegal workflow transition or self-dealing.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    PreconditionFailed:
+      description: The `If-Match` ETag is stale.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    PreconditionRequired:
+      description: The `If-Match` header is missing.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unprocessable:
+      description: A business rule is not met, or an idempotency key was reused with a different body.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    PayloadTooLarge:
+      description: The request body is larger than the limit.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    UnsupportedMediaType:
+      description: The file is not a PDF, JPEG or PNG, whatever its name or declared type says.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    InternalError:
+      description: Unexpected failure. Only the `traceId` is revealed.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }

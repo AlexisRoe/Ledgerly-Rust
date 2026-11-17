@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into import_row_errors (import_id, line, code, message) values ($1, $2, $3, $4) on conflict do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "958d18ff7bd7c76d3505399fd3a5468e996568081fef99e408d70e9a3ddb1086"
+}

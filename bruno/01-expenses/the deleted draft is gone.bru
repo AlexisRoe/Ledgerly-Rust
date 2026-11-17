@@ -1,0 +1,19 @@
+meta {
+  name: the deleted draft is gone
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{host}}/teams/{{teamId}}/expenses/{{draftId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+assert {
+  res.status: eq 404
+}

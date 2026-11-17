@@ -1,0 +1,25 @@
+meta {
+  name: export as CSV
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{host}}/teams/{{teamId}}/expenses.csv
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{aliceToken}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("a CSV", function () {
+    expect(res.headers["content-type"]).to.contain("text/csv");
+  });
+}

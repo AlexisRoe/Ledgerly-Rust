@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update expenses\n            set amount = $3, currency = $4, category = $5, incurred_on = $6, merchant = $7, note = $8,\n                status = $9, version = $10, updated_at = $11\n          where team_id = $1 and id = $2 and version = $12",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Numeric",
+        "Bpchar",
+        "Varchar",
+        "Date",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "567ec27d44efa11aa87cbeee23b68dad760281a9806513ca6248aaf0995357ee"
+}

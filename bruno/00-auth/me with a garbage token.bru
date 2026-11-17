@@ -1,0 +1,23 @@
+meta {
+  name: me with a garbage token
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{host}}/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{garbageToken}}
+}
+
+script:pre-request {
+  bru.setVar("garbageToken", "not.a.jwt");
+}
+
+assert {
+  res.status: eq 401
+}

@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select e.line, e.code, e.message from import_row_errors e join import_jobs j on j.id = e.import_id where j.team_id = $1 and e.import_id = $2 order by e.line limit $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "line",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "import_row_errors",
+            "name": "line"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "import_row_errors",
+            "name": "code"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "message",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "import_row_errors",
+            "name": "message"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9a94ef64ac3baa9d8a330af8f88eb13316f32b1daf267dad4e9b0c66ee6e7211"
+}

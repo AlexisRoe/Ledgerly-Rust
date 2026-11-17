@@ -1,0 +1,36 @@
+meta {
+  name: carol creates an expense
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{host}}/teams/{{teamId}}/expenses
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{carolToken}}
+}
+
+body:json {
+  {
+    "money": {
+      "amount": "12.50",
+      "currency": "EUR"
+    },
+    "category": "TRAVEL",
+    "incurredOn": "2026-01-15",
+    "merchant": "Rail Bruno",
+    "note": "Team lunch"
+  }
+}
+
+script:post-response {
+  bru.setVar("flowId", res.body.id);
+}
+
+assert {
+  res.status: eq 201
+}

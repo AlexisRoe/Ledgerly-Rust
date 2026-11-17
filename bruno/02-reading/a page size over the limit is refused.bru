@@ -1,0 +1,19 @@
+meta {
+  name: a page size over the limit is refused
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{host}}/teams/{{teamId}}/expenses?size=100000
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{aliceToken}}
+}
+
+assert {
+  res.status: eq 400
+}

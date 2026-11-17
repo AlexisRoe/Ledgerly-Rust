@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into expense_rejections (expense_id, position, rejected_by, reason) values ($1, $2, $3, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Uuid",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "85838a2cd33cd57175fac2519efd7f1cdf789f4ebae227ed9c5a9ab2136e440d"
+}
