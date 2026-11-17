@@ -3,9 +3,9 @@
 //! Java counterpart: Micrometer with the Prometheus registry (`spring-boot-starter-actuator`,
 //! `micrometer-registry-prometheus`). The modules count with the `metrics` macros under Java's meter names
 //! (`ledgerly.expenses.transitions`, `ledgerly.receipts.quarantined`, `ledgerly.imports.rows.skipped`, and the
-//! `ledgerly.s3` and `ledgerly.clamav.scan` timers of `shared::observation`); the recorder installed here turns
-//! them into Micrometer's Prometheus names: dots become underscores, counters end in `_total`, timers in
-//! `_seconds`.
+//! `ledgerly.s3` and `ledgerly.clamav.scan` timers, which `shared::observation` keeps and renders itself in
+//! Micrometer's shape); the recorder installed here gives the counters Micrometer's Prometheus names: dots
+//! become underscores and counters end in `_total`.
 //!
 //! The JVM and Spring MVC series have Rust counterparts instead (decided after M1):
 //! `process_resident_memory_bytes`, and the request histogram `http_server_request_duration_seconds` under
@@ -112,6 +112,7 @@ pub(crate) fn keep_up() -> tokio::task::JoinHandle<()> {
 /// The scrape: everything recorded, plus the process's resident memory where the system reports it.
 pub(crate) fn render() -> String {
     let mut text = prometheus().map(PrometheusHandle::render).unwrap_or_default();
+    text.push_str(&ledgerly_shared::observation::render());
     if let Some(bytes) = resident_memory_bytes() {
         text.push_str(&format!(
             "# HELP process_resident_memory_bytes Resident memory size in bytes.\n\
@@ -179,9 +180,6 @@ mod tests {
             metrics::counter!("ledgerly.expenses.transitions", "action" => "submit").increment(1);
             metrics::counter!("ledgerly.receipts.quarantined").increment(1);
             metrics::counter!("ledgerly.imports.rows.skipped").increment(2);
-            let observation =
-                ledgerly_shared::observation::Observation::start("ledgerly.s3", "s3 put").with_tag("operation", "put");
-            observation.stop();
             metrics::histogram!(HTTP_SERVER_DURATION, "http.request.method" => "GET").record(0.002);
         });
         let text = handle.render();
@@ -190,7 +188,6 @@ mod tests {
             "ledgerly_expenses_transitions_total{action=\"submit\"} 1",
             "ledgerly_receipts_quarantined_total 1",
             "ledgerly_imports_rows_skipped_total 2",
-            "ledgerly_s3_seconds_count{operation=\"put\",error=\"none\"} 1",
             "http_server_request_duration_seconds_bucket{http_request_method=\"GET\",le=\"0.005\"} 1",
         ] {
             assert!(text.contains(expected), "{expected} is not in\n{text}");

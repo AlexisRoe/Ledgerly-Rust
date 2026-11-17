@@ -248,7 +248,7 @@ async fn observed<T>(
         "move" => "s3 move",
         _ => "s3 presign",
     };
-    let mut observation = Observation::start("ledgerly.s3", contextual_name).with_tag("operation", operation);
+    let mut observation = Observation::start("ledgerly.s3", contextual_name, &[("operation", operation)]);
     let result = call.instrument(span(operation)).await;
     if let Err(error) = &result {
         // Java tags the exception's class; these are the AWS SDK's for a missing object and any other failure.

@@ -111,7 +111,7 @@ impl MalwareScanner for ClamAvScanner {
         let span = tracing::info_span!("ledgerly.clamav.scan", outcome = tracing::field::Empty);
         Box::pin(
             async move {
-                let mut observation = Observation::start("ledgerly.clamav.scan", "clamav scan");
+                let mut observation = Observation::start("ledgerly.clamav.scan", "clamav scan", &[]);
                 let result = self.scan_once(content).await;
                 let outcome = match &result {
                     Ok(Verdict::Clean) => "clean",
