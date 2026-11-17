@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>What unsafe allows</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">unsafe, briefly</p>
+  <h1>What <code>unsafe</code> allows</h1>
+  <p class="lede">Every guarantee in this course (no dangling references, no data races) comes from rules the compiler
+    can check. <code>unsafe</code> marks code where the programmer, not the compiler, vouches for those rules. Ledgerly
+    forbids it outright. Here is what you're giving up, and why that's fine.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can list what <code>unsafe</code> unlocks, explain "safe abstraction over unsafe code", and say why Ledgerly
+      uses <code>forbid</code> rather than <code>deny</code>.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary><code>deny</code> vs <code>forbid</code> as a lint level?</summary>
+      <div>Both make it an error; <code>forbid</code> can't be overridden further down with <code>allow</code>. (5, 60)</div></details>
+    <details><summary>Why is implementing <code>Send</code> yourself <code>unsafe</code>?</summary>
+      <div>The compiler can't verify your claim that the type is safe to move between threads. (98)</div></details>
+  </div>
+
+  <h2>The five superpowers</h2>
+  <p>Inside an <code>unsafe { … }</code> block or <code>unsafe fn</code>, you may
+    (<a href="https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html">Book 20.1</a>):</p>
+  <ol>
+    <li>dereference a raw pointer (<code>*const T</code>, <code>*mut T</code>);</li>
+    <li>call an <code>unsafe</code> function, including C functions over FFI;</li>
+    <li>read or write a mutable <code>static</code>;</li>
+    <li>implement an <code>unsafe</code> trait (<code>Send</code>, <code>Sync</code>);</li>
+    <li>access fields of a <code>union</code>.</li>
+  </ol>
+  <p>That's all. The borrow checker and type checker still run inside <code>unsafe</code>; you just get these extra
+    operations, and the duty to uphold the rules they could break. Break them, and the result is
+    <strong>undefined behaviour</strong>: the program may do anything, including appearing to work.</p>
+
+  <h2>Safe abstractions</h2>
+  <p><code>Vec</code>, <code>String</code>, <code>Mutex</code>, <code>Arc</code> and Tokio are built on
+    <code>unsafe</code> code. Their authors prove once, carefully, that every possible use of the <em>safe</em> API keeps
+    the rules, and wrap the unsafe parts behind it. You use <code>Vec::push</code> without <code>unsafe</code> because
+    someone else did the proof. That's the whole model: a small amount of audited <code>unsafe</code> at the bottom,
+    safe code everywhere else.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <script type="text/x-code" data-lang="toml" data-src="Cargo.toml" data-line="17">
+      [workspace.lints.rust]
+      unsafe_code = "forbid"
+    </script>
+    <script type="text/x-code" data-lang="rust" data-src="crates/receipts/src/lib.rs" data-line="6">
+      #![forbid(unsafe_code)]
+    </script>
+    <p>Twice: as a workspace lint and as a crate attribute at the top of every crate. <code>forbid</code> means no module
+      can opt back in with <code>#[allow(unsafe_code)]</code>. A web backend has no need to: everything it does
+      (HTTP, SQL, JSON, crypto) is available as safe APIs, and a memory-safety bug in a service that handles
+      receipts and passwords would be a security bug.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS's escape hatches (<code>any</code>, <code>as</code>, <code>// @ts-ignore</code>) only weaken type checking; the
+      JS engine still prevents memory corruption. Rust's <code>unsafe</code> can corrupt memory, so it's treated far more
+      seriously: minimal, commented, reviewed, and in application code, usually banned.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Does the borrow checker still run inside an <code>unsafe</code> block?</p>
+    <ul class="options">
+      <li>No, unsafe turns off every compiler check</li>
+      <li data-correct>Yes; unsafe only adds five extra operations</li>
+      <li>Only for references created outside the block</li>
+      <li>Only when built in debug mode</li>
+    </ul>
+    <div class="explain"><code>unsafe</code> unlocks operations; it doesn't switch checks off.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why can you call <code>Vec::push</code> without <code>unsafe</code>, though it uses unsafe code inside?</p>
+    <ul class="options">
+      <li>Because std is compiled with a special compiler flag</li>
+      <li data-correct>Its safe API is proven sound for any use</li>
+      <li>Because Vec checks all its pointers at runtime</li>
+      <li>Because unsafe code inside std can never misbehave</li>
+    </ul>
+    <div class="explain">Safe abstraction: the proof obligation sits with the author of the unsafe code.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why <code>forbid(unsafe_code)</code> rather than <code>deny</code>?</p>
+    <ul class="options">
+      <li>Because forbid also bans unsafe in dependencies</li>
+      <li data-correct>No module can override it with an allow</li>
+      <li>Because deny only produces warnings, not errors</li>
+      <li>Because forbid makes the build noticeably faster</li>
+    </ul>
+    <div class="explain">Dependencies are unaffected; that's lesson 122.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html">20.1 "Unsafe Rust"</a>. For the deep end,
+      <a href="https://doc.rust-lang.org/nomicon/">The Rustonomicon</a>, the official guide to writing unsafe code.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

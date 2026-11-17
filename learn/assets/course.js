@@ -188,6 +188,11 @@
         [119, "macro-patterns", "Repetition, internal rules and hygiene"],
         [120, "procedural-macros", "Procedural macros, and when not to write one"],
       ] },
+    { title: "unsafe, briefly", blurb: "What unsafe allows, why Ledgerly forbids it, and how to judge it in dependencies.",
+      ref: "macros-unsafe.html", lessons: [
+        [121, "what-unsafe-allows", "What unsafe allows"],
+        [122, "unsafe-in-dependencies", "Reading unsafe in dependencies"],
+      ] },
   ];
 
   const REFERENCES = [
