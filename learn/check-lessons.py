@@ -31,6 +31,7 @@ class Page(HTMLParser):
         self._in_li = False
         self._li_text = ""
         self.has_source = False
+        self.fixed = set()
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
@@ -39,6 +40,8 @@ class Page(HTMLParser):
         if tag == "ul" and "options" in (a.get("class") or ""):
             self._in_options = True
             self.quizzes.append([])
+            if "data-fixed" in a:
+                self.fixed.add(len(self.quizzes))
         if tag == "li" and self._in_options:
             self._in_li = True
             self._li_text = ""
@@ -121,6 +124,8 @@ def main():
             if not parser.quizzes:
                 warnings.append(f"{rel}: no quiz")
             for i, options in enumerate(parser.quizzes, 1):
+                if i in parser.fixed:  # fixed-order options are code or short labels
+                    continue
                 counts = [len(o.split()) for o in options]
                 if len(set(counts)) > 1 and max(counts) - min(counts) > 1:
                     warnings.append(f"{rel}: quiz {i} option word counts differ: {counts}")

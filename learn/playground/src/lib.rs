@@ -4,3 +4,5 @@
 
 // Exercises start with unfinished functions; these warnings would only be noise.
 #![allow(dead_code, unused_variables, unused_mut, unused_imports)]
+pub mod ex09_expressions;
+pub mod ex12_paths;

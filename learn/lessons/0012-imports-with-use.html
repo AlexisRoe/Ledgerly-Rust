@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Imports with use</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Basic syntax and code organisation</p>
+  <h1>Imports with <code>use</code></h1>
+  <p class="lede"><code>use</code> is <code>import { … } from</code>, but paths are module paths separated by
+    <code>::</code>, starting from a crate, <code>crate</code>, <code>super</code> or <code>self</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read the block of <code>use</code> lines at the top of any Ledgerly file and say, for each name,
+      whether it comes from the standard library, an external crate, a sibling Ledgerly crate, or this crate.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Where does the compiler look for <code>mod dto;</code> written in
+      <code>src/web/mod.rs</code>?</summary>
+      <div><code>src/web/dto.rs</code> or <code>src/web/dto/mod.rs</code>.</div></details>
+    <details><summary>What happens to a <code>.rs</code> file no <code>mod</code> declares?</summary>
+      <div>It's ignored, not even compiled.</div></details>
+  </div>
+
+  <h2>Paths and where they start</h2>
+  <p>Every item has a <strong>path</strong>, like a file path with <code>::</code> as separator. You can always write
+    the full path inline (<code>std::sync::Arc::new(x)</code>). <code>use</code> creates a local shortcut so you can
+    write <code>Arc::new(x)</code> (<a href="https://doc.rust-lang.org/book/ch07-04-bringing-paths-into-scope-with-the-use-keyword.html">Book 7.4</a>).</p>
+  <table>
+    <thead><tr><th>Path starts with</th><th>Means</th><th>TypeScript feel</th></tr></thead>
+    <tbody>
+      <tr><td><code>std::</code></td><td>The standard library (always available)</td><td>Node built-ins (<code>node:fs</code>)</td></tr>
+      <tr><td><code>axum::</code>, <code>sqlx::</code>, …</td><td>An external crate from <code>[dependencies]</code></td><td><code>from "express"</code></td></tr>
+      <tr><td><code>ledgerly_shared::</code></td><td>A sibling crate in the workspace</td><td><code>from "@ledgerly/shared"</code></td></tr>
+      <tr><td><code>crate::</code></td><td>The root of <em>this</em> crate</td><td>an alias like <code>@/</code> for <code>src/</code></td></tr>
+      <tr><td><code>super::</code></td><td>The parent module</td><td><code>from "../"</code></td></tr>
+      <tr><td><code>self::</code></td><td>The current module</td><td><code>from "./"</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: the imports of the expense endpoints</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/mod.rs" data-line="18">
+      use std::sync::Arc;
+
+      use axum::extract::{Request, State};
+      use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
+      use axum::response::{IntoResponse, Response};
+      use ledgerly_shared::clock::Clock;
+      use ledgerly_shared::config::Limits;
+      use ledgerly_shared::id::UserId;
+      use ledgerly_shared::id::{ExpenseId, TeamId};
+      // …
+      use sqlx::PgPool;
+
+      use self::dto::{
+          BatchRequest, BatchResponse, CreateExpenseRequest, ExpensePageResponse, ExpenseResponse, RejectRequest,
+          UpdateExpenseRequest,
+      };
+      use crate::application::{
+          // …
+      };
+      use crate::domain::{Action, Category, Expense, ExpenseStatus, NewExpense};
+    </script>
+    <p>Read it top to bottom: standard library, then external crates (<code>axum</code>, <code>sqlx</code>), the
+      sibling crate <code>ledgerly_shared</code>, then <code>self::dto</code> (the child module declared by
+      <code>mod dto;</code> a few lines up), then <code>crate::…</code> (other modules of
+      <code>ledgerly_expenses</code>). rustfmt sorts the groups.</p>
+  </div>
+
+  <h2>The syntax, side by side</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      import { Request, State } from "axum/extract";
+      import * as iso from "@ledgerly/shared/iso";
+      import { strip as stripText } from "@ledgerly/shared/text";
+      import { readFile } from "node:fs/promises";
+      import express from "express";      // default export
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      use axum::extract::{Request, State};       // braces = several names
+      use ledgerly_shared::iso;                  // a module; then iso::parse(…)
+      use ledgerly_shared::text::strip as strip_text; // rename with `as`
+      use std::fs::read_to_string;
+      use std::fmt::{self, Display};             // `self` = the module itself too
+      use super::*;                              // glob: everything public in parent
+    </script>
+  </div>
+  <ul>
+    <li>Rust has no default exports. Every name is named.</li>
+    <li>The convention: import <strong>types</strong> directly (<code>use std::sync::Arc;</code> →
+      <code>Arc</code>), but import the <strong>module</strong> of a function (<code>use ledgerly_shared::iso;</code>
+      → <code>iso::format(…)</code>), so the call site shows where the function comes from.</li>
+    <li><code>use super::*;</code> appears in almost every <code>mod tests</code>: the tests see everything in the
+      file they test, private items included (lesson 13).</li>
+  </ul>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <ul>
+      <li><strong><code>use</code> loads nothing.</strong> TS <code>import</code> also makes the file part of the
+        program. In Rust that's <code>mod</code>'s job (or the crate being in <code>Cargo.toml</code>).
+        <code>use</code> only creates a name. You can even write <code>use</code> inside a function body to scope
+        the shortcut.</li>
+      <li><strong>Traits must be in scope to call their methods.</strong> Sometimes a <code>use</code> seems unused,
+        like <code>use std::fmt::Write as _;</code> in <code>build.rs</code>. It's there so methods from the trait
+        <code>Write</code> work on a <code>String</code>. More in <a data-lesson="49"></a>.</li>
+    </ul>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex12_paths.rs</code> has two inline modules. Fill in the functions using
+      <code>super::</code>, <code>crate::</code> and a <code>use</code> with <code>as</code>, then run
+      <code>cargo test ex12</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Inside <code>crates/expenses/src/web/mod.rs</code>, what does <code>crate::domain::Action</code>
+      refer to?</p>
+    <ul class="options">
+      <li>Action in the workspace's root crate ledgerly-app</li>
+      <li data-correct>Action in the domain module of ledgerly_expenses</li>
+      <li>Action in a crates.io crate named domain</li>
+      <li>Action in a sibling folder of web</li>
+    </ul>
+    <div class="explain"><code>crate</code> is the root of the crate the file belongs to, here
+      <code>ledgerly_expenses</code>. From there it's <code>domain</code> → <code>Action</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's the Rust spelling of <code>import { strip as stripText } from "…/text"</code>?</p>
+    <ul class="options" data-fixed>
+      <li>use text::{strip: strip_text};</li>
+      <li data-correct>use text::strip as strip_text;</li>
+      <li>use strip_text = text::strip;</li>
+      <li>use text::strip(strip_text);</li>
+    </ul>
+    <div class="explain"><code>as</code> renames, also inside braces: <code>use a::{b as c, d};</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">A test module starts with <code>use super::*;</code>. What does it bring into scope?</p>
+    <ul class="options">
+      <li>Every item in the crate, public or not</li>
+      <li data-correct>Every item of the parent module under test</li>
+      <li>Only the public items of the standard library</li>
+      <li>Only the items whose names start with test</li>
+    </ul>
+    <div class="explain"><code>super</code> is the parent: for <code>mod tests</code> in <code>role.rs</code> that's
+      the <code>role</code> module. A child module can see its parent's private items.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch07-03-paths-for-referring-to-an-item-in-the-module-tree.html">7.3
+      "Paths"</a> and <a href="https://doc.rust-lang.org/book/ch07-04-bringing-paths-into-scope-with-the-use-keyword.html">7.4
+      "Bringing Paths into Scope with use"</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

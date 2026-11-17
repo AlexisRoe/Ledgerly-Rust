@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheat sheet: syntax and modules</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+</head>
+<body class="reference">
+<main>
+  <h1>Syntax and modules: TypeScript ↔ Rust</h1>
+  <p class="lede">Section 2 on one page.</p>
+
+  <h2>Variables, constants, functions</h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td><code>const x = 1;</code></td><td><code>let x = 1;</code></td><td>Immutable by default, deeply</td></tr>
+      <tr><td><code>let x = 1;</code></td><td><code>let mut x = 1;</code></td><td>Ask for mutability</td></tr>
+      <tr><td><code>let x: number = 1;</code></td><td><code>let x: i32 = 1;</code></td><td>Annotation optional when inferable</td></tr>
+      <tr><td>(not allowed)</td><td><code>let x = x.trim();</code></td><td>Shadowing: a new variable with the same name</td></tr>
+      <tr><td><code>const MAX = 10;</code> (module level)</td><td><code>const MAX: u32 = 10;</code></td><td>Type required</td></tr>
+      <tr><td><code>function f(a: number): number { return a * 2; }</code></td><td><code>fn f(a: i32) -&gt; i32 { a * 2 }</code></td><td>Last expression = return value</td></tr>
+      <tr><td><code>function f(): void</code></td><td><code>fn f()</code></td><td>Returns <code>()</code></td></tr>
+      <tr><td><code>return early;</code></td><td><code>return early;</code></td><td>Only for early exits</td></tr>
+      <tr><td><code>(() =&gt; { …; return v })()</code></td><td><code>{ …; v }</code></td><td>Blocks are expressions</td></tr>
+      <tr><td><code>console.log(`a=${a}`)</code></td><td><code>println!("a={a}")</code></td><td><code>{a:?}</code> = debug format</td></tr>
+      <tr><td><code>camelCase</code></td><td><code>snake_case</code></td><td>Types/variants stay <code>CamelCase</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Expression vs statement</h2>
+  <script type="text/x-code" data-lang="rust">
+    fn rank(self) -> u8 {
+        match self { Self::Member => 0, Self::Approver => 1, Self::Owner => 2 }   // no `;` → returned
+    }
+    let size = { let base = 10; base * 2 };   // block value: 20
+    x * 2;                                    // `;` → statement, value ()
+  </script>
+
+  <h2>Comments</h2>
+  <table>
+    <thead><tr><th>Rust</th><th>Documents</th><th>TS</th></tr></thead>
+    <tbody>
+      <tr><td><code>//</code>, <code>/* */</code></td><td>nothing</td><td>same</td></tr>
+      <tr><td><code>///</code></td><td>next item (Markdown)</td><td><code>/** … */</code></td></tr>
+      <tr><td><code>//!</code></td><td>enclosing module/crate</td><td><code>@packageDocumentation</code></td></tr>
+      <tr><td><code>[`Name`]</code> in docs</td><td>checked link to an item</td><td><code>{@link Name}</code></td></tr>
+      <tr><td><code>```</code> in docs</td><td>doc test, compiled and run</td><td>(none)</td></tr>
+      <tr><td><code>```compile_fail,E0308</code></td><td>passes only if it fails to compile</td><td>(none)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Modules: <code>mod</code> adds, <code>use</code> names</h2>
+  <table>
+    <thead><tr><th>Declared</th><th>Where</th><th>Code lives in</th></tr></thead>
+    <tbody>
+      <tr><td><code>mod x;</code></td><td><code>src/lib.rs</code> / <code>main.rs</code></td><td><code>src/x.rs</code> or <code>src/x/mod.rs</code></td></tr>
+      <tr><td><code>mod y;</code></td><td><code>src/x/mod.rs</code></td><td><code>src/x/y.rs</code> or <code>src/x/y/mod.rs</code></td></tr>
+      <tr><td><code>mod tests { … }</code></td><td>anywhere</td><td>inline, between the braces</td></tr>
+      <tr><td><code>#[cfg(test)] mod tests;</code></td><td></td><td>compiled only for tests</td></tr>
+    </tbody>
+  </table>
+  <p>A file nobody declares with <code>mod</code> is silently not compiled.</p>
+
+  <h2>Paths and <code>use</code></h2>
+  <table>
+    <thead><tr><th>TypeScript</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td><code>import { A, B } from "pkg/sub"</code></td><td><code>use pkg::sub::{A, B};</code></td></tr>
+      <tr><td><code>import * as iso from "…/iso"</code></td><td><code>use ledgerly_shared::iso;</code> → <code>iso::f()</code></td></tr>
+      <tr><td><code>import { a as b }</code></td><td><code>use x::a as b;</code></td></tr>
+      <tr><td><code>from "./child"</code></td><td><code>self::child::…</code></td></tr>
+      <tr><td><code>from "../"</code></td><td><code>super::…</code></td></tr>
+      <tr><td><code>from "@/…"</code> (src root alias)</td><td><code>crate::…</code></td></tr>
+      <tr><td><code>from "node:fs"</code></td><td><code>std::fs</code></td></tr>
+      <tr><td><code>from "@ledgerly/shared"</code></td><td><code>ledgerly_shared::…</code> (hyphen → underscore)</td></tr>
+      <tr><td>(n/a)</td><td><code>use super::*;</code>: everything from the parent (tests)</td></tr>
+      <tr><td>(n/a)</td><td><code>use std::fmt::Write as _;</code>: bring a trait's methods into scope</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Visibility</h2>
+  <table>
+    <thead><tr><th>Rust</th><th>Visible to</th></tr></thead>
+    <tbody>
+      <tr><td>(nothing)</td><td>this module and its descendants</td></tr>
+      <tr><td><code>pub(super)</code></td><td>+ the parent module</td></tr>
+      <tr><td><code>pub(crate)</code></td><td>the whole crate</td></tr>
+      <tr><td><code>pub</code></td><td>everyone who can reach the module path</td></tr>
+      <tr><td><code>pub use a::B;</code></td><td>re-export (≈ <code>export { B } from "./a"</code>)</td></tr>
+    </tbody>
+  </table>
+  <p>Fields are private unless marked <code>pub</code>, even in a <code>pub struct</code>. A private field forces
+    construction through a function, so the type can guarantee validity.</p>
+
+  <h2>Package layout</h2>
+  <script type="text/x-code" data-lang="text" data-label="Layout">
+    Cargo.toml   build.rs (runs before compile)
+    src/lib.rs   library root          src/main.rs   binary root
+    src/bin/*.rs extra binaries        tests/*.rs    integration tests (own crates, pub API only)
+    examples/    benches/
+  </script>
+  <p>Ledgerly module crates: <code>domain/</code> (pure rules) · <code>application/</code> (use cases) ·
+    <code>persistence/</code> (SQL) · <code>web/</code> (HTTP) · <code>facade.rs</code> + <code>events.rs</code>
+    (the public face).</p>
+
+  <p>Lessons: <a data-lesson="8"></a> · <a data-lesson="9"></a> · <a data-lesson="10"></a> ·
+    <a data-lesson="11"></a> · <a data-lesson="12"></a> · <a data-lesson="13"></a> · <a data-lesson="14"></a></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hello, Rust: fn main, let, mut, println!</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Basic syntax and code organisation</p>
+  <h1>Hello, Rust: <code>fn main</code>, <code>let</code>, <code>mut</code>, <code>println!</code></h1>
+  <p class="lede">Your first Rust program, and the three habits that differ from TypeScript right away:
+    immutable by default, <code>snake_case</code>, and macros ending in <code>!</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can write and run a small program that declares variables (mutable and not), defines constants and
+      prints formatted output.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Which command builds and runs a binary?</summary>
+      <div><code>cargo run</code> (add <code>--bin name</code> when a package has several binaries).</div></details>
+    <details><summary>What does <code>cargo check</code> do?</summary>
+      <div>Type- and borrow-checks without producing a binary: the fastest feedback.</div></details>
+  </div>
+
+  <h2>The smallest program</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      // index.ts: top-level code just runs
+      const name = "Ledgerly";
+      let count = 0;
+      count += 1;
+      console.log(`Hello, ${name}! count = ${count}`);
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      // src/main.rs: execution starts in `main`
+      fn main() {
+          let name = "Ledgerly";
+          let mut count = 0;
+          count += 1;
+          println!("Hello, {name}! count = {count}");
+      }
+    </script>
+  </div>
+  <ul>
+    <li><strong><code>fn main()</code></strong> is the entry point of every binary. There's no top-level code
+      outside functions.</li>
+    <li><strong><code>let</code> is TypeScript's <code>const</code></strong>. A <code>let</code> binding can't be
+      reassigned.</li>
+    <li><strong><code>let mut</code> is TypeScript's <code>let</code></strong>. You must <em>ask</em> for mutability.
+      The compiler warns if you write <code>mut</code> and never mutate.</li>
+    <li><strong><code>println!</code> is a macro</strong>, marked by the <code>!</code>. Macros generate code at
+      compile time. <code>println!</code> checks its format string while compiling, so a typo in
+      <code>{nmae}</code> is a compile error, not a runtime surprise. <code>{name}</code> inside the string works like
+      <code>${name}</code> in a template literal (<a data-lesson="61"></a> covers macros).</li>
+    <li>Statements end with <code>;</code>, and it's not optional. The next lesson shows why it matters.</li>
+  </ul>
+
+  <h2>Constants and naming</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/web/mod.rs" data-line="48">
+    const EXPENSES: &str = "/api/v1/teams/{teamId}/expenses";
+    const EXPENSE: &str = "/api/v1/teams/{teamId}/expenses/{expenseId}";
+  </script>
+  <p><code>const</code> declares a compile-time constant: <code>SCREAMING_SNAKE_CASE</code>, and the type is
+    <strong>required</strong> (<code>&amp;str</code> is text, <a data-lesson="18"></a>). Rust's naming rules are
+    enforced by compiler warnings
+    (<a href="https://rust-lang.github.io/api-guidelines/naming.html">API guidelines: naming</a>):</p>
+  <table>
+    <thead><tr><th>Kind</th><th>TypeScript habit</th><th>Rust</th></tr></thead>
+    <tbody>
+      <tr><td>variables, functions, modules, files</td><td><code>maxPageSize</code></td><td><code>max_page_size</code></td></tr>
+      <tr><td>types, traits, enum variants</td><td><code>ExpenseStatus</code></td><td><code>ExpenseStatus</code> (same)</td></tr>
+      <tr><td>constants, statics</td><td><code>MAX_SIZE</code> (convention)</td><td><code>MAX_SIZE</code> (warning otherwise)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Shadowing: same name, new variable</h2>
+  <p>Rust lets you declare a <em>new</em> variable with an existing name. TypeScript says "cannot redeclare block-scoped
+    variable". It's common for "the same value, transformed":</p>
+  <script type="text/x-code" data-lang="rust">
+    let amount = "12.50";               // &str, text from a request
+    let amount: f64 = amount.parse()?;  // a new `amount`, now a number; the old one is hidden
+  </script>
+  <p>This isn't mutation: the second <code>amount</code> can even have a different type. You'll see it in Ledgerly
+    whenever raw input gets parsed.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly</span>
+    <p>A test from the expense domain, using everything above. <code>let mut</code> counters are incremented in a
+      loop, <code>let</code> bindings are never changed, and <code>assert_eq!</code> is another macro:</p>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="695">
+      let mut legal = 0;
+      let mut illegal = 0;
+      for from in ExpenseStatus::ALL {
+          for action in Action::ALL {
+              let mut e = in_status(from);
+              let result = perform(&mut e, action);
+              // …
+          }
+      }
+      assert_eq!((legal, illegal), (6, 24));
+    </script>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS <code>const</code> only stops <em>reassignment</em>. You can still push into a <code>const</code>
+      array. Rust's plain <code>let</code> is deeper: without <code>mut</code> you can't change the value at all,
+      including its fields or elements. <code>let v = Vec::new(); v.push(1);</code> doesn't compile.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p>Open <code>learn/playground/src/bin/hello.rs</code>, do the two exercises in its comments, and run
+      <code>cargo run --bin hello</code> inside <code>learn/playground</code>. For exercise 2, read the full error
+      when you remove <code>mut</code>. Rust's messages tell you the fix (<code>help: consider making this binding
+      mutable</code>).</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What's the Rust equivalent of TypeScript's <code>let total = 0;</code> that you later change?</p>
+    <ul class="options" data-fixed>
+      <li>let total = 0;</li>
+      <li data-correct>let mut total = 0;</li>
+      <li>const total = 0;</li>
+      <li>var total = 0;</li>
+    </ul>
+    <div class="explain">Rust's <code>let</code> is immutable. Add <code>mut</code> to reassign or modify.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does <code>println!</code> end with <code>!</code>?</p>
+    <ul class="options">
+      <li>It may panic, so it's marked as dangerous</li>
+      <li data-correct>It's a macro that expands at compile time</li>
+      <li>It's an unsafe function from the C library</li>
+      <li>It prints right away without any output buffering</li>
+    </ul>
+    <div class="explain">The <code>!</code> marks a macro call. <code>println!</code> parses its format string at
+      compile time, so placeholders that don't match are compile errors.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which line does <em>not</em> compile?</p>
+    <ul class="options" data-fixed>
+      <li><code>let x = 1; let x = x + 1;</code></li>
+      <li data-correct><code>let x = 1; x = x + 1;</code></li>
+      <li><code>let mut x = 1; x += 1;</code></li>
+      <li><code>let x = 1; let x = "one";</code></li>
+    </ul>
+    <div class="explain">Assigning to an immutable binding is error E0384. The other lines are shadowing (a new
+      variable, any type) or a proper <code>mut</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">How would Rust name a function TypeScript calls <code>parseDataSize</code>?</p>
+    <ul class="options" data-fixed>
+      <li>ParseDataSize</li>
+      <li>parseDataSize</li>
+      <li data-correct>parse_data_size</li>
+      <li>PARSE_DATA_SIZE</li>
+    </ul>
+    <div class="explain">Functions and variables are <code>snake_case</code>. Ledgerly really has a
+      <code>parse_data_size</code> in <code>crates/shared/src/config/</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch03-01-variables-and-mutability.html">3.1 "Variables and
+      Mutability"</a> (including shadowing and constants).</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
