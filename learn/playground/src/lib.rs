@@ -26,3 +26,6 @@ pub mod ex40_borrow_errors;
 pub mod ex45_closures;
 pub mod ex46_iterators;
 pub mod ex47_collect;
+pub mod ex49_traits;
+pub mod ex51_conversions;
+pub mod ex52_generics;

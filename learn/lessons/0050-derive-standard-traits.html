@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>derive and the standard traits</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits and generics</p>
+  <h1><code>derive</code> and the standard traits</h1>
+  <p class="lede">In JS every object can be logged, compared by reference and copied by reference. In Rust a type
+    can do none of that until it implements the matching trait, usually with one <code>#[derive(…)]</code>
+    line.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read any <code>#[derive(…)]</code> line in Ledgerly and say what each name enables, and spot the traits
+      a type <em>deliberately</em> leaves out.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What's a default method in a trait?</summary>
+      <div>A method with a body in the trait that implementors get for free. (49)</div></details>
+    <details><summary>Copy vs Clone?</summary>
+      <div><code>Copy</code>: implicit bitwise copy, small types only. <code>Clone</code>: explicit
+        <code>.clone()</code>, any cost. (38)</div></details>
+  </div>
+
+  <h2>The derivable traits</h2>
+  <table>
+    <thead><tr><th>Trait</th><th>Enables</th><th>JS feel</th></tr></thead>
+    <tbody>
+      <tr><td><code>Debug</code></td><td><code>{:?}</code> / <code>{:#?}</code> formatting, <code>assert_eq!</code> messages</td><td><code>console.log(obj)</code></td></tr>
+      <tr><td><code>Clone</code></td><td><code>.clone()</code></td><td><code>structuredClone</code></td></tr>
+      <tr><td><code>Copy</code></td><td>implicit copies instead of moves</td><td>primitives</td></tr>
+      <tr><td><code>PartialEq</code> / <code>Eq</code></td><td><code>==</code>, <code>!=</code> (by value!)</td><td>a deep-equal function</td></tr>
+      <tr><td><code>PartialOrd</code> / <code>Ord</code></td><td><code>&lt;</code>, <code>&gt;</code>, <code>.sort()</code>, <code>.max()</code></td><td>a comparator</td></tr>
+      <tr><td><code>Hash</code></td><td>use as a <code>HashMap</code> key / in a <code>HashSet</code></td><td>Map keys (by reference in JS)</td></tr>
+      <tr><td><code>Default</code></td><td><code>Type::default()</code>: zero/empty values</td><td><code>{}</code> with defaults</td></tr>
+    </tbody>
+  </table>
+  <p><code>derive</code> generates the obvious implementation field by field. It only works if every field
+    implements that trait too. <code>Eq</code> and <code>Ord</code> are the stricter versions: "equality is a true
+    equivalence" (unlike floats, where <code>NaN != NaN</code>) and "every pair has an order"
+    (<a href="https://doc.rust-lang.org/book/appendix-03-derivable-traits.html">Book appendix C</a>).</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: what's derived, and what's missing</span>
+    <script type="text/x-code" data-lang="rust">
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]                                      // Role
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]          // TeamId etc.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]                                      // Money
+      #[derive(Debug, Clone, PartialEq, Eq)]                                                  // Expense
+      #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]                                // ExpenseError
+    </script>
+    <ul>
+      <li><code>Role</code> has no <code>Ord</code>, on purpose (lesson 22): "at least an approver" must go through
+        <code>includes</code>.</li>
+      <li><code>Money</code> has no <code>Ord</code> either: 1 EUR vs 1 USD has no answer, so comparison is the
+        fallible <code>Money::cmp</code> returning a <code>Result</code>, and <code>.sort()</code> on mixed currencies
+        can't compile.</li>
+      <li>Ids <em>do</em> have <code>Ord</code>: UUIDv7s sort by creation time, so sorting ids is meaningful.</li>
+      <li><code>Expense</code> isn't <code>Copy</code> (it holds strings and a <code>Vec</code>) and isn't
+        <code>Hash</code> (nobody needs it as a key).</li>
+      <li>Every type has <code>Debug</code>, except where it would leak secrets: <code>SecretString</code> prints
+        <code>[REDACTED]</code> (lesson 71).</li>
+    </ul>
+  </div>
+
+  <h2>Writing one by hand</h2>
+  <p><code>Display</code> (the <code>{}</code> format, user-facing text) can't be derived, because only you know what a
+    value should look like:</p>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/role.rs" data-line="59">
+    impl fmt::Display for Role {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(self.as_str())
+        }
+    }
+  </script>
+  <p>Now <code>format!("Role {role} may not {action}")</code> prints <code>OWNER</code>, and every type with
+    <code>Display</code> also gets <code>.to_string()</code> for free. JS's equivalent is overriding
+    <code>toString()</code>.</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>JS <code>===</code> compares objects by identity; two equal-looking objects are different. Rust's
+      <code>==</code> (from <code>PartialEq</code>) compares <em>values</em>, field by field. That's why
+      <code>assert_eq!(expense, expected)</code> in Ledgerly's tests works with no deep-equal helper. And when a
+      trait is missing, the operation simply doesn't compile, which is how Ledgerly turns "don't compare money
+      across currencies" into a type rule.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Which derive lets a type be a <code>HashMap</code> key?</p>
+    <ul class="options" data-fixed>
+      <li><code>Debug</code> only</li>
+      <li><code>Clone</code> + <code>Copy</code></li>
+      <li data-correct><code>PartialEq</code> + <code>Eq</code> + <code>Hash</code></li>
+      <li><code>PartialOrd</code> + <code>Ord</code></li>
+    </ul>
+    <div class="explain">A hash map needs to hash keys and compare them for equality. (<code>BTreeMap</code> would
+      need <code>Ord</code> instead.)</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why can't you call <code>.sort()</code> on a <code>Vec&lt;Money&gt;</code>?</p>
+    <ul class="options">
+      <li>Vectors of structs can never be sorted</li>
+      <li data-correct>Money doesn't implement Ord, which sorting needs</li>
+      <li>Money is Copy; sort requires non-Copy types</li>
+      <li>Decimal values inside Money have no order</li>
+    </ul>
+    <div class="explain">Deliberately: an order between currencies doesn't exist. Sort by amount within one currency
+      with <code>sort_by</code> and <code>Money::cmp</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>{:?}</code> need, and what does <code>{}</code> need?</p>
+    <ul class="options">
+      <li>Both need Display, written by hand each time</li>
+      <li data-correct>{:?} needs Debug, and {} needs Display</li>
+      <li>{:?} needs Display, and {} needs Debug</li>
+      <li>Both work for every type without traits</li>
+    </ul>
+    <div class="explain"><code>Debug</code> is for developers (often derived), <code>Display</code> for users
+      (always hand-written).</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/appendix-03-derivable-traits.html">Appendix C "Derivable
+      Traits"</a>, a short catalogue that explains each one.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

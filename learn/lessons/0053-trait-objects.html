@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trait objects: dyn Trait</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Traits and generics</p>
+  <h1>Trait objects: <code>dyn Trait</code></h1>
+  <p class="lede"><code>dyn Clock</code> means "some value implementing <code>Clock</code>, decided at runtime". It's
+    the closest thing Rust has to a TS variable typed as an interface, and Ledgerly's dependency injection is built on
+    it.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can explain why Ledgerly writes <code>Arc&lt;dyn Publisher&gt;</code> and <code>&amp;dyn Clock</code>
+      instead of generics, what <code>Send + Sync</code> on a trait means, and when you'd choose generics instead.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>What does monomorphization mean for <code>fn f&lt;T: Clock&gt;(c: &amp;T)</code>?</summary>
+      <div>The compiler generates a separate copy of <code>f</code> for each concrete clock type. (27, 52)</div></details>
+    <details><summary>Why is <code>Arc</code> needed for <code>dyn Clock</code> and not just a plain value?</summary>
+      <div>A <code>dyn</code> value's size isn't known at compile time, so it must sit behind a pointer
+        (<code>&amp;</code>, <code>Box</code>, <code>Arc</code>). (42)</div></details>
+  </div>
+
+  <h2>Static vs dynamic dispatch</h2>
+  <table>
+    <thead><tr><th></th><th>Generic <code>&lt;T: Clock&gt;</code> / <code>impl Clock</code></th><th>Trait object <code>dyn Clock</code></th></tr></thead>
+    <tbody>
+      <tr><td>Concrete type decided</td><td>at compile time, per call site</td><td>at runtime</td></tr>
+      <tr><td>Code generated</td><td>one copy per type</td><td>one copy; calls go through a table of function pointers (a "vtable")</td></tr>
+      <tr><td>Behind a pointer?</td><td>not needed</td><td>always: <code>&amp;dyn</code>, <code>Box&lt;dyn&gt;</code>, <code>Arc&lt;dyn&gt;</code></td></tr>
+      <tr><td>Mix types in one collection or field?</td><td>no</td><td>yes</td></tr>
+      <tr><td>TS feel</td><td>generics</td><td>a variable typed <code>Clock</code> (an interface)</td></tr>
+    </tbody>
+  </table>
+  <p>(<a href="https://doc.rust-lang.org/book/ch18-02-trait-objects.html">Book 18.2</a>)</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: services as trait objects</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/transition_expense.rs" data-line="20">
+      pub(crate) struct TransitionExpense {
+          pool: PgPool,
+          clock: Arc<dyn Clock>,
+          memberships: Arc<dyn MembershipLookup>,
+          receipts: Arc<dyn ReceiptChecks>,
+          events: Arc<dyn Publisher>,
+      }
+    </script>
+    <p>Why <code>dyn</code> here and not <code>struct TransitionExpense&lt;C: Clock, M: …, R: …, E: …&gt;</code>? With
+      generics, every type that holds a use case would need those four type parameters too, all the way up to the
+      router. With <code>dyn</code>, the struct has one concrete type, and which implementation sits behind each field
+      is decided when the app is wired up: the real teams lookup in production, an in-memory double in tests
+      (<code>application/doubles.rs</code>). The cost, one indirect call per use, is irrelevant next to a database
+      round trip.</p>
+    <p>This is also how the crate boundaries stay clean: <code>expenses</code> defines <code>ReceiptChecks</code>, and
+      <code>receipts</code> implements it, so <code>expenses</code> never depends on <code>receipts</code>
+      (lesson 72).</p>
+  </div>
+
+  <h2><code>Send</code> and <code>Sync</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/events/mod.rs" data-line="47">
+    pub trait Publisher: fmt::Debug + Send + Sync {
+  </script>
+  <p>Two marker traits the compiler implements automatically when safe: <strong><code>Send</code></strong> means
+    "can be moved to another thread", <strong><code>Sync</code></strong> means "can be shared between threads by
+    reference". Requiring them on the trait guarantees that any <code>Arc&lt;dyn Publisher&gt;</code> can be used by
+    request handlers running in parallel. A type containing an <code>Rc</code>, for instance, isn't <code>Send</code>,
+    so it couldn't implement <code>Publisher</code> by accident
+    (<a href="https://doc.rust-lang.org/book/ch16-04-extensible-concurrency-sync-and-send.html">Book 16.4</a>).</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TS every interface-typed variable works like a trait object, and there's no alternative. In Rust you choose:
+      generics when the type is known at the call site and speed matters (iterators, serde, axum handlers), and
+      <code>dyn</code> when implementations are swapped at runtime or need to be stored side by side. Not every trait
+      can be a <code>dyn</code>: generic methods, for example, aren't allowed ("dyn compatibility"), which is one
+      reason Ledgerly's async trait methods return a boxed future instead (section 10).</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">Why can't a struct field have the type <code>dyn Clock</code> without a pointer?</p>
+    <ul class="options">
+      <li>Traits can never be used as field types</li>
+      <li data-correct>Its size isn't known; implementations differ in size</li>
+      <li>Fields must be Copy, and dyn isn't Copy</li>
+      <li>The vtable can only live inside a Box</li>
+    </ul>
+    <div class="explain"><code>SystemClock</code> is zero bytes, <code>FixedClock</code> holds a mutex. A struct needs
+      a fixed size, so the field holds a pointer (<code>Arc</code>, <code>Box</code>, <code>&amp;</code>).</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does the <code>Send + Sync</code> requirement on <code>Publisher</code> guarantee?</p>
+    <ul class="options">
+      <li>Publishing an event never blocks the calling thread</li>
+      <li data-correct>Any implementation is safe to share across threads</li>
+      <li>Events are synced to the database in order</li>
+      <li>The publisher runs on a dedicated background thread</li>
+    </ul>
+    <div class="explain">They're thread-safety markers. Without them, <code>Arc&lt;dyn Publisher&gt;</code> couldn't be
+      used from a multi-threaded runtime.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">When would generics be the better choice over <code>dyn</code>?</p>
+    <ul class="options">
+      <li>When the implementation is picked from the configuration</li>
+      <li data-correct>When the type is fixed and speed matters</li>
+      <li>When different implementations share one single vector</li>
+      <li>When the trait has many default method bodies</li>
+    </ul>
+    <div class="explain">Generics avoid the indirect call and allow inlining. Runtime choice and mixed collections
+      need <code>dyn</code>.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch18-02-trait-objects.html">18.2 "Using Trait Objects to
+      Abstract over Shared Behavior"</a>, and skim
+      <a href="https://doc.rust-lang.org/book/ch16-04-extensible-concurrency-sync-and-send.html">16.4 on Send and
+      Sync</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
