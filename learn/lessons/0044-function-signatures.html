@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Function signatures in depth</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Functions, closures and iterators</p>
+  <h1>Function signatures in depth</h1>
+  <p class="lede">A Rust signature tells you more than a TS one: who owns each argument, whether the call can fail,
+    whether it's async, and whether the result may be ignored. Learn to read it like a contract.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read any function header in Ledgerly, including <code>pub(crate) async fn</code>,
+      <code>const fn</code>, <code>#[must_use]</code>, <code>impl Into&lt;String&gt;</code> and
+      <code>&amp;dyn Clock</code> parameters, and summarise its contract in one sentence.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>When does a parameter take <code>&amp;T</code>, <code>&amp;mut T</code> or <code>T</code>?</summary>
+      <div>Only reads; changes in place; keeps or consumes it (or it's a small <code>Copy</code> value). (39, 43)</div></details>
+    <details><summary>What does <code>-&gt; Result&lt;(), E&gt;</code> say?</summary>
+      <div>Nothing to return on success; may fail with an <code>E</code>. (25)</div></details>
+  </div>
+
+  <h2>Anatomy</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="277">
+    pub fn edit(&mut self, actor: Actor, new: &NewExpense, clock: &dyn Clock) -> Result<(), ExpenseError> {
+  </script>
+  <table>
+    <thead><tr><th>Part</th><th>Says</th></tr></thead>
+    <tbody>
+      <tr><td><code>pub</code></td><td>visible outside the module (lesson 13)</td></tr>
+      <tr><td><code>&amp;mut self</code></td><td>it changes this expense</td></tr>
+      <tr><td><code>actor: Actor</code></td><td>takes a copy (it's <code>Copy</code>)</td></tr>
+      <tr><td><code>new: &amp;NewExpense</code></td><td>only reads the new field values; the caller keeps them</td></tr>
+      <tr><td><code>clock: &amp;dyn Clock</code></td><td>borrows <em>any</em> clock implementation (real or fixed; lesson 53)</td></tr>
+      <tr><td><code>-&gt; Result&lt;(), ExpenseError&gt;</code></td><td>may refuse, with a typed reason</td></tr>
+    </tbody>
+  </table>
+  <p>One sentence: "Edit this expense in place, as this actor, using these values and this clock. It may refuse."</p>
+
+  <h2>Modifiers you'll see</h2>
+  <table>
+    <thead><tr><th>Modifier</th><th>Meaning</th><th>TS feel</th></tr></thead>
+    <tbody>
+      <tr><td><code>async fn</code></td><td>returns a future; call with <code>.await</code> (section 10)</td><td><code>async function</code></td></tr>
+      <tr><td><code>const fn</code></td><td>can also run at compile time, e.g. in a <code>const</code></td><td>(none)</td></tr>
+      <tr><td><code>#[must_use]</code></td><td>warn if the caller ignores the return value</td><td>ESLint <code>no-unused-expressions</code>, per function</td></tr>
+      <tr><td><code>pub(crate)</code></td><td>visible in this crate only</td><td>(none)</td></tr>
+      <tr><td>doc <code># Errors</code></td><td>Ledgerly's convention: which errors, in what order</td><td><code>@throws</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Flexible parameters: <code>impl Trait</code></h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/text.rs" data-line="24">
+    pub(crate) fn new(field: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            field,
+            message: message.into(),
+        }
+    }
+  </script>
+  <p><code>message: impl Into&lt;String&gt;</code> means "any type that can be converted into a
+    <code>String</code>". Callers can pass a literal <code>"Merchant is required"</code> or a
+    <code>format!(…)</code> result, and <code>.into()</code> does the conversion. It's like accepting
+    <code>string | String</code> without overloads. You'll meet traits properly in section 7. For now, read
+    <code>impl X</code> in a parameter as "anything that implements X".</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: no default parameters, no overloads</span>
+    <p>Rust has neither optional parameters (<code>f(a, b = 1)</code>) nor overloading. Ledgerly uses the usual
+      substitutes:</p>
+    <ul>
+      <li><strong>Different names</strong>: <code>Merchant::new</code> (validates) vs <code>Merchant::stored</code>
+        (trusts the database); <code>Money::new</code> vs <code>Money::parse</code>.</li>
+      <li><strong><code>Option</code> parameters</strong>: <code>reason: Option&lt;&amp;str&gt;</code> in
+        <code>TransitionExpense::execute</code>, because only reject has a reason.</li>
+      <li><strong>A struct of arguments</strong>: <code>NewExpense</code> and the <code>…Command</code> structs bundle
+        many fields, as you'd pass an options object in TS.</li>
+    </ul>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TS the signature says nothing about mutation, ownership or failure, so you read the body (or hope for good
+      JSDoc). In Rust most of that is in the types, which is why Ledgerly's doc comments can be short. Return types
+      are never inferred, so the signature is always complete.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What can a caller pass for <code>message: impl Into&lt;String&gt;</code>?</p>
+    <ul class="options">
+      <li>Only a String value that the caller owns already</li>
+      <li data-correct>A &amp;str literal, a String, or other convertible types</li>
+      <li>Any value at all, converted with a toString call</li>
+      <li>Only a reference to a String, never a literal</li>
+    </ul>
+    <div class="explain">Anything implementing <code>Into&lt;String&gt;</code>, which includes <code>&amp;str</code> and
+      <code>String</code>. The function calls <code>.into()</code> to get a <code>String</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Rust has no default parameter values. How does Ledgerly handle "reason only for reject"?</p>
+    <ul class="options">
+      <li>Two overloads of execute, with and without reason</li>
+      <li data-correct>An Option&lt;&amp;str&gt; parameter that is None for others</li>
+      <li>A global variable that holds the current reason</li>
+      <li>A default value written as reason = "" inline</li>
+    </ul>
+    <div class="explain"><code>reason: Option&lt;&amp;str&gt;</code>, and the reject branch uses
+      <code>reason.unwrap_or_default()</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>#[must_use]</code> on <code>fn status(&amp;self) -&gt; ExpenseStatus</code> do?</p>
+    <ul class="options">
+      <li>Forces callers to handle an error the function returns</li>
+      <li data-correct>Warns when a caller calls it and ignores the result</li>
+      <li>Makes the function run at compile time if possible</li>
+      <li>Prevents the function from being called more than once</li>
+    </ul>
+    <div class="explain">Calling a getter and throwing the result away is almost always a bug, and the lint catches
+      it.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch03-03-how-functions-work.html">3.3 "Functions"</a> (a
+      re-read with new eyes), and the Reference's page on
+      <a href="https://doc.rust-lang.org/reference/attributes/diagnostics.html#the-must_use-attribute"><code>must_use</code></a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

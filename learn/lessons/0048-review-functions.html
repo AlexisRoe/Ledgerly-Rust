@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review: functions and iterators</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Functions, closures and iterators · Review</p>
+  <h1>Review: functions and iterators</h1>
+  <p class="lede">Mixed practice on lessons 44–47 with ownership questions interleaved, then a rewrite exercise:
+    turn loops into chains, and back.</p>
+
+  <div class="goal">
+    <span class="box-label">How to do this review</span>
+    <p>Answer before opening. The rewrite exercise is the real test: if you can go both ways between a loop and a
+      chain, you can read any Ledgerly use case.</p>
+  </div>
+
+  <h2>Recall</h2>
+  <div class="recall">
+    <span class="box-label">Answer out loud, then open</span>
+    <details><summary>What does <code>impl Into&lt;String&gt;</code> mean as a parameter type?</summary>
+      <div>Any type convertible into a <code>String</code>; call <code>.into()</code> inside. (44)</div></details>
+    <details><summary>When does a closure need <code>move</code>?</summary>
+      <div>When it may outlive the variables it captures: stored, returned, spawned on another task or thread.
+        (45)</div></details>
+    <details><summary>TS's <code>.some</code>, <code>.every</code>, <code>.reduce</code> in Rust?</summary>
+      <div><code>.any</code>, <code>.all</code>, <code>.fold</code> (or <code>.sum</code>). (46)</div></details>
+    <details><summary>How do you go from an iterator of <code>Result</code>s to "all values or the first error"?</summary>
+      <div><code>.collect::&lt;Result&lt;Vec&lt;_&gt;, _&gt;&gt;()</code>. (47)</div></details>
+  </div>
+
+  <h2>Mixed questions</h2>
+  <div class="quiz">
+    <p class="q">Which chain returns the names of approved expenses?</p>
+    <ul class="options" data-fixed>
+      <li><code>xs.map(|e| e.name).filter(|e| e.approved)</code></li>
+      <li data-correct><code>xs.iter().filter(|e| e.approved).map(|e| e.name.clone()).collect::&lt;Vec&lt;_&gt;&gt;()</code></li>
+      <li><code>xs.iter().filter(|e| e.approved).map(|e| e.name.clone())</code></li>
+      <li><code>xs.filter_map(|e| e.approved).collect()</code></li>
+    </ul>
+    <div class="explain">You need a start (<code>iter</code>), filter before map, and a consumer. Option 3 is lazy and
+      produces nothing on its own.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Ownership) <code>let names: Vec&lt;&amp;str&gt; = expenses.iter().map(|e| e.merchant.as_str()).collect();</code>
+      What happens if you then <code>drop(expenses)</code> and use <code>names</code>?</p>
+    <ul class="options">
+      <li>Fine; names copied the text out</li>
+      <li data-correct>Compile error: names still borrows from expenses</li>
+      <li>A runtime panic when names is accessed</li>
+      <li>Fine; the strings move into names</li>
+    </ul>
+    <div class="explain"><code>&amp;str</code> items borrow from the expenses (E0505). Collect
+      <code>String</code>s (<code>.to_owned()</code>) if you need them to outlive the source.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What's the difference between <code>.ok_or(err())</code> and <code>.ok_or_else(err)</code>?</p>
+    <ul class="options">
+      <li>ok_or_else converts the error type, ok_or doesn't</li>
+      <li data-correct>ok_or always builds it; ok_or_else lazily</li>
+      <li>ok_or returns Option, ok_or_else returns a Result</li>
+      <li>None; they're aliases kept for compatibility reasons</li>
+    </ul>
+    <div class="explain">Arguments are evaluated before the call. Passing a closure delays the work.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">(Control flow) What does <code>note.map(Note::new).transpose()?</code> do when
+      <code>note</code> is <code>None</code>?</p>
+    <ul class="options">
+      <li>Returns an error because it's missing</li>
+      <li data-correct>Continues with None; nothing gets validated here</li>
+      <li>Panics, since transpose needs a Some value</li>
+      <li>Creates an empty Note, continuing with Some</li>
+    </ul>
+    <div class="explain"><code>None</code> → <code>Ok(None)</code> → <code>?</code> passes <code>None</code>
+      through.</div>
+  </div>
+
+  <h2>Rewrite both ways</h2>
+  <div class="exercise">
+    <span class="box-label">On paper or in the playground</span>
+    <ol>
+      <li>Rewrite <code>Role::from_str</code> (<a class="src" data-src="crates/shared/src/role.rs" data-line="82"></a>)
+        as a <code>for</code> loop with an early <code>return</code>.</li>
+      <li>Rewrite this loop as one chain:
+        <script type="text/x-code" data-lang="rust">
+          let mut total = 0;
+          for e in &expenses {
+              if e.category == Category::Travel {
+                  total += e.cents;
+              }
+          }
+        </script>
+      </li>
+    </ol>
+    <details class="reveal"><summary>Answers</summary>
+      <div>
+        <script type="text/x-code" data-lang="rust">
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              for role in Self::ALL {
+                  if role.as_str() == s {
+                      return Ok(role);
+                  }
+              }
+              Err(UnknownRole(s.to_owned()))
+          }
+
+          let total: u32 = expenses.iter().filter(|e| e.category == Category::Travel).map(|e| e.cents).sum();
+        </script>
+      </div></details>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The <a href="../reference/functions.html">functions and iterators cheat sheet</a>. For extra practice, the
+      <code>iterators</code> exercises in <a href="https://rustlings.rust-lang.org/">Rustlings</a>.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

@@ -23,3 +23,6 @@ pub mod ex34_question_mark;
 pub mod ex37_moves;
 pub mod ex39_borrowing;
 pub mod ex40_borrow_errors;
+pub mod ex45_closures;
+pub mod ex46_iterators;
+pub mod ex47_collect;

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Collecting into Result and Option</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Functions, closures and iterators</p>
+  <h1>Collecting into <code>Result</code> and <code>Option</code></h1>
+  <p class="lede">What if the closure in <code>map</code> can fail? Rust can turn "a list of results" into "a result
+    of a list" in one call, which is <code>Promise.all</code> for errors. Two small methods,
+    <code>transpose</code> and <code>map_err</code>, handle the remaining shapes.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read <code>.collect::&lt;Result&lt;Vec&lt;_&gt;, _&gt;&gt;()</code>,
+      <code>note.map(Note::new).transpose()?</code> and <code>.map_err(|_| InvalidId)</code>, and use them to keep
+      <code>?</code> working inside iterator code.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Name the three parts of an iterator chain.</summary>
+      <div>Start (<code>iter</code>/<code>into_iter</code>), lazy adapters (<code>map</code>, <code>filter</code>…), a
+        consumer (<code>collect</code>, <code>find</code>, <code>sum</code>…). (46)</div></details>
+    <details><summary>What does <code>?</code> need from the surrounding function?</summary>
+      <div>A <code>Result</code> (or <code>Option</code>) return type it can return the error through. (34)</div></details>
+  </div>
+
+  <h2>All or nothing: collect into <code>Result</code></h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      // Promise.all: one rejection rejects the whole thing
+      const amounts = await Promise.all(rows.map(parseAmountAsync));
+
+      // sync version: throws at the first bad row
+      const amounts = rows.map(parseAmount);
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      let amounts: Result<Vec<Money>, MoneyError> =
+          rows.iter().map(|r| Money::parse(&r.amount, &r.currency)).collect();
+      let amounts = amounts?;   // Vec<Money>, or return the first error
+
+      // or in one go:
+      let amounts = rows.iter().map(|r| Money::parse(&r.amount, &r.currency))
+          .collect::<Result<Vec<_>, _>>()?;
+    </script>
+  </div>
+  <p>An iterator of <code>Result&lt;T, E&gt;</code> collects into <code>Result&lt;Vec&lt;T&gt;, E&gt;</code>: the
+    first <code>Err</code> stops the iteration and becomes the result. The same works for <code>Option</code>
+    (<a href="https://doc.rust-lang.org/rust-by-example/error/iter_result.html">Rust by Example: iterating over
+    Results</a>). When you want <em>all</em> problems rather than the first one, collect the
+    <code>Result</code>s themselves (<code>Vec&lt;Result&lt;…&gt;&gt;</code>), which is what Ledgerly's batch endpoint
+    does in lesson 46's example, so it can report every invalid item.</p>
+
+  <h2><code>transpose</code>: swap the two wrappers</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/domain/expense.rs" data-line="56">
+    let merchant = Merchant::new(merchant)?;
+    let note = note.map(Note::new).transpose()?;
+  </script>
+  <p><code>note</code> is an <code>Option&lt;&amp;str&gt;</code>. Mapping it through the fallible
+    <code>Note::new</code> gives <code>Option&lt;Result&lt;Note, InvalidInput&gt;&gt;</code>, but <code>?</code> needs
+    the <code>Result</code> on the outside. <code>.transpose()</code> flips it to
+    <code>Result&lt;Option&lt;Note&gt;, InvalidInput&gt;</code>: no note → <code>Ok(None)</code>, valid →
+    <code>Ok(Some(note))</code>, invalid → <code>Err</code>. Then <code>?</code> applies. The same trick appears in
+    <code>persistence::find</code>: <code>row.map(Versioned::try_from).transpose()</code>.</p>
+
+  <h2><code>map_err</code>: translate the error</h2>
+  <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/id.rs" data-line="54">
+    Uuid::try_parse(text).map_err(|_| InvalidId)
+  </script>
+  <p>The <code>uuid</code> crate's error type isn't what Ledgerly wants to expose, so it's replaced with its own
+    <code>InvalidId</code>. <code>|_|</code> means "I don't need the original error". It's TS's
+    <code>catch (e) { throw new InvalidId() }</code>, in one call. (Section 8 shows the automatic version,
+    <code>#[from]</code>.)</p>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>In TS, errors and iteration are separate worlds: you <code>throw</code> out of a <code>map</code> callback and
+      hope something catches it. Here an error is a value flowing through the chain like any other, so "stop at the
+      first error", "collect all errors" and "skip the errors" (<code>filter_map(Result::ok)</code>) are each one
+      method, and the types say which one you chose.</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex47_collect.rs</code>: parse a list all-or-nothing, parse it keeping all errors,
+      and use <code>transpose</code> on an optional field. Run <code>cargo test ex47</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What does <code>["1", "x", "3"].iter().map(|s| s.parse::&lt;u32&gt;()).collect::&lt;Result&lt;Vec&lt;_&gt;, _&gt;&gt;()</code>
+      give?</p>
+    <ul class="options">
+      <li>Ok with the vector containing 1 and 3</li>
+      <li data-correct>Err with the parse error for input "x"</li>
+      <li>Ok with a vector of three Result values</li>
+      <li>A panic at the second element, "x"</li>
+    </ul>
+    <div class="explain">The first <code>Err</code> wins and iteration stops there.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>.transpose()</code> turn <code>Option&lt;Result&lt;T, E&gt;&gt;</code> into?</p>
+    <ul class="options" data-fixed>
+      <li><code>Option&lt;T&gt;</code></li>
+      <li><code>Result&lt;T, E&gt;</code></li>
+      <li data-correct><code>Result&lt;Option&lt;T&gt;, E&gt;</code></li>
+      <li><code>Vec&lt;Result&lt;T, E&gt;&gt;</code></li>
+    </ul>
+    <div class="explain">It swaps the layers so <code>?</code> can deal with the error and leave the
+      <code>Option</code>.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Why does the batch endpoint <em>not</em> collect into <code>Result&lt;Vec&lt;_&gt;, _&gt;</code>?</p>
+    <ul class="options">
+      <li>Batch items can never fail validation in Ledgerly</li>
+      <li data-correct>It reports every invalid item, not just one</li>
+      <li>collect only works with Option, not with Result</li>
+      <li>Results can't be stored inside any vector type</li>
+    </ul>
+    <div class="explain">Collecting into <code>Result</code> stops at the first error. The API answers with all
+      field violations, so each item's outcome is kept.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>Rust by Example, <a href="https://doc.rust-lang.org/rust-by-example/error/iter_result.html">"Iterating over
+      Results"</a>, a one-page tour of every strategy (fail fast, collect all, ignore failures).</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>

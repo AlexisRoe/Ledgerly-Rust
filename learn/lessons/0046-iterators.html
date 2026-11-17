@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iterators vs array methods</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/course.js"></script>
+  <script src="../assets/code.js"></script>
+  <script src="../assets/quiz.js"></script>
+</head>
+<body>
+<main>
+  <p class="box-label">Functions, closures and iterators</p>
+  <h1>Iterators vs array methods</h1>
+  <p class="lede"><code>.map()</code>, <code>.filter()</code>, <code>.find()</code>, <code>.some()</code> all exist
+    in Rust, but on <em>iterators</em>, not on <code>Vec</code>. They're lazy, so nothing happens until something
+    consumes them, usually <code>.collect()</code>.</p>
+
+  <div class="goal">
+    <span class="box-label">By the end of this lesson</span>
+    <p>You can read iterator chains such as <code>Self::ALL.into_iter().find(…).ok_or_else(…)</code> and
+      <code>problems.iter().enumerate().filter_map(…).collect()</code>, and translate TS array code into them.</p>
+  </div>
+
+  <div class="recall">
+    <span class="box-label">Warm-up</span>
+    <details><summary>Write TS <code>x =&gt; x.name</code> as a Rust closure.</summary>
+      <div><code>|x| x.name</code> (or <code>|x| x.name()</code> for a method). (45)</div></details>
+    <details><summary>What's the difference between <code>for x in v</code> and <code>for x in &amp;v</code>?</summary>
+      <div>The first consumes <code>v</code>; the second borrows it. (30, 37)</div></details>
+  </div>
+
+  <h2>Start, transform, finish</h2>
+  <div class="compare">
+    <script type="text/x-code" data-lang="ts">
+      const names = statuses.map((s) => s.name);
+      const big = amounts.filter((a) => a > 1000);
+      const first = roles.find((r) => r.name === s);
+      const any = problems.some((p) => p !== undefined);
+      const total = amounts.reduce((sum, a) => sum + a, 0);
+      items.forEach((item, i) => …);
+    </script>
+    <script type="text/x-code" data-lang="rust">
+      let names: Vec<&str> = statuses.iter().map(|s| s.as_str()).collect();
+      let big: Vec<u32> = amounts.iter().copied().filter(|a| *a > 1000).collect();
+      let first = roles.iter().find(|r| r.as_str() == s);      // Option<&Role>
+      let any = problems.iter().any(Option::is_some);          // bool
+      let total: u32 = amounts.iter().sum();                   // or .fold(0, |sum, a| sum + a)
+      for (i, item) in items.iter().enumerate() { … }
+    </script>
+  </div>
+  <p>Every chain has three parts (<a href="https://doc.rust-lang.org/book/ch13-02-iterators.html">Book 13.2</a>):</p>
+  <ol>
+    <li><strong>Start</strong>: <code>.iter()</code> (yields <code>&amp;T</code>, borrows), <code>.iter_mut()</code>
+      (<code>&amp;mut T</code>), <code>.into_iter()</code> (yields <code>T</code>, consumes the collection; for
+      <code>Copy</code> arrays like <code>ALL</code>, it just copies).</li>
+    <li><strong>Adapters</strong>, which are lazy and return a new iterator: <code>map</code>, <code>filter</code>,
+      <code>filter_map</code>, <code>enumerate</code>, <code>zip</code>, <code>take</code>, <code>skip</code>,
+      <code>copied</code>, <code>chain</code>…</li>
+    <li><strong>Consumer</strong>, which runs everything: <code>collect</code>, <code>find</code>, <code>any</code>,
+      <code>all</code>, <code>count</code>, <code>sum</code>, <code>fold</code>, <code>for</code> loops.</li>
+  </ol>
+  <p><code>collect()</code> can build many collection types, so it usually needs a type hint:
+    <code>let v: Vec&lt;_&gt; = … .collect();</code> or <code>.collect::&lt;Vec&lt;_&gt;&gt;()</code>. A function can be
+    passed instead of a closure: <code>.any(Option::is_some)</code>, <code>.map(ExpenseResponse::from)</code>.</p>
+
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: parsing an enum name</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/shared/src/role.rs" data-line="82">
+      fn from_str(s: &str) -> Result<Self, Self::Err> {
+          Self::ALL
+              .into_iter()
+              .find(|role| role.as_str() == s)
+              .ok_or_else(|| UnknownRole(s.to_owned()))
+      }
+    </script>
+    <p>"Go through all roles, find the one whose name equals <code>s</code>, otherwise an error." Four lines, no loop
+      variable.</p>
+  </div>
+  <div class="ledgerly">
+    <span class="box-label">In Ledgerly: building batch errors</span>
+    <script type="text/x-code" data-lang="rust" data-src="crates/expenses/src/application/batch.rs" data-line="91">
+      let problems: Vec<Option<ItemProblem>> = items.iter().map(|item| self.check(item)).collect();
+      if atomic && problems.iter().any(Option::is_some) {
+          let violations = problems
+              .iter()
+              .enumerate()
+              .filter_map(|(index, problem)| {
+                  problem.as_ref().map(|problem| {
+                      let field = problem
+                          .field
+                          .map_or_else(|| format!("items[{index}]"), |field| format!("items[{index}].{field}"));
+                      FieldViolation::new(field, problem.message.clone())
+                  })
+              })
+              .collect();
+          return Err(UseCaseError::BatchRejected(violations));
+      }
+    </script>
+    <p>Check every item of a batch request. If any failed in "all or nothing" mode, turn each problem into a field
+      violation like <code>items[3].merchant</code>. <code>filter_map</code> is <code>map</code> + "drop the
+      <code>None</code>s" in one step. TS would need <code>.map(…).filter(Boolean)</code>.</p>
+  </div>
+
+  <div class="breaks">
+    <span class="box-label">Where the comparison breaks</span>
+    <p>TS array methods are eager: each <code>.map</code> builds a whole new array. Rust iterators are lazy and fused:
+      a <code>map</code> + <code>filter</code> + <code>collect</code> chain runs as one loop with no intermediate
+      collections, compiled to roughly the code you'd write by hand. Forget the consumer and nothing runs at all
+      (the compiler warns "iterators are lazy and do nothing unless consumed").</p>
+  </div>
+
+  <div class="exercise">
+    <span class="box-label">Playground</span>
+    <p><code>learn/playground/src/ex46_iterators.rs</code>: five TS one-liners to translate into iterator chains.
+      Run <code>cargo test ex46</code>.</p>
+  </div>
+
+  <h2>Check yourself</h2>
+  <div class="quiz">
+    <p class="q">What does <code>roles.iter().map(|r| r.as_str());</code> do on its own?</p>
+    <ul class="options">
+      <li>Builds a vector of names, then discards it</li>
+      <li data-correct>Nothing at all; the lazy iterator is never consumed</li>
+      <li>Prints each role name to the terminal output</li>
+      <li>Changes each role in place into its name</li>
+    </ul>
+    <div class="explain">Adapters are lazy. Without <code>collect</code>, <code>for</code> or another consumer,
+      no closure is called, and the compiler warns.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">Which is TS's <code>array.some(fn)</code>?</p>
+    <ul class="options" data-fixed>
+      <li><code>.all(fn)</code></li>
+      <li data-correct><code>.any(fn)</code></li>
+      <li><code>.find(fn)</code></li>
+      <li><code>.filter(fn)</code></li>
+    </ul>
+    <div class="explain"><code>any</code> ↔ <code>some</code>, <code>all</code> ↔ <code>every</code>. Both stop
+      early.</div>
+  </div>
+  <div class="quiz">
+    <p class="q">What does <code>filter_map</code> do?</p>
+    <ul class="options">
+      <li>Filters first, and then maps the remaining items</li>
+      <li data-correct>Maps to Option, keeping only the Some values</li>
+      <li>Maps every item, then sorts the result list</li>
+      <li>Filters items whose map lookup returns a value</li>
+    </ul>
+    <div class="explain">The closure returns <code>Option&lt;U&gt;</code>. <code>Some(u)</code> is kept as
+      <code>u</code>, and <code>None</code> is dropped.</div>
+  </div>
+
+  <aside class="source">
+    <span class="box-label">Primary source</span>
+    <p>The Book, <a href="https://doc.rust-lang.org/book/ch13-02-iterators.html">13.2 "Processing a Series of Items
+      with Iterators"</a>. Then keep the <a href="https://doc.rust-lang.org/std/iter/trait.Iterator.html"><code>Iterator</code>
+      docs</a> open: the method list on the left is the Rust version of MDN's Array page.</p>
+  </aside>
+  <p class="score" data-score></p>
+</main>
+</body>
+</html>
