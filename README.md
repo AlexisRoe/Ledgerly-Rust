@@ -1,11 +1,13 @@
 # Ledgerly-Rust
 
+[![CI](https://github.com/AlexisRoe/Ledgerly-Rust/actions/workflows/ci.yml/badge.svg)](https://github.com/AlexisRoe/Ledgerly-Rust/actions/workflows/ci.yml)
+
 **Learn Rust backend development on a real system whose behaviour is already known.**
 
 Ledgerly is a REST backend in which small teams record expenses, attach receipts, import CSV files and move each expense through an approval workflow. It was first written in Java with Spring Boot ([Ledgerly-Java](https://github.com/AlexisRoe/Ledgerly-Java)). This repository is its **drop-in replacement in Rust**: the same HTTP contract, database schema, configuration, operational endpoints and demo data. You can point it at a database written by the Java version and it keeps working.
 
 > 📚 **Lessons:** a Rust course for TypeScript developers in [`learn/`](learn/index.html), see [Learning Rust with this repository](#learning-rust-with-this-repository)
-> 🌐 **Live demo:** _coming soon_
+> 🌐 **Live demo:** [ledgerly-rust.a-roehrling.workers.dev](https://ledgerly-rust.a-roehrling.workers.dev/)
 
 ---
 
